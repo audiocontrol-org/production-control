@@ -137,6 +137,44 @@ something was built. Recording it is useful; *deciding* on it is the banned thin
 the distinction explicit here prevents a later reader from either stripping a useful field
 or quietly reintroducing mtime logic.
 
+## R7a: The `@/` alias needs `tsc-alias`, or it ships broken
+
+**Decision**: The build is `tsc && tsc-alias`. A contract test
+(`tests/contract/build-emit.test.ts`) asserts that `dist/` contains no unrewritten `@/`
+specifiers and that every emitted module actually loads under Node.
+
+**Rationale**: TypeScript's `paths` is **typecheck-only** — bare `tsc` does not rewrite
+import specifiers on emit. So `import { x } from '@/hash/content.js'` in `src/`:
+
+- typechecks clean (`tsc --noEmit` → 0)
+- builds clean (`tsc` → 0)
+- passes every test (vitest resolves `@/` through its own alias)
+- and then **dies at runtime** with `ERR_MODULE_NOT_FOUND`, because Node sees a bare
+  specifier and looks for a package named `@/hash`.
+
+`package.json` `bin` ships `dist/cli/index.js`, so that failure reaches a user's terminal
+while every gate we have stays green. Verified empirically, not theorised: a probe module
+emitted `import { v } from '@/__probe/dep.js'` verbatim and failed to load.
+
+**Why this had never surfaced in this ecosystem**: both sibling repos *bundle* —
+video-control through Remotion/webpack, colony-cults through Astro — and bundlers resolve
+`tsconfig` paths at bundle time. production-control is the first to ship bare `tsc` output
+as a Node CLI, so it is the first place the house `@/` rule meets a build that does not
+rewrite paths.
+
+**The rule is not optional** (the operator's standing TypeScript rule and this project's
+constitution both mandate `@/`), so the question was how to make it *true*, not whether to
+keep it. `tsc-alias` rewrites the emitted specifiers to relative paths.
+
+**Alternatives considered**: Node subpath imports (`"imports": { "#/*": ... }` in
+package.json) — native and build-step-free, but changes the prefix to `#/` and so breaks
+the stated rule; relative imports throughout `src/` — also breaks the rule, and gets worse
+as the tree deepens.
+
+**The guard is the point.** Without the contract test, someone removes `tsc-alias`, every
+check stays green, and the break is discovered by a user. The test fails loudly at the
+exact moment the rewrite stops happening.
+
 ## R8: What "indivisible" means mechanically
 
 **Decision**: `pc build` writes the ledger entry in the same process invocation that runs
