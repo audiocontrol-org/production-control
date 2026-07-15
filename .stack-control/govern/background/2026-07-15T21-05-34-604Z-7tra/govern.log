@@ -73,3 +73,9 @@ govern:   claude: completed [enforced, monitored]
 govern:   codex: completed [enforced, monitored]
 govern:   sonnet: timed-out [enforced, monitored]
 govern: NOTE — any 0-HIGH verdict this round is computed over a DEGRADED fleet (FR-007).
+govern: chunk 4166e426e0abffa0 barrage run-dir = /Users/orion/work/production-control-work/production-control/.stack-control/audit-runs/20260715T215829569Z-001-episode-production-contract-after_implement
+govern: fleet — configured 3, produced 2  ⚠ DEGRADED
+govern:   claude: completed [enforced, monitored]
+govern:   codex: completed [enforced, monitored]
+govern:   sonnet: timed-out [enforced, monitored]
+govern: NOTE — any 0-HIGH verdict this round is computed over a DEGRADED fleet (FR-007).
