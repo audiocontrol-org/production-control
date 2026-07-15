@@ -156,8 +156,16 @@ production that has never been built.
 - Ledger read
 - Freshness as a consistency check; all six states; every state carries its cause
 - `pc status`, `pc next`, `pc release-check` — zero network, no craft tools
-- Advisory edges + `needs-review` (**User Story 3**'s detection half)
 - Asset pointer *reading* (the hash is in the pointer, so status needs no store)
+
+Also delivers **User Story 3** in full — advisory `needs-review` detection *and*
+`pc review --waive`.
+
+> **Corrected during task generation.** This plan originally split User Story 3 across the
+> milestones, putting `--waive` in Milestone 2. That contradicted the spec: US3's Independent
+> Test requires waiving to be exercisable, so US3 would not have been an independent slice
+> until Milestone 2 — while the spec claims it is one. Waiving needs no provider and no
+> store; it is a local ledger write, which is neither execution nor network. It belongs here.
 
 ### Milestone 2 — Providers (execution, strictly additive)
 
@@ -168,7 +176,6 @@ Delivers **User Stories 2, 4, 5**.
 - `pc validate`
 - Input resolution: store → local cache → local path
 - `AssetStore` S3 adapter + `pc asset add`
-- `pc review --waive` (**User Story 3**'s resolution half)
 
 ## Complexity Tracking
 

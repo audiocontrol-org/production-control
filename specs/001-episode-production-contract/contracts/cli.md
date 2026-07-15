@@ -59,11 +59,22 @@ and making the agent derive the second from the first is making it guess.
 ```
 $ pc next
 1. narration  needs-review  spoken changed since take-03 was recorded
-2. podcast    rebuild       voiceover is newer than the recorded input
-3. epub       validate      built but never validated
+2. podcast    rebuild       voiceover's content differs from the recorded input
+3. epub       validate      built, never validated
 ```
 
 Excludes anything `blocked` — a blocked node is not actionable, its missing input is.
+
+**Causes state content divergence, never time.** No cause may say "newer", "older", or "out
+of date": those words describe a temporal comparison, and this system never makes one
+(FR-008, Principle II — *timestamps lie*). A contract that renders a cause in temporal
+language invites exactly the mtime check the design forbids. `epub validate` reads "built,
+never validated" rather than "built but never validated" for the same reason — the state is
+the absence of a recorded validation, not a sequence of events.
+
+Note that `rebuild` and `validate` here are **actions**, not states. `pc next` answers "what
+could you do", so it names the action; `unvalidated` is likewise an action prompt rather
+than a state (FR-006b).
 
 ## `pc build <target> [--json]`
 

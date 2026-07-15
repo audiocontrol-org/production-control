@@ -460,8 +460,15 @@ not oversights and should not be re-litigated during planning.
   addresses, rights gating, and feed generation are a separate concern.
 - **Producing-tool sandboxing.** Not enforcing that tools touch only declared inputs.
 - **PDF, print, and hardcover.** Additional outputs, not architecture.
-- **Scheduling, caching, parallelism, remote execution.** The execution layer stays
-  deliberately dumb.
+- **Scheduling, build caching, parallelism, remote execution.** The execution layer stays
+  deliberately dumb: it builds what it is asked to build, one target at a time.
+
+  *"Build caching" means memoizing build results to skip work — deciding not to invoke a
+  producing tool because the answer is already known. That is out.* It does **not** mean the
+  local mirror of already-fetched asset bytes, which is required: without it every build
+  would re-download its inputs. The distinction is that one skips work the system was asked
+  to do, while the other avoids re-fetching bytes whose content address already identifies
+  them.
 
 ## Dependencies
 
