@@ -62,6 +62,20 @@ oracle still earns its keep.
 Rejected: a full orchestrator with scheduling, caching, parallelism, and remote
 execution. That is rebuilding Bazel to solve a problem nobody has yet.
 
+### The oracle is authoritative; providers are disposable
+
+This is the invariant the rest of the design serves.
+
+videocontrol can be replaced. The EPUB tool can be replaced. Astro can be swapped for
+a different generator. The execution layer itself can be replaced. Through all of it
+the graph, the contracts, the manifests, and the ledger stay valid — because none of
+them encode how any particular tool behaves.
+
+The center of gravity stays put while the tools around it evolve. Any proposal that
+would invert this — making the graph depend on a provider's behavior, or teaching the
+oracle a craft so a provider can stay simple — is a design error regardless of what
+it buys in the moment.
+
 ## Agent-native as a design constraint
 
 An agent drives production-control; a human authors the inputs and drives the agent.
@@ -92,6 +106,22 @@ Every node in the graph is one of exactly two kinds:
 This single distinction is what lets narration sit on either side without
 production-control knowing or caring where a voice comes from. A recorded take is
 authored; a synthesized one is derived. The manifest says which; freshness follows.
+
+### Identity is the key; hashes are only its current realization
+
+`longform`, `spoken`, `narration`, `voiceover`, `podcast` are **identities** — stable
+names for roles in the production. A hash describes what an identity is realized as
+*right now*.
+
+Identity survives rebuilds. Hashes do not. Paths are an attribute of a node, not its
+identity: moving `article.mdx` to `content/article.mdx` changes the manifest and
+nothing else. Profiles bind targets to inputs by identity, and the ledger keys
+artifacts by identity — which is why the graph's edges stay stable while every hash
+beneath them churns.
+
+This is what makes the graph durable rather than incidental. A production's shape is
+its identities and their edges; everything else is a realization that can change
+without the shape changing.
 
 ```
 port-breton-01/
@@ -142,10 +172,16 @@ staleness real. `website`'s output is a directory; the tree hash handles it.
 
 ## The ledger and freshness
 
-The ledger records, per derived artifact, what it was built from — as content hashes
-captured at build time. It is **committed**; `dist/` is not. Provenance *is* the
-product, so a fresh clone can answer "what is stale?" without rebuilding anything,
-while the heavy bytes stay out of git.
+The ledger is the canonical record of production state — the thing the oracle reads
+to know what is true. It records, per derived artifact, what it was built from, as
+content hashes captured at build time. It is **committed**; `dist/` is not.
+Provenance *is* the product, so a fresh clone can answer "what is stale?" without
+rebuilding anything, while the heavy bytes stay out of git.
+
+**The file holds current state; git holds the history** — one commit per recorded
+state. That split is deliberate: it keeps the ledger small and readable while leaving
+it fully auditable, and it means the append-only guarantee lives in the tool built to
+provide it rather than in a YAML file pretending to be a journal.
 
 ```yaml
 version: 1
@@ -160,8 +196,10 @@ artifacts:
     validation: { state: passed, at: 2026-07-14T22:31:00Z }
 ```
 
-**The algorithm is a comparison, not a computation.** Rehash each declared input,
-diff against what the ledger recorded. Differ means stale.
+**Freshness is a declarative consistency check, not a computation.** Rehash each
+declared input and compare against what the ledger recorded. The question is never
+"how fresh is this?" — it is "is reality still consistent with what we recorded?"
+Inconsistent means stale.
 
 Content hashing (not mtime) because mtime lies after a clone, and determinism is a
 stated principle.
@@ -301,6 +339,20 @@ non-zero.
 | `pc asset add <file>` | hash, upload-if-absent, write pointer | 2 on usage |
 | `pc review <node> --waive --reason "..."` | disposition an advisory drift | 2 on usage |
 
+`pc next` is expected to be the verb in daily use — it reports the frontier rather
+than inferring intent:
+
+```
+$ pc next
+1. narration  needs-review  spoken changed since take-03 was recorded
+2. podcast    stale         voiceover rebuilt
+3. epub       unvalidated
+```
+
+Every line states the node, its state, and why. The "why" is not a convenience: a
+state without a cause makes an agent guess, and guessing is what the ledger exists to
+eliminate.
+
 Per the no-fallbacks rule: a missing provider or unresolvable asset throws, naming
 what is absent. It never silently skips a target — a skipped target reporting green
 is precisely the false-clean the ledger exists to prevent.
@@ -328,6 +380,22 @@ Step 1 is the point: **providers never touch object storage and never hold
 credentials.** They take local files and emit local files. Every provider stays
 trivially runnable by hand, testable without a bucket, and useful outside
 production-control entirely. All store complexity stays on one side of the boundary.
+
+**A provider should be a pure function: inputs in, outputs out.** No hidden state, no
+global config, no cache, no storage. production-control provides the world; the
+provider transforms it. That is what makes a provider runnable by hand, testable
+without infrastructure, and replaceable without argument.
+
+**Purity is a norm, not an invariant — and the exception must be declared.** Some
+providers cannot be pure. A synthesized narration calls a model; an Astro build may
+fetch a remote font. Such a provider cannot promise the same bytes twice, and
+pretending otherwise would make "deterministic production" a claim nobody checks.
+
+The ledger is what contains the damage. It records the output hash that was actually
+produced, so everything downstream of an impure provider remains deterministic even
+though the provider is not: the podcast is built from *these* narration bytes, whose
+hash is recorded, whoever or whatever made them. An impure provider must declare
+itself, so the boundary of what is reproducible is visible rather than assumed.
 
 ## Testing
 
