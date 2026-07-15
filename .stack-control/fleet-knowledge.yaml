@@ -1,7 +1,26 @@
+# Audit-barrage lane capacities.
+#
+# This is the AUDIT fleet — the models the cross-model barrage runs a feature diff
+# past. It is NOT config.yaml's tier_map, which decides what model IMPLEMENTS a task.
+# Separate concerns: a model can be right for one and wrong for the other.
+#
+# `sonnet` was removed on evidence, not preference. Over the first whole-feature
+# govern run of 001-episode-production-contract it timed out in 6 of 8 rounds, while
+# claude and codex completed 8 of 8 with zero timeouts. A timing-out lane is worse
+# than an absent one: it contributes no findings AND marks the round's fleet
+# DEGRADED, which under FR-007 makes any 0-HIGH verdict weak evidence. Six of eight
+# rounds were priced as degraded on account of a lane that produced nothing.
+#
+# It remains `balanced` in tier_map, where it implemented 29 tasks this session
+# without trouble. Failing to audit a large diff is not the same as failing to
+# implement a scoped task.
+#
+# Two lanes meets govern's default --require-models floor of 2 exactly. That is
+# deliberate and tight: if either fails, the run REFUSES rather than quietly
+# converging on a single model's opinion. Do not lower the floor to route around a
+# failing lane — fix the lane or remove it.
 lanes:
   - name: claude
     max_prompt_bytes: 65536
   - name: codex
     max_prompt_bytes: 24576
-  - name: sonnet
-    max_prompt_bytes: 32768

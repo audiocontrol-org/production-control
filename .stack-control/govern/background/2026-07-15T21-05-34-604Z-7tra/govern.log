@@ -1,0 +1,75 @@
+govern clone-step: 9 clone group(s) in this codebase; 9 NEW (no baseline yet).
+  NEW clone b13d418b8b29 (6 lines)
+    /Users/orion/work/production-control-work/production-control/tests/integration/support.ts:162:167
+    /Users/orion/work/production-control-work/production-control/tests/unit/state/support.ts:27:32
+  NEW clone 320d73d84f8a (8 lines)
+    /Users/orion/work/production-control-work/production-control/src/manifest/load.ts:113:120
+    /Users/orion/work/production-control-work/production-control/src/providers/contract.ts:114:121
+  NEW clone f45e01308a2c (38 lines)
+    /Users/orion/work/production-control-work/production-control/src/ledger/store.ts:137:174
+    /Users/orion/work/production-control-work/production-control/src/manifest/load.ts:74:111
+  NEW clone eaa5bdd78328 (14 lines)
+    /Users/orion/work/production-control-work/production-control/src/ledger/store.ts:175:188
+    /Users/orion/work/production-control-work/production-control/src/manifest/load.ts:112:125
+  NEW clone a1b49cffc62a (6 lines)
+    /Users/orion/work/production-control-work/production-control/src/cli/index.ts:176:181
+    /Users/orion/work/production-control-work/production-control/src/cli/index.ts:94:99
+  NEW clone 75e5526089d9 (16 lines)
+    /Users/orion/work/production-control-work/production-control/src/cli/asset.ts:136:151
+    /Users/orion/work/production-control-work/production-control/src/manifest/load.ts:85:96
+  NEW clone 61390960e836 (13 lines)
+    /Users/orion/work/production-control-work/production-control/src/assets/pointer.ts:135:147
+    /Users/orion/work/production-control-work/production-control/src/manifest/load.ts:81:96
+  NEW clone 5c7e13fcb830 (7 lines)
+    /Users/orion/work/production-control-work/production-control/src/assets/pointer.ts:147:153
+    /Users/orion/work/production-control-work/production-control/src/manifest/load.ts:97:103
+  NEW clone aed071898b81 (9 lines)
+    /Users/orion/work/production-control-work/production-control/src/assets/pointer.ts:157:165
+    /Users/orion/work/production-control-work/production-control/src/manifest/load.ts:112:120
+govern: code-only scoping active — excluded 21 documentation file(s) from the audit payload.
+govern: chunk 118b570965763745 barrage run-dir = /Users/orion/work/production-control-work/production-control/.stack-control/audit-runs/20260715T210538199Z-001-episode-production-contract-after_implement
+govern: fleet — configured 3, produced 3
+govern:   claude: completed [enforced, monitored]
+govern:   codex: completed [enforced, monitored]
+govern:   sonnet: completed [enforced, monitored]
+govern: chunk 1a9513442d3a7279 barrage run-dir = /Users/orion/work/production-control-work/production-control/.stack-control/audit-runs/20260715T211005584Z-001-episode-production-contract-after_implement
+govern: fleet — configured 3, produced 3
+govern:   claude: completed [enforced, monitored]
+govern:   codex: completed [enforced, monitored]
+govern:   sonnet: completed [enforced, monitored]
+govern: chunk 1bfe2e503a37e82b barrage run-dir = /Users/orion/work/production-control-work/production-control/.stack-control/audit-runs/20260715T211456715Z-001-episode-production-contract-after_implement
+govern: fleet — configured 3, produced 2  ⚠ DEGRADED
+govern:   claude: completed [enforced, monitored]
+govern:   codex: completed [enforced, monitored]
+govern:   sonnet: timed-out [enforced, monitored]
+govern: NOTE — any 0-HIGH verdict this round is computed over a DEGRADED fleet (FR-007).
+govern: chunk 1d133591def5000c barrage run-dir = /Users/orion/work/production-control-work/production-control/.stack-control/audit-runs/20260715T212224854Z-001-episode-production-contract-after_implement
+govern: fleet — configured 3, produced 2  ⚠ DEGRADED
+govern:   claude: completed [enforced, monitored]
+govern:   codex: completed [enforced, monitored]
+govern:   sonnet: timed-out [enforced, monitored]
+govern: NOTE — any 0-HIGH verdict this round is computed over a DEGRADED fleet (FR-007).
+govern: chunk 2a489340e24b9eed barrage run-dir = /Users/orion/work/production-control-work/production-control/.stack-control/audit-runs/20260715T212952982Z-001-episode-production-contract-after_implement
+govern: fleet — configured 3, produced 2  ⚠ DEGRADED
+govern:   claude: completed [enforced, monitored]
+govern:   codex: completed [enforced, monitored]
+govern:   sonnet: timed-out [enforced, monitored]
+govern: NOTE — any 0-HIGH verdict this round is computed over a DEGRADED fleet (FR-007).
+govern: chunk 2a48ac5894d92912 barrage run-dir = /Users/orion/work/production-control-work/production-control/.stack-control/audit-runs/20260715T213654165Z-001-episode-production-contract-after_implement
+govern: fleet — configured 3, produced 2  ⚠ DEGRADED
+govern:   claude: completed [enforced, monitored]
+govern:   codex: completed [enforced, monitored]
+govern:   sonnet: timed-out [enforced, monitored]
+govern: NOTE — any 0-HIGH verdict this round is computed over a DEGRADED fleet (FR-007).
+govern: chunk 30766fd2de1b551b barrage run-dir = /Users/orion/work/production-control-work/production-control/.stack-control/audit-runs/20260715T214424242Z-001-episode-production-contract-after_implement
+govern: fleet — configured 3, produced 2  ⚠ DEGRADED
+govern:   claude: completed [enforced, monitored]
+govern:   codex: completed [enforced, monitored]
+govern:   sonnet: timed-out [enforced, monitored]
+govern: NOTE — any 0-HIGH verdict this round is computed over a DEGRADED fleet (FR-007).
+govern: chunk 3279666bba0600ab barrage run-dir = /Users/orion/work/production-control-work/production-control/.stack-control/audit-runs/20260715T215126992Z-001-episode-production-contract-after_implement
+govern: fleet — configured 3, produced 2  ⚠ DEGRADED
+govern:   claude: completed [enforced, monitored]
+govern:   codex: completed [enforced, monitored]
+govern:   sonnet: timed-out [enforced, monitored]
+govern: NOTE — any 0-HIGH verdict this round is computed over a DEGRADED fleet (FR-007).
