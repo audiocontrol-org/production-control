@@ -1,0 +1,17 @@
+# Node / TypeScript
+node_modules/
+dist/
+build/
+*.tsbuildinfo
+.env
+.env.local
+
+# stack-control / speckit runtime caches (not source)
+.stack-control/state/
+.specify/extensions/.cache/
+
+# audit-barrage run dirs are prunable runtime artifacts (stackctl audit-runs)
+.stack-control/audit-runs/
+
+# git worktrees (harness-managed, never tracked)
+.claude/worktrees/
