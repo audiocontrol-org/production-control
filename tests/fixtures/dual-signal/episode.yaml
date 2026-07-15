@@ -1,0 +1,11 @@
+version: 1
+id: dual-signal
+title: Dual Signal
+profile: editorial-audio
+authored:
+  spoken:
+    path: script.md
+  narration:
+    path: assets/narration/take-03.wav
+    follows: spoken
+targets: [transcript]

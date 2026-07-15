@@ -1,0 +1,8 @@
+version: 1
+id: cycle
+title: Cycle
+profile: profile-cycle
+authored:
+  dummy:
+    path: dummy.txt
+targets: [a]

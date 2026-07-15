@@ -1,0 +1,14 @@
+version: 1
+targets:
+  a:
+    inputs: [b]
+    provider:
+      cmd: [npx, tooling, build-a]
+  b:
+    inputs: [c]
+    provider:
+      cmd: [npx, tooling, build-b]
+  c:
+    inputs: [a]
+    provider:
+      cmd: [npx, tooling, build-c]

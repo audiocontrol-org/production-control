@@ -1,0 +1,10 @@
+version: 1
+id: minimal
+title: Minimal
+profile: editorial-audio
+authored:
+  longform:
+    path: article.mdx
+  assets:
+    path: assets
+targets: [epub]

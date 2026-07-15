@@ -1,0 +1,1 @@
+This fixture is intentionally invalid and defines a cyclic dependency in its profile (a ← b ← c ← a). The system must refuse to load this episode and name the cycle. Do not modify this fixture to "fix" it — the cycle is intentional for testing cycle detection.

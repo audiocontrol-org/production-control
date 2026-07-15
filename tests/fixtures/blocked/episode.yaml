@@ -1,0 +1,12 @@
+version: 1
+id: blocked
+title: Blocked
+profile: editorial-audio
+authored:
+  longform:
+    path: article.mdx
+  assets:
+    path: assets
+  narration:
+    path: assets/narration/take-01.wav
+targets: [epub, voiceover]
