@@ -21,6 +21,7 @@ graph (it fails loud on a cycle / dangling ref / duplicate id).
 
 ## design:feature/episode-production-contract
 - status: in-flight
+- design-approved: yes
 Episode Production Contract v0.1: episode dir, manifest, ledger, freshness, advisory edges, provider contract, S3-compatible asset store
 
 ## impl:feature/governing-documents
