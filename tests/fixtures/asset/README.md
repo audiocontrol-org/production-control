@@ -16,17 +16,17 @@ only by a content-addressed stand-in.
 The stand-in's address is the sha256 of this exact UTF-8 string:
 
 ```
-fixture narration take-01 bytes
+fixture asset content
 ```
 
-- length: **31** bytes
-- address: `sha256:4d7c73c9ca17191e076586b31e359bce0b5ed3af81a08be4ea9945c374365308`
+- length: **21** bytes
+- address: `sha256:d87597da137d9898657caa494321c9bc73f8100c3cd1fb1813912d45e4f8a952`
 
 A test seeds the store with those bytes to make the asset resolvable:
 
 ```ts
 const store = new MemoryAssetStore();
-const address = await store.put(Buffer.from('fixture narration take-01 bytes', 'utf8'));
+const address = await store.put(Buffer.from('fixture asset content', 'utf8'));
 // address === the `asset:` field in take-01.wav.asset
 ```
 
@@ -39,7 +39,7 @@ catch, so a fixture must not contain one.
 Regenerate the stand-in from the seed:
 
 ```bash
-node -e "const{createHash}=require('node:crypto');const b=Buffer.from('fixture narration take-01 bytes','utf8');console.log('sha256:'+createHash('sha256').update(b).digest('hex'), b.length)"
+node -e "const{createHash}=require('node:crypto');const b=Buffer.from('fixture asset content','utf8');console.log('sha256:'+createHash('sha256').update(b).digest('hex'), b.length)"
 ```
 
 ## What it exercises
