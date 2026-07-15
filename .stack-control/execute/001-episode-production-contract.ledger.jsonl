@@ -1,5 +1,13 @@
-{"id":"T001","tierLabel":"fast","model":"haiku","commitRange":"552e21f..7301752","reviewClean":true}
-{"id":"T002","tierLabel":"fast","model":"haiku","commitRange":"552e21f..7301752","reviewClean":true}
-{"id":"T003","tierLabel":"fast","model":"haiku","commitRange":"552e21f..7301752","reviewClean":true}
-{"id":"T004","tierLabel":"fast","model":"haiku","commitRange":"552e21f..7301752","reviewClean":true}
-{"id":"T005","tierLabel":"fast","model":"haiku","commitRange":"552e21f..7301752","reviewClean":true}
+{"id": "T001", "tierLabel": "fast", "model": "haiku", "commitRange": "552e21f..7301752", "reviewClean": true}
+{"id": "T002", "tierLabel": "fast", "model": "haiku", "commitRange": "552e21f..7301752", "reviewClean": true}
+{"id": "T003", "tierLabel": "fast", "model": "haiku", "commitRange": "552e21f..7301752", "reviewClean": true}
+{"id": "T004", "tierLabel": "fast", "model": "haiku", "commitRange": "552e21f..7301752", "reviewClean": true}
+{"id": "T005", "tierLabel": "fast", "model": "haiku", "commitRange": "552e21f..7301752", "reviewClean": true}
+{"id": "T006", "tierLabel": "fast", "model": "haiku", "commitRange": "7301752..77ae069", "reviewClean": true}
+{"id": "T007", "tierLabel": "balanced", "model": "sonnet", "commitRange": "7301752..77ae069", "reviewClean": true}
+{"id": "T008", "tierLabel": "fast", "model": "haiku", "commitRange": "7301752..77ae069", "reviewClean": true}
+{"id": "T009", "tierLabel": "powerful", "model": "opus", "commitRange": "7301752..77ae069", "reviewClean": true}
+{"id": "T017", "tierLabel": "fast", "model": "haiku", "commitRange": "7301752..77ae069", "reviewClean": true}
+{"id": "T018", "tierLabel": "fast", "model": "haiku", "commitRange": "7301752..77ae069", "reviewClean": true}
+{"id": "T019", "tierLabel": "fast", "model": "haiku", "commitRange": "7301752..77ae069", "reviewClean": true}
+{"id": "T021", "tierLabel": "fast", "model": "haiku", "commitRange": "7301752..77ae069", "reviewClean": true}
