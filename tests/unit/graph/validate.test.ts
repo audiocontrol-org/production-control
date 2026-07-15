@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-return */
 import { describe, it, expect } from 'vitest';
 import type { EpisodeManifest, Profile, ProviderDecl } from '@/manifest/schema.js';
 import { buildGraph, validateGraph } from '@/graph/build.js';
@@ -266,6 +265,14 @@ describe('graph/validate', () => {
     });
 
     it('Case 9: follows declared on a DERIVED node is refused', () => {
+      // `follows` can only reach a derived node one way: an identity that is BOTH
+      // authored-with-follows AND a profile target. The schema puts `follows` on
+      // AuthoredDecl only, so there is no other route.
+      //
+      // The original fixture here declared `narration` authored WITH follows and fed it
+      // to the derived target `voiceover` — but that is the `advisory` fixture's shape and
+      // it is VALID. An authored node carrying an advisory edge is the whole point of the
+      // feature; refusing it would break every advisory edge in the system.
       const manifest: EpisodeManifest = {
         version: 1,
         id: 'test',
@@ -275,10 +282,43 @@ describe('graph/validate', () => {
           spoken: {
             path: 'script.md',
           },
-          narration: {
-            path: 'narration.mp3',
+          // `voiceover` is authored AND a profile target — so its `follows` lands on a
+          // node the profile says is derived.
+          voiceover: {
+            path: 'voiceover.wav',
             follows: 'spoken',
           },
+        },
+        targets: ['voiceover'],
+      };
+
+      const profile: Profile = {
+        version: 1,
+        targets: {
+          voiceover: {
+            inputs: ['spoken'],
+            provider: provider(['npx', 'audio-tooling', 'master']),
+          },
+        },
+      };
+
+      expect(() => validateGraph(manifest, profile)).toThrow();
+      expect(() => validateGraph(manifest, profile)).toThrow(/voiceover/i);
+    });
+
+    it('Case 9a: an authored node carrying `follows` that FEEDS a derived target is VALID', () => {
+      // The counterpart to Case 9, and the case the system exists for: `narration follows
+      // spoken` while `narration` is an input to `voiceover`. Advisory and dependency are
+      // different relationships (data-model.md § Two kinds of relationship) and both must
+      // coexist. This must NOT throw.
+      const manifest: EpisodeManifest = {
+        version: 1,
+        id: 'test',
+        title: 'Test',
+        profile: 'test-profile',
+        authored: {
+          spoken: { path: 'script.md' },
+          narration: { path: 'narration.mp3', follows: 'spoken' },
         },
         targets: ['voiceover'],
       };
@@ -293,8 +333,7 @@ describe('graph/validate', () => {
         },
       };
 
-      expect(() => validateGraph(manifest, profile)).toThrow();
-      expect(() => validateGraph(manifest, profile)).toThrow(/follows|derived|voiceover/i);
+      expect(() => validateGraph(manifest, profile)).not.toThrow();
     });
 
     it('Case 10: An identity that is both authored AND a profile target is refused', () => {
@@ -416,7 +455,11 @@ describe('graph/validate', () => {
       expect(narrationNode.follows).toBe('spoken');
 
       // follows must NOT appear in inputs
-      expect(narrationNode.inputs).not.toContain('spoken');
+      // `?? []` is load-bearing: vitest's toContain rejects an `undefined` subject
+      // outright — "the given combination of arguments (undefined and string) is invalid"
+      // — even under `.not`. Asserted directly, this line fails for every correct
+      // implementation, because an authored node's `inputs` is legitimately undefined.
+      expect(narrationNode.inputs ?? []).not.toContain('spoken');
 
       // The graph must NOT have a dependency edge from narration to spoken
       // (confirmed by inputs being undefined, not containing 'spoken')

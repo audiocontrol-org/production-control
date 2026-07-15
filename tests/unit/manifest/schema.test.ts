@@ -144,25 +144,29 @@ describe('schema validation (RED tests)', () => {
     });
 
     it('Case 5b: refuses hash with no prefix', () => {
-      const malformedHash: unknown = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
+      const malformedHash: unknown =
+        'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
       const result = HashSchema.safeParse(malformedHash);
       expect(result.success).toBe(false);
     });
 
     it('Case 5c: refuses hash with wrong prefix (md5:)', () => {
-      const malformedHash: unknown = 'md5:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
+      const malformedHash: unknown =
+        'md5:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
       const result = HashSchema.safeParse(malformedHash);
       expect(result.success).toBe(false);
     });
 
     it('Case 5d: refuses uppercase hex', () => {
-      const malformedHash: unknown = 'sha256:E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855';
+      const malformedHash: unknown =
+        'sha256:E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855';
       const result = HashSchema.safeParse(malformedHash);
       expect(result.success).toBe(false);
     });
 
     it('Case 5e: refuses wrong length (63 chars)', () => {
-      const malformedHash: unknown = 'sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b85';
+      const malformedHash: unknown =
+        'sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b85';
       const result = HashSchema.safeParse(malformedHash);
       expect(result.success).toBe(false);
     });
@@ -175,7 +179,8 @@ describe('schema validation (RED tests)', () => {
     });
 
     it('Case 5g: refuses non-hex characters', () => {
-      const malformedHash: unknown = 'sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852bGHI';
+      const malformedHash: unknown =
+        'sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852bGHI';
       const result = HashSchema.safeParse(malformedHash);
       expect(result.success).toBe(false);
     });
@@ -357,8 +362,9 @@ describe('schema validation (RED tests)', () => {
       expect(result.success).toBe(false);
       if (!result.success) {
         expect(
-          result.error.issues.some((issue) =>
-            issue.path.join('.').includes('validation') || issue.path.join('.').includes('state')
+          result.error.issues.some(
+            (issue) =>
+              issue.path.join('.').includes('validation') || issue.path.join('.').includes('state')
           )
         ).toBe(true);
       }
