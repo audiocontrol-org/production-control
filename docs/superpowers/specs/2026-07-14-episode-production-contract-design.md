@@ -13,11 +13,16 @@ actual media work.
 This is the tactical successor to the vision document. The vision states the
 philosophy; this states the shape of the bytes on disk.
 
-## Context and boundaries
+## Problem domain
 
 production-control coordinates the production of multimedia publications from
 human-authored source materials. It is an orchestration layer. It does not write,
 edit, render, or master anything.
+
+The problem is not *building* the outputs — craft tools already do that well. The
+problem is knowing, at any moment and after any edit, which outputs still faithfully
+represent the authored work and which have silently drifted from it. No general tool
+answers that, because none of them know what an episode is.
 
 Three boundaries fix the scope:
 
@@ -37,15 +42,51 @@ TypeScript package. Each subject gets its own content repo that depends on it, t
 way a site depends on Astro. The tool never contains anyone's prose. `examples/`
 holds fixtures only.
 
-## Approach: oracle first, providers second
+## Solution space
 
-The design separates the novel part from the commodity part.
+Three approaches were considered. The distinguishing question is how much execution
+the orchestration layer owns.
+
+### Rejected — A: state oracle only
+
+production-control validates and reports, and never executes anything. It reads
+manifests, builds the graph, and answers what is missing, stale, unvalidated, and
+releasable. Humans and CI run the craft tools.
+
+The smallest thing that delivers the vision's stated primary interface, and useful on
+day one against content that is only half-authored. Rejected as an *endpoint*, not as
+a step: it can tell you the EPUB is stale and then do nothing about it. It survives
+inside B as milestone 1.
+
+### Chosen — B: oracle plus declared providers
+
+The graph is the core, and each artifact declares the command that produces it.
+`pc build epub` shells out to the craft tool, then records provenance and freshness
+from the result — make-with-provenance, where the provenance is the point and the
+execution is deliberately dumb.
+
+Chosen because it stays honest to *delegate to specialized systems*, keeps
+videocontrol and audio tooling independently useful, and is a strict superset of A —
+so A becomes a milestone inside B rather than a competing bet.
+
+The agent-driven constraint decides it independently: if an agent could run a craft
+tool directly and record provenance as a separate step, the ledger would be wrong
+within a week. Execution must live inside production-control so that building and
+recording are one indivisible act.
+
+### Rejected — C: full orchestrator
+
+Scheduling, caching, parallelism, remote execution.
+
+Rejected: this is rebuilding Bazel while the actual problem is that nobody has
+written the article yet. It also violates the constitution's *grow by supporting
+targets, never by expanding intelligence*.
+
+### Why the graph and not the engine
 
 Executing a DAG of commands is solved (make, turbo, nx). Modeling an artifact graph
 with provenance and freshness — answering *"the podcast is stale because the script
-moved after the narration was cut"* — is not, because no general tool knows what an
-episode is. The vision's own constitution says grow by supporting targets, not by
-expanding intelligence. Rebuilding a build engine would violate that.
+moved after the narration was cut"* — is not.
 
 So: **the graph is the core; execution is a deliberately dumb layer on top.**
 
@@ -55,12 +96,8 @@ So: **the graph is the core; execution is a deliberately dumb layer on top.**
 - **Milestone 2 — providers.** `pc build <target>` shells out to craft tools and
   records provenance from the result. Strictly additive.
 
-Milestone 2 is a superset of milestone 1, so the sequence de-risks the novel part
-before spending anything on the commodity part. If execution is never built, the
-oracle still earns its keep.
-
-Rejected: a full orchestrator with scheduling, caching, parallelism, and remote
-execution. That is rebuilding Bazel to solve a problem nobody has yet.
+The sequence de-risks the novel part before spending anything on the commodity part.
+If execution is never built, the oracle still earns its keep.
 
 ### The oracle is authoritative; providers are disposable
 
@@ -75,6 +112,27 @@ The center of gravity stays put while the tools around it evolve. Any proposal t
 would invert this — making the graph depend on a provider's behavior, or teaching the
 oracle a craft so a provider can stay simple — is a design error regardless of what
 it buys in the moment.
+
+## Decisions
+
+Each decision is elaborated in the section named beside it.
+
+| Decision | Why | Detail |
+|---|---|---|
+| Oracle first, providers second (approach B) | The graph is novel; execution is commodity | *Solution space* |
+| The oracle is authoritative; providers are disposable | Any tool can be replaced without invalidating the graph | *The oracle is authoritative* |
+| Two node kinds only: authored and derived | Lets narration sit on either side without the system knowing where a voice comes from | *The episode directory* |
+| Identity is the key; hashes are its realization | Identity survives rebuilds, so the graph stays durable while hashes churn | *Identity is the key* |
+| Freshness from content hashes, never mtime | mtime lies after a clone; determinism is a stated principle | *The ledger and freshness* |
+| Ledger committed; `dist/` not | Provenance is the product; a fresh clone can answer staleness with no rebuild | *The ledger and freshness* |
+| Advisory edges (`follows`) + `needs-review` | Authored nodes have no producer, so script/performance drift would otherwise report green | *Advisory edges* |
+| Private store is content-addressed | Key == hash, so `pc status` needs zero network access | *Asset storage* |
+| S3-compatible endpoint; git-lfs rejected | Backend becomes config; LFS covers only authored inputs and would leave two mechanisms | *Backend agnosticism* |
+| Providers are stdio subprocesses, not plugins | A Node plugin API would force ffmpeg-shaped tools to become Node modules | *The provider contract* |
+| Purity is a norm, not an invariant | TTS and font-fetching builds are real; the ledger contains the damage | *The provider contract* |
+| Build and record are one indivisible act | An agent drives this; any skippable step eventually gets skipped | *Agent-native* |
+| v0.1 stops at "releasable" | Publishing deserves its own spec, as colony-cults `008` concluded | *Scope* |
+| Editorial + audio; video deferred | Forces the timed-transcript keystone without coupling to videocontrol's maturity | *Scope* |
 
 ## Agent-native as a design constraint
 
@@ -423,9 +481,50 @@ need, without coupling v0.1 to videocontrol's maturity.
   later, not a foundation that must be laid now.
 - **PDF, hardcover, print.** Additional targets, not architecture.
 
-## Open question
+## Open questions
 
-The **timed transcript** is named in the vision as a first-class artifact and is the
-keystone coupling audio to video. v0.1 forces its existence by including both
-crafts, but its schema is not settled here. It should be pinned during
-implementation, when contact with real audio tooling can inform it.
+**The timed transcript schema is not settled.** It is named in the vision as a
+first-class artifact and is the keystone coupling audio to video. v0.1 forces its
+existence by including both crafts, but its shape should be pinned during
+implementation, when contact with real audio tooling can inform it rather than
+guesswork.
+
+**How an impure provider declares itself is not specified.** The provider contract
+requires the declaration (see *The provider contract*); the mechanism — a field in
+the provider's JSON response, a profile attribute, or both — is left to the spec.
+
+**Validation severity is undefined.** `validation: { state: passed }` records a
+binary. Whether a validator can report a warning that does not block release, and how
+that interacts with `release-check`, is unresolved.
+
+## Provenance
+
+**Originating document**: the operator's vision and architectural direction proposal
+for Production Control ("A Proposal for an Agent-Native Multimedia Production
+System"), which established the philosophy, the orchestration boundary, the canonical
+inputs, and the initial vertical slice. That document explicitly deferred the tactical
+layer to a successor — *"Episode Production Contract v0.1"* — which is this record.
+
+**Governing document**: [MANIFESTO.md](../../../MANIFESTO.md) and the constitution
+derived from it at `.specify/memory/constitution.md`. Where this design and the
+manifesto disagree, the manifesto wins.
+
+**Prior art consulted**: `colony-cults` (`specs/008-edition-publishing`) for the
+immutable-versioned-artifact and pinned-snapshot publishing precedent, and
+`colony-cults-archive` for the Cloudflare-fronted B2 store precedent. Both informed
+the two-store split; neither is a dependency — the domains are distinct.
+
+**Operator decisions recorded in session**: production-control is a separate domain
+from colony-cults, not an orchestrator above it; the first slice is editorial + audio,
+not all five outputs; content lives in per-subject repos that depend on this package,
+never in this repository; v0.1 stops at releasable rather than published.
+
+**Corrections applied in session**: the orchestration layer must not know where
+narration comes from (it needs an audio file, not a provenance story) — this produced
+the authored/derived split. Port Breton is the first of many subjects, not the domain
+— this produced the subject-agnostic boundary.
+
+**Review**: revised against third-party review, which contributed the identity
+section, the oracle-authoritative/providers-disposable invariant, the pure-function
+framing for providers (adopted as a norm, not an invariant), and the
+declarative-consistency-check reframing of freshness. Approved by the operator.
