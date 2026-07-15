@@ -66,7 +66,7 @@ function capture(): Captured {
 }
 
 function depsFor(output: Output, store: AssetStore): AssetDeps {
-  return { output, store: { store: (): AssetStore => store } };
+  return { output, store: { store: (): Promise<AssetStore> => Promise.resolve(store) } };
 }
 
 const tempDirs: string[] = [];

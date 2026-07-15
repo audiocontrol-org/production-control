@@ -1,5 +1,5 @@
 import { storeBackedResolver, type InputResolver } from '@/assets/resolve.js';
-import { s3AssetStore, type S3StoreConfig } from '@/assets/s3.js';
+import type { S3StoreConfig } from '@/assets/s3.js';
 import type { AssetPointer } from '@/assets/pointer.js';
 import type { AssetStore } from '@/assets/store.js';
 
@@ -10,11 +10,23 @@ import type { AssetStore } from '@/assets/store.js';
  * cashed out. Backblaze B2, Cloudflare R2, MinIO, and real AWS S3 all speak the API
  * `s3AssetStore` targets, so moving between them is `PC_ASSET_STORE_ENDPOINT` and nothing else.
  *
- * **This module must never become reachable from a read verb.** It imports `src/assets/s3.ts`,
+ * **This module must never become reachable from a read verb.** It reaches `src/assets/s3.ts`,
  * which imports the AWS SDK, and `tests/unit/architecture.test.ts` walks the transitive import
  * graph from `status`/`next`/`explain`/`release-check` and fails on exactly that chain. That is
  * the check working, not a check to route around: reporting state needs no store (FR-025), so a
  * read verb that reached this file would be wrong before the test even said so.
+ *
+ * **`s3AssetStore` is imported DYNAMICALLY, and that is load-bearing.** `src/cli/index.ts` wires
+ * every verb, so it imports `pc build`, so a static import here would put the AWS SDK on the
+ * startup path of the shipped binary — costing `pc status` roughly 40ms of module loading, on
+ * every invocation, to construct a client it will never use. The oracle is meant to answer
+ * instantly and offline (FR-010, FR-025); making it pay for the store it structurally cannot
+ * reach is exactly the wrong bill. The type-only import above is erased at compile time and
+ * carries no runtime edge.
+ *
+ * The dynamic form does NOT weaken the boundary check: `architecture.test.ts` matches
+ * `import('x')` alongside the static forms, so this edge is still walked and still forbidden from
+ * every read verb. Lazy at runtime, visible to the checker — both, deliberately.
  */
 
 export const BUCKET_VAR = 'PC_ASSET_STORE_BUCKET';
@@ -31,8 +43,12 @@ export const PATH_STYLE_VAR = 'PC_ASSET_STORE_PATH_STYLE';
  * people who do not need one. The refusal belongs at the moment the bytes are wanted.
  */
 export interface StoreProvider {
-  /** The configured store, or a throw NAMING the configuration that is missing (FR-036). */
-  store(): AssetStore;
+  /**
+   * The configured store, or a rejection NAMING the configuration that is missing (FR-036).
+   *
+   * Async because the S3 adapter is loaded on demand — see the note on dynamic import above.
+   */
+  store(): Promise<AssetStore>;
 }
 
 /**
@@ -73,8 +89,12 @@ export function readS3Config(env: NodeJS.ProcessEnv): S3StoreConfig {
 /** The real, env-configured store. The one place `pc asset add` gets its backend. */
 export function envStoreProvider(env: NodeJS.ProcessEnv): StoreProvider {
   return {
-    store(): AssetStore {
-      return s3AssetStore(readS3Config(env));
+    async store(): Promise<AssetStore> {
+      // The config is read BEFORE the SDK is loaded, so an unconfigured store refuses without
+      // paying for a client it was never going to build.
+      const config = readS3Config(env);
+      const { s3AssetStore } = await import('@/assets/s3.js');
+      return s3AssetStore(config);
     },
   };
 }
@@ -90,8 +110,8 @@ export function envStoreProvider(env: NodeJS.ProcessEnv): StoreProvider {
 export function envInputResolver(env: NodeJS.ProcessEnv, cacheDir: string): InputResolver {
   return {
     async resolveToLocalPath(pointer: AssetPointer, destDir: string): Promise<string> {
-      const resolver = storeBackedResolver(s3AssetStore(readS3Config(env)), cacheDir);
-      return resolver.resolveToLocalPath(pointer, destDir);
+      const store = await envStoreProvider(env).store();
+      return storeBackedResolver(store, cacheDir).resolveToLocalPath(pointer, destDir);
     },
   };
 }

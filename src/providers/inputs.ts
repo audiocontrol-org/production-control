@@ -4,6 +4,7 @@ import { resolveAuthored, type AssetPointer } from '@/assets/pointer.js';
 import type { InputResolver } from '@/assets/resolve.js';
 import type { Graph, Node } from '@/graph/build.js';
 import { hashFile } from '@/hash/content.js';
+import { hashPath } from '@/hash/path.js';
 import type { Ledger } from '@/ledger/schema.js';
 import type { Identity } from '@/manifest/schema.js';
 import type { BuildInput } from '@/providers/contract.js';
@@ -165,7 +166,13 @@ async function resolveAuthoredInput(
     return { path: fullPath, hash: address };
   }
 
-  return { path: fullPath, hash: await hashFile(fullPath) };
+  // A directory hashes to its TREE hash, a file to its content hash — `hashPath` asks that one
+  // question in the one place `state/identity.ts` asks it too, so `pc status` and `pc build`
+  // cannot answer it differently. What the provider receives for a directory input is the
+  // DIRECTORY'S OWN PATH: it walks it itself, exactly as it would outside production-control
+  // (contracts/provider.md § BuildRequest — "inputs are always local paths"; a directory is one).
+  // Nothing here flattens, tars, or copies it: that would be production-control doing craft work.
+  return { path: fullPath, hash: await hashPath(fullPath) };
 }
 
 /**

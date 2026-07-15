@@ -198,7 +198,7 @@ export async function assetAddCommand(
     // `has` before `put` so the report can say TRUTHFULLY whether anything was uploaded. `put` is
     // idempotent on its own, so this is the only thing the extra call buys — and a no-op the
     // caller cannot distinguish from an upload is not a no-op they can rely on.
-    const store = deps.store.store();
+    const store = await deps.store.store();
     const alreadyStored = await store.has(address);
     if (!alreadyStored) {
       const stored = await store.put(bytes);

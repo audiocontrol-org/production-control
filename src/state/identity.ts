@@ -1,8 +1,7 @@
-import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { resolveAuthored } from '@/assets/pointer.js';
-import { hashFile, type Hash } from '@/hash/content.js';
-import { hashTree } from '@/hash/tree.js';
+import { type Hash } from '@/hash/content.js';
+import { hashPath } from '@/hash/path.js';
 import type { Graph, Node } from '@/graph/build.js';
 import type { Ledger } from '@/ledger/schema.js';
 import type { Identity } from '@/manifest/schema.js';
@@ -202,18 +201,10 @@ async function readOutputBytesUncached(
 }
 
 /**
- * Hashes whatever is at `fullPath`: a directory tree via `hashTree`, a file via `hashFile`.
- *
- * The `stat` here asks exactly one question — file or directory — and reads nothing else off
- * the result. In particular it never looks at mtime: a `touch` must not change any answer
- * this module gives (FR-008).
+ * `hashPath` (see `@/hash/path.js` — the single place the file-or-directory rule lives, shared
+ * with `providers/inputs.ts` so status and build cannot answer it differently), but `null` when
+ * the path does not exist. Any other stat failure still throws.
  */
-async function hashPath(fullPath: string): Promise<Hash> {
-  const stats = await fs.stat(fullPath);
-  return stats.isDirectory() ? hashTree(fullPath) : hashFile(fullPath);
-}
-
-/** `hashPath`, but `null` when the path does not exist. Any other stat failure still throws. */
 async function hashPathIfExists(fullPath: string): Promise<Hash | null> {
   try {
     return await hashPath(fullPath);
