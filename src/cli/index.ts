@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import * as process from 'node:process';
 import { Command, CommanderError } from 'commander';
+import { buildCommand } from '@/cli/build.js';
 import { explainCommand } from '@/cli/explain.js';
 import { nextCommand } from '@/cli/next.js';
 import { releaseCheckCommand } from '@/cli/release-check.js';
@@ -15,6 +16,7 @@ import {
   type CliDeps,
 } from '@/cli/runtime.js';
 import { statusCommand } from '@/cli/status.js';
+import { validateCommand } from '@/cli/validate.js';
 import { z } from 'zod';
 
 /**
@@ -105,9 +107,42 @@ export function createProgram(deps: CliDeps): Command {
       setExitCode(await releaseCheckCommand(deps, readOptions(args[0])));
     });
 
-  // The one verb here that WRITES. `--reason` is declared optional to commander and required by
-  // the verb, deliberately: commander's own "required option" refusal names the flag but not why
-  // it exists, and "a waiver without a reason is not a decision" is the whole point of the rule
+  // `pc build` — and there is no `--no-record` flag here, and no `record` verb anywhere in this
+  // file. That absence IS the guarantee (FR-014, SC-009): building and recording are one act,
+  // and the way that is enforced is that no alternative path exists to express. Adding either
+  // would not weaken the requirement; it would delete it. `tests/integration/build.test.ts`
+  // asserts against this surface, so a flag added here fails the suite rather than shipping.
+  program
+    .command('build')
+    .argument('<target>', 'the target to build')
+    .description(
+      'Build a target and record its provenance — one indivisible act. Exits 0 once recorded.'
+    )
+    .option(EPISODE_FLAG, EPISODE_HELP)
+    .option(JSON_FLAG, JSON_HELP)
+    .action(async (...args: unknown[]): Promise<void> => {
+      const target = z.string().parse(args[0]);
+      setExitCode(await buildCommand(deps, target, readOptions(args[1])));
+    });
+
+  // A GATE (FR-035): 0 only when every requested target passed, 1 otherwise. The argument is
+  // optional — with none, every declared target is validated.
+  program
+    .command('validate')
+    .argument('[target]', 'the target to validate (defaults to every declared target)')
+    .description("Run a target's validation and record the verdict. Exit 1 if any is not valid.")
+    .option(EPISODE_FLAG, EPISODE_HELP)
+    .option(JSON_FLAG, JSON_HELP)
+    .action(async (...args: unknown[]): Promise<void> => {
+      const target = z.string().optional().parse(args[0]);
+      setExitCode(await validateCommand(deps, target, readOptions(args[1])));
+    });
+
+  // The one verb here that records a HUMAN's decision — `build` and `validate` write too, but
+  // what they write is a machine's observation, and neither can ever stand in for this one
+  // (FR-022a). `--reason` is declared optional to commander and required by the verb,
+  // deliberately: commander's own "required option" refusal names the flag but not why it
+  // exists, and "a waiver without a reason is not a decision" is the whole point of the rule
   // (FR-022b). The verb says that itself, and still exits 2.
   program
     .command('review')

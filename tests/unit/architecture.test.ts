@@ -29,7 +29,8 @@ const SRC_DIR = path.join(REPO_ROOT, 'src');
 const ORACLE_ROOT_DIRS = ['src/state', 'src/graph', 'src/manifest', 'src/hash', 'src/ledger'];
 
 /**
- * The CLI over the oracle (T027, SC-001, FR-010).
+ * The READ verbs (T027, SC-001, FR-010) — `pc status`, `pc next`, `pc explain`,
+ * `pc release-check`.
  *
  * Rooted here rather than in `tests/integration/offline.test.ts` so there is exactly ONE copy of
  * the walker. A second copy would drift, and a drifted boundary check is worse than none: it
@@ -41,16 +42,32 @@ const ORACLE_ROOT_DIRS = ['src/state', 'src/graph', 'src/manifest', 'src/hash', 
  * actually runs unchecked, and `src/cli/episode.ts` could import an S3 client while this test
  * stayed green.
  *
- * **When Milestone 2's `pc build` lands, this will go red, and that is correct.** `pc build`
- * exists to exec a craft tool (FR-029), so it reaches `child_process` BY DESIGN. The fix at that
- * point is to narrow these roots to the read verbs — `status`, `next`, `explain`,
- * `release-check` — which is precisely what FR-010 ("REPORTING state") constrains. Do not delete
- * the check, and do not add `pc build`'s dependencies to the allowed set: that would silently
- * relicense the whole CLI to reach the network.
+ * **These roots were `['src/cli']` until Milestone 2's `pc build` landed, and this is the
+ * narrowing the previous revision of this comment specified in advance.** `pc build` exists to
+ * exec a craft tool (FR-029), so it reaches `child_process` BY DESIGN, and `src/cli/index.ts`
+ * imports it in order to wire it. FR-010 constrains **REPORTING** state, so the read verbs are
+ * exactly what it is about, and each is rooted here individually — not the directory they live
+ * in.
+ *
+ * **Do not "fix" a future failure of this test by allowlisting a dependency.** The tempting
+ * wrong move is to add `child_process` to the allowed set, or to add `src/providers/` to it:
+ * either would silently relicense `pc status` to spawn processes and dial out, and this file
+ * would keep passing while the guarantee it exists to prove was gone. If a read verb ever
+ * reaches execution or the network, the read verb is wrong.
+ *
+ * Files rather than a directory glob, deliberately: a new file appearing under `src/cli/` must
+ * not silently join the read-verb guarantee (it might be another builder), and a read verb being
+ * RENAMED must break this test rather than quietly stop being checked. `readVerbFiles()` fails
+ * loud if any of these paths stops existing.
  */
-const CLI_ROOT_DIRS = ['src/cli'];
+const READ_VERB_FILES = [
+  'src/cli/status.ts',
+  'src/cli/next.ts',
+  'src/cli/explain.ts',
+  'src/cli/release-check.ts',
+];
 
-const ROOT_DIRS = [...ORACLE_ROOT_DIRS, ...CLI_ROOT_DIRS];
+const ROOT_DIRS = [...ORACLE_ROOT_DIRS];
 
 /** Milestone 2 — the execution layer. Any internal module under here is off limits. */
 const FORBIDDEN_INTERNAL_DIRS = ['src/providers'];
@@ -265,8 +282,31 @@ function importsOf(file: string): readonly string[] {
   return specifiers;
 }
 
-const ROOT_FILES = ROOT_DIRS.flatMap((dir) => listTsFiles(path.join(REPO_ROOT, dir)));
-const CLI_ROOT_FILES = CLI_ROOT_DIRS.flatMap((dir) => listTsFiles(path.join(REPO_ROOT, dir)));
+/**
+ * The read verbs, resolved to real files — throwing if one is missing rather than skipping it.
+ *
+ * A silently-empty root list is how this check goes vacuous: the walk would find no violations
+ * because it walked nothing, and the suite would be green over an unenforced boundary.
+ */
+function readVerbFiles(): readonly string[] {
+  return READ_VERB_FILES.map((relative) => {
+    const file = path.join(REPO_ROOT, relative);
+    if (!fs.existsSync(file)) {
+      throw new Error(
+        `${relative} does not exist. It is rooted here as one of the READ verbs FR-010 ` +
+          `constrains — if it was renamed, rename it in READ_VERB_FILES too. Do not simply ` +
+          `remove it: an unrooted read verb is an unchecked one.`
+      );
+    }
+    return file;
+  });
+}
+
+const CLI_ROOT_FILES = readVerbFiles();
+const ROOT_FILES = [
+  ...ROOT_DIRS.flatMap((dir) => listTsFiles(path.join(REPO_ROOT, dir))),
+  ...CLI_ROOT_FILES,
+];
 
 function isForbiddenInternal(file: string): boolean {
   const relative = rel(file);
@@ -468,15 +508,19 @@ describe('architecture: the Milestone 1 / Milestone 2 boundary', () => {
       ).toEqual([]);
     });
 
-    it('no `pc` module reaches the network either — the CLI is offline BY CONSTRUCTION (T027, SC-001, FR-010)', () => {
+    it('no READ verb reaches the network or an executable — reporting state is offline BY CONSTRUCTION (T027, SC-001, FR-010)', () => {
       // The mechanical half of T027. The runtime half lives in
       // `tests/integration/offline.test.ts`, which proves `pc status` answers with a hostile
       // asset store standing by and with PATH emptied. Neither is sufficient alone: a runtime
       // test only proves the paths it happens to walk never dialled out, and this only proves
       // the code CANNOT. Together they are the whole claim.
+      //
+      // `pc build` and `pc validate` are deliberately absent from these roots: they exist to run
+      // a craft tool (FR-029). FR-010 is about REPORTING state, and these four are the verbs
+      // that report it.
       expect(
         CLI_ROOT_FILES.length,
-        'src/cli has no modules — this test is vacuous'
+        'no read verbs are rooted — this test is vacuous'
       ).toBeGreaterThan(0);
 
       const failures: string[] = [];
@@ -491,8 +535,35 @@ describe('architecture: the Milestone 1 / Milestone 2 boundary', () => {
         failures.length === 0
           ? ''
           : `Reporting state must require no network and no craft tool (FR-010). ` +
-              `Forbidden import chains from the CLI:\n${failures.join('\n')}`
+              `Forbidden import chains from a read verb:\n${failures.join('\n')}`
       ).toEqual([]);
+    });
+
+    it('the read verbs are rooted for real — a violation planted behind one is CAUGHT', () => {
+      // Non-vacuity of the check above, in the only way that means anything: prove the walk
+      // reaches through a read verb's transitive imports and would fail if something forbidden
+      // were there. `src/cli/status.ts` reaches `src/state/resolve.ts` via `src/cli/episode.ts`
+      // — three hops — so a forbidden import ANYWHERE under the oracle is visible from the verb.
+      const status = path.join(SRC_DIR, 'cli/status.ts');
+      const reached = walk(status).reached;
+
+      expect([...reached]).toContain(path.join(SRC_DIR, 'cli/episode.ts'));
+      expect([...reached].map(rel)).toContain('src/state/resolve.ts');
+    });
+
+    it('`pc build` DOES reach the execution layer — the boundary moved, it did not dissolve', () => {
+      // The complement, and the reason this file is not merely passing by omission. If
+      // `src/cli/build.ts` did not reach `child_process`, then either the builder is not
+      // building or these roots were narrowed to dodge a failure rather than to state a
+      // boundary — and the read-verb guarantee above would be worth nothing.
+      const build = path.join(SRC_DIR, 'cli/build.ts');
+      expect(fs.existsSync(build), 'src/cli/build.ts is missing').toBe(true);
+
+      const violations = walk(build).violations;
+      expect(
+        violations.length,
+        '`pc build` reaches no execution layer at all — it is supposed to exec a craft tool'
+      ).toBeGreaterThan(0);
     });
 
     it('every internal import resolves to a real file (the walk is complete)', () => {

@@ -25,9 +25,14 @@ import {
  * **The mechanical proof that the network is unreachable is not here, deliberately.** It lives in
  * `tests/unit/architecture.test.ts`, which walks the transitive import graph and bans the network
  * builtins, `@aws-sdk/*`, `src/providers/`, `src/assets/s3.ts` and `src/assets/git-tracked.ts`
- * from every root — and whose roots now include `src/cli`, so the guarantee covers the binary an
- * agent actually runs and not merely the library behind it. Copying that walker here would give
- * this repo two boundary checks that could disagree, which is worse than one.
+ * from every root — and whose roots include the READ VERBS themselves (`status`, `next`,
+ * `explain`, `release-check`), so the guarantee covers the binary an agent actually runs and not
+ * merely the library behind it. Copying that walker here would give this repo two boundary checks
+ * that could disagree, which is worse than one.
+ *
+ * The read verbs rather than all of `src/cli`: `pc build` and `pc validate` exist to exec a craft
+ * tool (FR-029), so they reach `child_process` by design. FR-010 constrains *reporting* state,
+ * which is what these four do — and what every test below drives.
  *
  * What is here is the RUNTIME half, and the two halves prove different things. The static check
  * proves the code *cannot* dial out. These tests prove the oracle does not *need* the things it

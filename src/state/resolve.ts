@@ -47,6 +47,19 @@ export interface Cause {
   readonly identity?: Identity;
 }
 
+/**
+ * FR-016: the producing tool that made this artifact is recorded elsewhere in this ledger at a
+ * DIFFERENT version. Information, never a state.
+ *
+ * `recorded` is the version this artifact's own record names; `others` is every other version
+ * the same tool is recorded at, sorted so the report is stable.
+ */
+export interface ProducerDrift {
+  readonly tool: string;
+  readonly recorded: string;
+  readonly others: readonly string[];
+}
+
 export interface NodeStatus {
   readonly id: Identity;
   readonly kind: 'authored' | 'derived';
@@ -60,6 +73,10 @@ export interface NodeStatus {
    * indistinguishable from a checked one.
    */
   readonly validated?: 'passed' | 'failed';
+  /**
+   * FR-016: reported, and **never** allowed to affect `state`. See `producerDriftFor`.
+   */
+  readonly producerDrift?: ProducerDrift;
 }
 
 export interface EpisodeStatus {
@@ -129,8 +146,9 @@ async function resolveDerivedNode(
 ): Promise<NodeStatus> {
   const assessment = await assessFreshness(resolver, ledger, node);
   const validated = ledger.artifacts[node.id]?.validation?.state;
+  const drift = producerDriftFor(ledger, node.id);
   const report = (state: DerivedState, cause: Cause): NodeStatus =>
-    buildStatus(node.id, 'derived', state, cause, validated);
+    buildStatus(node.id, 'derived', state, cause, validated, drift);
 
   switch (assessment.kind) {
     case 'input-absent':
@@ -186,6 +204,51 @@ async function resolveDerivedNode(
   }
 }
 
+/**
+ * Producer version drift (T061, FR-016) — **reported, never auto-staling**.
+ *
+ * FR-016 has two halves and the second is the load-bearing one: report that the tool moved, and
+ * *do not* treat that alone as making the output stale. If a version bump staled anything, then
+ * upgrading a tool would restale every episode ever built with it — hundreds of rebuilds
+ * producing byte-identical artifacts, to satisfy a comparison of version STRINGS rather than of
+ * content. Staleness is a fact about content (FR-008/FR-009); a version is not content. So this
+ * function contributes to `NodeStatus.producerDrift` and to nothing else: it is spread into the
+ * status beside `state`, never into the decision that produces it, and `release.ts` does not
+ * read it.
+ *
+ * **The comparison basis is the ledger itself**, and it has to be. Knowing the tool's version
+ * *right now* would mean executing it, and `src/state/` cannot — reporting state requires no
+ * craft tool, and `tests/unit/architecture.test.ts` enforces that this module can never import
+ * `src/providers/` (FR-010). What the ledger DOES know is every version each tool has been
+ * recorded at across this episode's builds. When a tool appears at more than one, the artifacts
+ * here were made by different versions of the same tool, and that is exactly the fact FR-016
+ * asks to be surfaced — visible before a reader wonders why two artifacts from "the same tool"
+ * disagree.
+ *
+ * It is deliberately not phrased as "the OLD version" or "the current one". Deciding which
+ * version came later would mean reading `built_at`, and `built_at` is recorded precisely so that
+ * nothing ever decides on it (research R7). This states what is recorded and stops there.
+ */
+function producerDriftFor(ledger: Ledger, id: Identity): ProducerDrift | undefined {
+  const record = ledger.artifacts[id];
+  if (record === undefined) {
+    return undefined;
+  }
+
+  const tool = record.producer.tool;
+  const others = new Set<string>();
+  for (const other of Object.values(ledger.artifacts)) {
+    if (other.producer.tool === tool && other.producer.version !== record.producer.version) {
+      others.add(other.producer.version);
+    }
+  }
+  if (others.size === 0) {
+    return undefined;
+  }
+
+  return { tool, recorded: record.producer.version, others: [...others].sort() };
+}
+
 // ---------------------------------------------------------------------------
 // Authored nodes
 // ---------------------------------------------------------------------------
@@ -206,8 +269,10 @@ async function resolveAuthoredNode(
   ledger: Ledger,
   node: Node
 ): Promise<NodeStatus> {
+  // An authored node has no producer, so neither a validation nor a producer version is a
+  // question that can be asked of it (FR-006).
   const report = (state: AuthoredState, cause: Cause): NodeStatus =>
-    buildStatus(node.id, 'authored', state, cause, undefined);
+    buildStatus(node.id, 'authored', state, cause, undefined, undefined);
 
   const own = await resolver.resolve(node.id);
   if (own.kind === 'absent') {
@@ -293,7 +358,8 @@ function buildStatus(
   kind: 'authored' | 'derived',
   state: NodeState,
   cause: Cause,
-  validated: 'passed' | 'failed' | undefined
+  validated: 'passed' | 'failed' | undefined,
+  producerDrift: ProducerDrift | undefined
 ): NodeStatus {
   return {
     id,
@@ -305,5 +371,8 @@ function buildStatus(
       ...(cause.identity !== undefined ? { identity: cause.identity } : {}),
     },
     ...(validated !== undefined ? { validated } : {}),
+    // Spread beside `state`, never into it: drift is information a reader may act on, and never
+    // a state change (FR-016).
+    ...(producerDrift !== undefined ? { producerDrift } : {}),
   };
 }

@@ -26,12 +26,27 @@ export interface CauseJson {
   readonly identity: Identity | null;
 }
 
+/**
+ * FR-016's report. `null` means the ledger records this tool at exactly one version — never
+ * that the question was not asked.
+ *
+ * Note what is NOT here: any effect on `state`. A tool moving is information; staleness is a
+ * fact about content. An agent reading this must be able to see the drift and see that the node
+ * is still `fresh`, because it is (see `producerDriftFor`).
+ */
+export interface ProducerDriftJson {
+  readonly tool: string;
+  readonly recorded: string;
+  readonly others: readonly string[];
+}
+
 export interface NodeStatusJson {
   readonly id: Identity;
   readonly kind: 'authored' | 'derived';
   readonly state: NodeState;
   readonly cause: CauseJson;
   readonly validated: 'passed' | 'failed' | null;
+  readonly producer_drift: ProducerDriftJson | null;
 }
 
 export interface StatusJson {
@@ -58,6 +73,7 @@ export function toNodeJson(node: NodeStatus): NodeStatusJson {
       identity: node.cause.identity ?? null,
     },
     validated: node.validated ?? null,
+    producer_drift: node.producerDrift ?? null,
   };
 }
 
@@ -72,9 +88,21 @@ export function renderStatus(status: EpisodeStatus): readonly string[] {
   }
   const idWidth = widest(status.nodes.map((node) => node.id));
   const stateWidth = widest(status.nodes.map((node) => node.state));
-  return status.nodes.map(
-    (node) => `${node.id.padEnd(idWidth)}  ${node.state.padEnd(stateWidth)}  ${node.cause.message}`
-  );
+  return status.nodes.flatMap((node) => {
+    const line = `${node.id.padEnd(idWidth)}  ${node.state.padEnd(stateWidth)}  ${node.cause.message}`;
+    const drift = node.producerDrift;
+    if (drift === undefined) {
+      return [line];
+    }
+    // Its own line, never folded into the cause: the cause explains the STATE, and this did not
+    // cause the state — the node is whatever it is regardless of the tool having moved (FR-016).
+    return [
+      line,
+      `${' '.repeat(idWidth)}  ${' '.repeat(stateWidth)}  ` +
+        `note: ${drift.tool} is also recorded at ${drift.others.join(', ')} ` +
+        `(this was built by ${drift.recorded}); reported, not a reason to rebuild`,
+    ];
+  });
 }
 
 function widest(values: readonly string[]): number {

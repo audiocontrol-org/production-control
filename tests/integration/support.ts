@@ -184,12 +184,20 @@ export const CauseJsonSchema = z.object({
   identity: z.string().nullable(),
 });
 
+/** FR-016: reported as information. `null` = the ledger records this tool at one version only. */
+export const ProducerDriftJsonSchema = z.object({
+  tool: z.string(),
+  recorded: z.string(),
+  others: z.array(z.string()),
+});
+
 export const NodeStatusJsonSchema = z.object({
   id: z.string(),
   kind: z.enum(['authored', 'derived']),
   state: z.string(),
   cause: CauseJsonSchema,
   validated: z.enum(['passed', 'failed']).nullable(),
+  producer_drift: ProducerDriftJsonSchema.nullable(),
 });
 
 export const StatusJsonSchema = z.object({
