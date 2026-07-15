@@ -18,3 +18,11 @@ dependency chain:
 For an edit that has no verb yet (e.g. moving a `part-of` / `depends-on` edge):
 edit this file directly, then run `stackctl roadmap order` to revalidate the
 graph (it fails loud on a cycle / dangling ref / duplicate id).
+
+## design:feature/episode-production-contract
+- status: in-flight
+Episode Production Contract v0.1: episode dir, manifest, ledger, freshness, advisory edges, provider contract, S3-compatible asset store
+
+## impl:feature/governing-documents
+- status: planned
+README.md + MANIFESTO.md: project intent, boundaries, and the principles that govern what production-control refuses to do
