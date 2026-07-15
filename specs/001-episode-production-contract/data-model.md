@@ -204,29 +204,54 @@ A declarative consistency check, not a computation (design record):
 
 ```
 for each declared input of a derived node:
-    current  = hash(resolve(input))
+    current  = resolve(input)
     recorded = ledger.artifacts[node].inputs[input]
     if current != recorded  -> stale, cause: input changed
 
 # then, only if no input moved (FR-017a):
-current  = hash(node.output.path)
+current  = hash(node.output.path)          # the real bytes, read here and nowhere else
 recorded = ledger.artifacts[node].output.hash
 if current != recorded  -> modified, cause: output edited outside the system
 ```
 
+**What `resolve(input)` means depends on the input's kind**, and the asymmetry is the design:
+
+| Input kind | `resolve` yields | Why |
+|---|---|---|
+| authored | `hash` of the declared path (or its `.asset` stand-in) | Nothing produced it, so its bytes are the only record of it there is |
+| derived | `ledger.artifacts[input].output.hash` — its own recorded claim | Its record is committed and travels; its bytes are gitignored and do not |
+
+The derived case is **not** a record agreeing with itself. It compares *podcast's* record of
+voiceover (`artifacts[podcast].inputs.voiceover`) against *voiceover's* record of itself
+(`artifacts[voiceover].output.hash`) — two records, written at two different builds. That is
+what makes the row below work.
+
+Reading the upstream's *bytes* instead would blame the wrong node: with `dist/` gitignored, a
+fresh clone or an `rm -rf dist` would make every downstream node report `blocked` on an
+upstream's absent bytes, when the honest answer is that each node's own output is simply not
+built here (SC-004).
+
 **The output check closes a false-clean.** The ledger already records `output.hash`; before
-FR-017a nothing ever read it. A hand-edited terminal output — a podcast, a website, an
-ebook, anything with nothing downstream — had unchanged inputs and therefore reported
-`fresh`, and would have shipped. Mid-chain edits were caught only by accident, via the
-downstream node noticing its recorded input hash no longer matched.
+FR-017a nothing ever read it. A hand-edited terminal output — a podcast, a website, an ebook,
+anything with nothing downstream — had unchanged inputs and therefore reported `fresh`, and
+would have shipped.
+
+*(Historical note, so the fix is not misread as the design: back then, a mid-chain edit was
+caught only by accident, via the downstream node noticing its recorded input hash no longer
+matched — which is why the false-clean was visible only at the end of a chain. That accident
+is **not** the mechanism now, and must not be described as one. Since FR-017a an edit is
+caught directly, at the edited node, as `modified` — including mid-chain, where the node is
+its own detector rather than relying on a consumer to notice on its behalf. Detection belongs
+to the node whose bytes changed; reporting one cause twice, the second time naming the wrong
+file, is a worse report, not a safer one.)*
 
 The order matters: `stale` is evaluated first, because if the inputs moved, the output was
 *going* to be replaced anyway and the divergence is not news.
 
-**Transitive staleness is emergent, not implemented.** Rebuilding a node changes its output
-hash; that hash is a recorded input of its downstream nodes; the comparison above then
-fails for them naturally. There is no propagation pass to write, and writing one would be a
-bug (FR-009 is satisfied by content addressing alone).
+**Transitive staleness is emergent, not implemented.** Rebuilding a node rewrites its own
+output record; that recorded hash is a recorded input of its downstream nodes; the comparison
+above then fails for them naturally. There is no propagation pass to write, and writing one
+would be a bug (FR-009 is satisfied by content addressing alone).
 
 ## Relationships
 

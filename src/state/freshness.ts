@@ -22,12 +22,18 @@ import type { Absence, ContentResolver } from '@/state/identity.js';
  * we recorded?". Nothing here computes; it compares content against a record. There is
  * therefore no clock, no mtime and no ordering of events anywhere in this file (FR-008).
  *
+ * The two halves resolve DIFFERENT things, and the asymmetry is deliberate. An input resolves
+ * to what that input's own ledger record claims (`identity.ts`); a node's own output check
+ * reads the real bytes at its own recorded path. So the input comparison is record against
+ * record — podcast's copy of voiceover's hash against voiceover's own — while the output
+ * comparison is bytes against record. Each question is asked of the node that can answer it.
+ *
  * **There is deliberately no propagation pass, and adding one would be a bug (FR-009).**
- * Transitive staleness is emergent from content addressing: rebuilding a node rewrites its
- * output bytes, those bytes are what resolving its identity yields, and that hash is a
- * recorded input of every node downstream — so the input comparison above fails for them of
- * its own accord, at any depth, with no graph walk marking anything. This module never looks
- * at a node's consumers, and never looks past its own declared inputs.
+ * Transitive staleness is emergent from content addressing: rebuilding a node rewrites its own
+ * output record, that recorded hash is what resolving its identity yields, and it is a recorded
+ * input of every node downstream — so the input comparison above fails for them of its own
+ * accord, at any depth, with no graph walk marking anything. This module never looks at a
+ * node's consumers, and never looks past its own declared inputs.
  *
  * This module reports FACTS about one node — what moved, and what it was compared against.
  * Turning a fact into a reported state and its cause is `resolve.ts`'s job (FR-006/FR-007);
@@ -168,19 +174,25 @@ async function findMovedInput(
 /**
  * Step 4 — the output check (FR-017a, T042). This closes a real false-clean: the ledger has
  * always recorded `output.hash` and, before this check, nothing ever read it. A hand-edited
- * TERMINAL output — nothing downstream to notice on its behalf — had unchanged inputs, so it
- * reported `fresh` and would have shipped.
+ * output had unchanged inputs, so it reported `fresh` and would have shipped.
  *
- * Resolving the node's own identity is what yields the current bytes; that resolution reads
- * the recorded output PATH, never the recorded hash, so this is a real comparison and not a
- * record agreeing with itself.
+ * This is where — and the ONLY place where — the bytes at an output path are read, hence
+ * `readOutputBytes` rather than `resolve`: resolving the node's own identity would yield its
+ * recorded claim, and comparing that against itself really would be a record agreeing with
+ * itself. Bytes against record is the real comparison.
+ *
+ * It is asked ONLY of the node itself, never of an input, and that is what keeps the blame
+ * honest in both directions. An edit is reported once, as `modified`, at the node whose bytes
+ * were edited — downstream never re-detects it by proxy. And an ABSENT output is this node
+ * reporting that IT is not built here (the ordinary state of a fresh clone or an `rm -rf
+ * dist`), never a consumer reporting an upstream node as `blocked` for the same one absence.
  */
 async function assessOutput(
   resolver: ContentResolver,
   id: Identity,
   recorded: { readonly path: string; readonly hash: Hash }
 ): Promise<FreshnessAssessment> {
-  const resolution = await resolver.resolve(id);
+  const resolution = await resolver.readOutputBytes(id);
 
   if (resolution.kind === 'absent') {
     return { kind: 'output-absent', path: recorded.path };

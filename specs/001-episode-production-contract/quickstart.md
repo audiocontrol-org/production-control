@@ -53,16 +53,47 @@ pc status --episode tests/fixtures/minimal    # -> stale, naming longform
 **Expect**: `touch` alone never causes staleness. This is the test that catches a
 reintroduced mtime check.
 
-## S4 — A fresh clone reports identically (SC-004)
+## S4 — A fresh clone answers from records, not from the clock (SC-004)
+
+Two scenarios, because a clone has two things going on and only one of them is "identical".
+
+**S4a — mtimes are not a signal.** With the built bytes present, a clone answers identically
+no matter what the filesystem says about when anything happened:
 
 ```bash
-git clone . /tmp/pc-clone && cd /tmp/pc-clone
-rm -rf tests/fixtures/chain/dist            # built bytes absent; ledger present
-pc status --episode tests/fixtures/chain
+git clone . /tmp/pc-clone
+cp -R tests/fixtures/chain/dist /tmp/pc-clone/tests/fixtures/chain/dist   # artifacts present
+find /tmp/pc-clone/tests/fixtures/chain -exec touch {} +                  # every mtime rewritten
+pc status --episode /tmp/pc-clone/tests/fixtures/chain
 ```
 
-**Expect**: the identical staleness answer, with no rebuild. This works because the ledger
-is committed and `dist/` is not — provenance is the product.
+**Expect**: state-for-state identical to the original working copy, with no rebuild. Every
+mtime in the clone is new and not one answer moves — the content and the records are the
+only things read.
+
+**S4b — the chain stays answerable with the artifacts gone.** `dist/` is not committed, so
+this is what a real clone looks like:
+
+```bash
+git clone . /tmp/pc-clone            # ledger present; dist/ absent, as gitignored
+pc status --episode /tmp/pc-clone/tests/fixtures/chain
+```
+
+**Expect**: every derived node reports that it needs building, **on its own account** —
+`voiceover` because `voiceover`'s bytes are not here, `podcast` because `podcast`'s are not.
+And critically: **no node reports `blocked`** naming another node's missing artifact.
+`podcast` is not blocked on `voiceover`; nothing about `voiceover` is podcast's problem.
+
+Do **not** expect the states to match S4a — they must not. A clone has no built artifacts, so
+reporting them fresh would be a lie about bytes nobody has. What is identical is the
+*provenance*: each node still knows exactly what it was built from, because the ledger is
+committed and `dist/` is not (FR-015). Provenance is the product; the artifacts are
+reproducible from it.
+
+A node here reports `blocked` only when an input genuinely has no answer — an authored file
+that is missing, or an upstream target that has never been built at all and so has no record
+to inherit. An artifact that was built, recorded, and simply is not present in this working
+tree is not that: its record answers for it.
 
 ## S5 — Transitive staleness is emergent (SC-003)
 

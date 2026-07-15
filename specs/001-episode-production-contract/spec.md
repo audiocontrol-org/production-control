@@ -46,9 +46,15 @@ state, with no craft tools installed and no network reachable.
 4. **Given** a production where an authored input's content changed after an output was
    built, **When** the agent asks for state, **Then** that output reports stale and
    names the input that changed.
-5. **Given** the same production cloned fresh with no build outputs present, **When** the
-   agent asks for state, **Then** it reports the identical staleness answer as the
-   original working copy, without rebuilding anything.
+5. **Given** the same production cloned fresh with its built outputs present but every file
+   carrying a new modification time, **When** the agent asks for state, **Then** it reports
+   the identical state as the original working copy, without rebuilding anything.
+5a. **Given** the same production cloned fresh with its built outputs *absent* (the normal
+   case — outputs are not committed), **When** the agent asks for state, **Then** every
+   derived output reports that it needs building **on its own account**, and no output is
+   reported blocked on account of another output's absent artifact. The provenance survives
+   the artifacts: each output still knows exactly what it was built from, because the
+   record is committed and the bytes are not.
 6. **Given** any reported state, **When** the agent reads it, **Then** that state carries
    a cause.
 
@@ -413,8 +419,23 @@ is reported rather than silently ignored.
   control.
 - **SC-003**: Changing any authored input causes every affected output to report stale, at
   any depth of the dependency chain, naming the input that changed.
-- **SC-004**: A freshly cloned production reports the identical state as the original
-  working copy, without rebuilding anything and regardless of file timestamps.
+- **SC-004**: A freshly cloned production answers from content and records alone, never from
+  the clock or the filesystem's history. Two properties, both checkable:
+  1. *Timestamps are never a signal.* A clone whose every file carries a new modification
+     time reports the identical state as the original working copy, without rebuilding
+     anything.
+  2. *The provenance chain survives the artifacts being gone.* Because the origin records
+     are committed and the built bytes are not (FR-015), a clone with no built artifacts
+     still answers every question about what came from what. Each unbuilt output reports
+     that it needs a build **on its own account**, and no node is reported blocked on
+     account of another node's absent artifact.
+
+  (The stronger claim — that a clone reports identically *in every respect* — is false, and
+  stating it would be stating a lie as a goal. Built artifacts are deliberately not in
+  version control, so a clone genuinely has none; reporting them fresh would assert that
+  bytes nobody has are the bytes we recorded. A clone reports the same *provenance*, not the
+  same *artifacts*. What must not vary is the reasoning; what legitimately varies is what
+  happens to be built locally.)
 - **SC-005**: A production reports releasable only when every target is fresh, every
   validation passed, and no unwaived review remains. Every negative answer names what
   blocks it.

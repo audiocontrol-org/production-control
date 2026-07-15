@@ -9,26 +9,45 @@ import type { Identity } from '@/manifest/schema.js';
 
 /**
  * Resolving an identity to the hash of its CURRENT content — the `hash(resolve(input))` half
- * of the freshness check (data-model.md § Freshness). Everything here reads content and
- * nothing else: no mtime, no size, no network, no craft tool (FR-008, FR-010).
+ * of the freshness check (data-model.md § Freshness). Everything here reads content and a
+ * committed record, and nothing else: no mtime, no size, no network, no craft tool (FR-008,
+ * FR-010).
  *
  * An identity is a role, not a path. What resolving one means depends on the node's kind:
  *
  *   - authored: the declared `path`, or the `.asset` stand-in beside it.
- *   - derived:  the bytes the node's ledger record points at (`output.path`).
+ *   - derived:  the hash its own ledger record claims for its output (`output.hash`).
  *
- * The derived case reads the recorded output PATH, never the recorded `output.hash`. That
- * distinction is load-bearing: `output.hash` is the recorded claim, and comparing a recorded
- * claim against itself can only ever say "consistent". Reading the bytes is what lets an
- * edit made outside the system be seen at all — by the node itself (`modified`, FR-017a) and,
- * where the node is mid-chain, by its consumers.
+ * **The derived case reads `output.hash`, not the bytes at `output.path`.** That is not a
+ * record agreeing with itself. The comparison a consumer makes is between PODCAST's record of
+ * voiceover (`artifacts[podcast].inputs.voiceover`) and VOICEOVER's record of itself
+ * (`artifacts[voiceover].output.hash`) — two different records, written at two different
+ * builds. Rebuilding voiceover rewrites voiceover's record; podcast's copy then no longer
+ * matches and podcast goes `stale` of its own accord. That is the main case, and it is exactly
+ * how transitive staleness stays emergent rather than propagated (FR-009).
+ *
+ * Hashing the bytes here instead would blame the wrong node. `dist/` is not committed, so a
+ * fresh clone — and a routine `rm -rf dist` — has no built artifacts. Reading `output.path`
+ * would make podcast report `blocked` on "voiceover's bytes are absent", when the honest answer
+ * is that podcast's own output simply is not built here (SC-004). One missing directory would
+ * become a cascade of `blocked` pointing at innocent upstream nodes.
+ *
+ * An edit made outside the system is still caught, at the node whose bytes were edited:
+ * `freshness.ts` compares that node's OWN output bytes against its OWN recorded hash and
+ * reports `modified` (FR-017a). Downstream does not need to re-detect it by proxy, and must
+ * not — reporting one cause as two symptoms, the second naming the wrong file, is worse than
+ * reporting it once at the node that is actually wrong.
  */
 
 /** Why an identity has no current content. Distinct reasons; never collapse them. */
 export type Absence =
   /** A declared (authored) or recorded (derived output) path that does not exist on disk. */
   | { readonly kind: 'path-absent'; readonly path: string }
-  /** A derived node with no ledger record: it has never been built, so it has no bytes. */
+  /**
+   * A derived node with no ledger record: it has never been built, so nothing has ever
+   * claimed a hash for it. A consumer of it is `blocked` — its input was never built — and
+   * that names the right thing, because there is genuinely no answer to inherit.
+   */
   | { readonly kind: 'never-built' };
 
 export type ContentResolution =
@@ -43,7 +62,21 @@ export interface ResolutionContext {
 }
 
 export interface ContentResolver {
+  /**
+   * The hash of an identity's current content as its CONSUMERS see it — the answer that goes
+   * into the input comparison. For a derived identity this is its recorded claim; see the
+   * header.
+   */
   resolve(id: Identity): Promise<ContentResolution>;
+  /**
+   * The hash of the bytes ACTUALLY at a derived node's recorded `output.path` — the answer
+   * that goes into the node's own `modified` check (FR-017a). This is the only place bytes at
+   * an output path are read, and it is deliberately a separate question from `resolve`:
+   * `resolve` answers "what does this node claim it produced", this answers "what is really
+   * there", and comparing the two is what makes the check real rather than a record agreeing
+   * with itself. Only the node's own check may ask it; nothing asks it about an input.
+   */
+  readOutputBytes(id: Identity): Promise<ContentResolution>;
 }
 
 /**
@@ -68,6 +101,14 @@ export function createContentResolver(context: ResolutionContext): ContentResolv
       const pending = resolveUncached(context, id);
       cache.set(id, pending);
       return pending;
+    },
+
+    // Deliberately NOT memoized alongside `resolve`: it is a different question with a
+    // different answer, and one node asks it about itself exactly once per report. Sharing
+    // the memo would let one answer be served for the other — the precise confusion this
+    // module exists to keep apart.
+    readOutputBytes(id: Identity): Promise<ContentResolution> {
+      return readOutputBytesUncached(context, id);
     },
   };
 }
@@ -116,11 +157,38 @@ async function resolveAuthoredNode(
   return { kind: 'resolved', hash: await hashPath(resolution.path) };
 }
 
-async function resolveDerivedNode(
-  context: ResolutionContext,
-  node: Node
-): Promise<ContentResolution> {
+/**
+ * A derived identity resolves to what its own ledger record claims it produced. No disk read
+ * happens here at all — which is the point: the record is committed, `dist/` is not, so this
+ * answer survives a fresh clone and keeps the provenance chain answerable with the artifacts
+ * absent (SC-004). See the header for why this is a real comparison and not a tautology.
+ */
+function resolveDerivedNode(context: ResolutionContext, node: Node): ContentResolution {
   const record = context.ledger.artifacts[node.id];
+  if (record === undefined) {
+    return { kind: 'absent', absence: { kind: 'never-built' } };
+  }
+  return { kind: 'resolved', hash: record.output.hash };
+}
+
+/**
+ * The bytes really at a derived node's recorded output path (FR-017a). Absent is not an error:
+ * an unbuilt or deleted artifact is an ordinary, expected state, and the node reports it on its
+ * OWN account rather than any consumer reporting it on the node's behalf.
+ */
+async function readOutputBytesUncached(
+  context: ResolutionContext,
+  id: Identity
+): Promise<ContentResolution> {
+  const node = context.graph.nodes.get(id);
+  if (node === undefined || node.kind !== 'derived') {
+    throw new Error(
+      `Cannot read output bytes for "${id}": only a derived node in this episode's graph has a ` +
+        `recorded output. Asking this of anything else is a programming error, not an absence.`
+    );
+  }
+
+  const record = context.ledger.artifacts[id];
   if (record === undefined) {
     return { kind: 'absent', absence: { kind: 'never-built' } };
   }
