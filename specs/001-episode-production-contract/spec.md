@@ -201,8 +201,16 @@ is reported rather than silently ignored.
   a whole; adding, removing, or changing any file within it changes its state.
 - **The external asset store is unreachable.** Reporting state still works; only
   operations that genuinely need bytes fail, and they name why.
-- **A stand-in references an asset absent from the store.** The system fails loud rather
-  than reporting the input as present.
+- **A stand-in is malformed or unreadable.** Reporting state fails loud naming the
+  stand-in. This is checkable without the store, because the stand-in carries the content
+  address itself.
+- **A stand-in references an asset that is absent from the store.** Reporting state
+  CANNOT detect this and MUST NOT try — absence in the store is unknowable without
+  contacting it, and reporting state is required to work offline. The absence surfaces at
+  the first operation that genuinely needs the bytes, which fails loud naming the asset
+  and its content address. Reporting state answers "is this production consistent with
+  what we recorded", not "is every byte retrievable"; conflating the two would either make
+  status require the network or make it lie.
 - **An authored part is both tracked-against and a declared input to the same output.**
   Revising a script whose performance was recorded, where an output derives from both the
   script and the recording, MUST produce both signals independently: the recording reports
@@ -230,13 +238,30 @@ is reported rather than silently ignored.
 - **FR-004**: Recipes MUST be reusable across unrelated productions and MUST NOT contain
   anything specific to any subject, story, or publication.
 - **FR-005**: The system MUST refuse a production that declares a dependency cycle, a
-  duplicate identity, an unknown target, or a reference to an identity that does not
-  exist — naming the offending declaration in each case.
+  duplicate identity, an unknown target, a reference to an identity that does not exist,
+  a tracking declaration on a derived part, or a document whose declared version the
+  system does not know — naming the offending declaration in each case. A document of an
+  unknown version MUST be refused rather than parsed on a best-effort basis.
 
 **Knowing what is true**
 
-- **FR-006**: The system MUST report, for every part, exactly one state: fresh, stale,
-  missing, blocked, invalid, or needs-review.
+- **FR-006**: The system MUST report exactly one state per part. The available states
+  depend on the part's kind, because the two kinds answer different questions:
+  - *Derived*: `fresh`, `stale`, `missing`, `blocked`, or `invalid`.
+  - *Authored*: `present`, `absent`, or `needs-review`.
+
+  An authored part has no `stale` state — it has no producer, so staleness is not a
+  question that can be asked of it. This is the authored/derived distinction expressed in
+  the state model.
+- **FR-006a**: Where more than one state could apply, the system MUST report the state
+  that asserts least. Specifically, `blocked` outranks `stale`: when an input is absent the
+  system cannot know whether the output is stale, and reporting staleness would assert
+  something it has not verified.
+- **FR-006b**: Validation is a recorded fact about a part, not a state. A part MAY be
+  `fresh` and not yet validated; that part MUST still block release under FR-012. The
+  system MUST distinguish "validation failed" (the `invalid` state) from "not yet
+  validated" (the absence of a recorded validation), and MUST NOT report the latter as
+  either passing or failing.
 - **FR-007**: Every reported state MUST carry its cause. A state without a cause is not
   a valid report.
 - **FR-008**: Staleness MUST be determined by comparing the *content* of declared inputs
@@ -277,6 +302,18 @@ is reported rather than silently ignored.
   waiver MUST be durable and MUST NOT be re-litigated on every run.
 - **FR-022**: A waiver MUST apply only to the change it was recorded against; a
   subsequent change to the tracked part MUST raise needs-review again.
+- **FR-022a**: The advisory signal and the derived signal MUST be independent. When a part
+  is both tracked-against and a declared input to the same output, changing it MUST raise
+  needs-review on the tracking part *and* staleness on the derived output. Neither signal
+  may suppress, imply, or clear the other: rebuilding the derived output MUST NOT clear the
+  review, and waiving the review MUST NOT affect the derived output's state. A human's
+  question and a machine's rebuild are different resolutions to different problems.
+- **FR-022b**: A waiver MUST carry a non-empty reason. An empty or whitespace-only reason
+  MUST be refused — a waiver without a reason is not a decision, and recording it as one
+  would defeat the purpose of the record.
+- **FR-022c**: When a tracked part cannot be resolved at all (its path is absent), the
+  tracking part MUST report the absence rather than needs-review. The system cannot claim
+  drift against something it cannot read.
 
 **Large assets**
 
@@ -286,8 +323,12 @@ is reported rather than silently ignored.
   never stored twice and altered bytes are always a distinct asset.
 - **FR-025**: The system MUST NOT require contacting the asset store in order to report
   state.
-- **FR-026**: The system MUST fail loud when an authored part references large raw bytes
-  with no stand-in, rather than committing the bytes or ignoring the part.
+- **FR-026**: The system MUST fail loud when an authored part's declared path resolves to
+  a file that is *not* under version control and has no stand-in beside it, rather than
+  ignoring the part or allowing the bytes to be committed. The trigger MUST be a
+  configurable size threshold with a stated default, not a guess about whether content
+  looks binary — an author must be able to know in advance whether a given file will be
+  refused.
 - **FR-027**: The asset store MUST be replaceable by configuration, without code change.
 - **FR-028**: Assets MUST be immutable once stored; a revision MUST be a new asset rather
   than an overwrite.
@@ -351,8 +392,8 @@ is reported rather than silently ignored.
 - **SC-002**: Every derived output in a built production can be traced to the exact
   authored inputs it came from and the tool that made it, reading only what is in version
   control.
-- **SC-003**: Changing any authored input causes every affected output, at any depth, to
-  report stale — with no propagation rules written by hand.
+- **SC-003**: Changing any authored input causes every affected output to report stale, at
+  any depth of the dependency chain, naming the input that changed.
 - **SC-004**: A freshly cloned production reports the identical state as the original
   working copy, without rebuilding anything and regardless of file timestamps.
 - **SC-005**: A production reports releasable only when every target is fresh, every
@@ -364,8 +405,10 @@ is reported rather than silently ignored.
   craft tools installed and no asset store reachable.
 - **SC-008**: Every producing tool used by the system can be run by hand, outside the
   system, with no credentials.
-- **SC-009**: No sequence of operations produces a derived output without a corresponding
-  origin record.
+- **SC-009**: The command surface offers no way to produce a derived output without
+  recording its origin — no flag suppresses recording, and no separate record step exists.
+  (Stated against the surface rather than as a universal claim over all executions, so it
+  is checkable.)
 - **SC-010**: Changing the asset store backend requires only configuration.
 - **SC-011**: No part of the system, its recipes, or its schemas contains anything
   specific to any subject, story, or publication.
