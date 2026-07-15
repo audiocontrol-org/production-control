@@ -18,7 +18,7 @@ Single project, library-with-CLI. Source in `src/`, tests in `tests/`, per
 ## Milestone boundary (structural, not advisory)
 
 **Milestone 1** = Phases 1–5 (US1 + US3). The oracle. No execution, no network.
-`src/state/` MUST NOT import `src/providers/` (research R6) — T041 enforces this as a test,
+`src/state/` MUST NOT import `src/providers/` (research R6) — T045 enforces this as a test,
 so the boundary fails the build rather than eroding quietly.
 
 **Milestone 2** = Phases 6–8 (US2, US4, US5). Execution, strictly additive.
@@ -107,7 +107,11 @@ so the boundary fails the build rather than eroding quietly.
 - [ ] T038 [P] [US1] [tier:balanced] Implement `pc next` in `src/cli/next.ts` — renders the *action* (so "unvalidated" appears without being a state), always exit 0 (contracts/cli.md, FR-006b)
 - [ ] T039 [P] [US1] [tier:balanced] Implement `pc release-check` in `src/cli/release-check.ts` — exit 1 when not releasable, naming blockers (contracts/cli.md)
 - [ ] T040 [US1] [tier:balanced] Wire the `commander` CLI root in `src/cli/index.ts` — every read verb offers `--json` and exits 0 even when reporting problems; gates fail distinguishably; usage errors exit 2 (FR-035, contracts/cli.md)
-- [ ] T041 [US1] [tier:powerful] Add the milestone-boundary test in `tests/unit/architecture.test.ts` — assert no module under `src/state/`, `src/graph/`, or `src/manifest/` transitively imports `src/providers/` or `src/assets/s3.ts`. **This is what makes research R6 real**: without it the boundary is a comment, and FR-010's "no network, no craft tools" holds by discipline rather than by construction
+- [ ] T041 [P] [US1] [tier:fast] RED: `modified`-detection tests in `tests/unit/state/modified.test.ts` — editing a built output's bytes while its inputs are unchanged reports `modified`, not `fresh`; a **terminal** output (nothing downstream) is detected too; `stale` wins when inputs also moved; `modified` blocks release (FR-017a, FR-017b)
+- [ ] T042 [US1] [tier:powerful] Implement `modified` detection in `src/state/freshness.ts` — compare the output's current content against the ledger's recorded `output.hash`, evaluated only after no input has moved. **Closes a false-clean**: the ledger already recorded `output.hash` and nothing ever read it, so a hand-edited terminal output reported `fresh` and would have shipped. `stale` and `modified` must stay distinct — their remedies are opposite (FR-017a)
+- [ ] T043 [P] [US1] [tier:fast] RED: `pc explain` tests in `tests/integration/explain.test.ts` — the chain names each link back to the authored inputs; **changing `spoken` leaves `voiceover` and `podcast` fresh** while narration reports `needs-review`; the explanation says propagation halts at the human and does not imply it passes through (FR-011a)
+- [ ] T044 [US1] [tier:powerful] Implement `pc explain <node>` in `src/cli/explain.ts` — walk the causal chain, distinguishing dependency links (propagate) from observation links (halt at a human decision). **The verb exists because the chain is counter-intuitive**: readers expect observation to propagate like dependency, and it does not (FR-011a, contracts/cli.md)
+- [ ] T045 [US1] [tier:powerful] Add the milestone-boundary test in `tests/unit/architecture.test.ts` — assert no module under `src/state/`, `src/graph/`, or `src/manifest/` transitively imports `src/providers/` or `src/assets/s3.ts`. **This is what makes research R6 real**: without it the boundary is a comment, and FR-010's "no network, no craft tools" holds by discipline rather than by construction
 
 **Checkpoint**: US1 is independently demonstrable. `pc status` answers correctly, offline, with nothing installed. **This is the MVP.**
 
@@ -123,15 +127,15 @@ so the boundary fails the build rather than eroding quietly.
 
 ### Tests for User Story 3
 
-- [ ] T042 [P] [US3] [tier:fast] RED: waiver tests in `tests/integration/waiver.test.ts` — waiving with a reason clears `needs-review`; the reason is recorded; a subsequent change to the tracked node re-raises it; the production is not releasable until a human decides (FR-021, FR-022, SC-006, quickstart S6)
-- [ ] T043 [P] [US3] [tier:fast] RED: waiver-refusal test — an empty or whitespace-only reason is refused (FR-022b)
-- [ ] T044 [P] [US3] [tier:powerful] RED: **dual-signal independence** tests in `tests/integration/dual-signal.test.ts` — using `tests/fixtures/dual-signal`, changing `spoken` raises `needs-review` on `narration` AND `stale` on `transcript`; rebuilding `transcript` does NOT clear the review; waiving the review does NOT change `transcript`'s state (FR-022a, quickstart S7). **The subtlest requirement in the spec** — this is where one signal most easily swallows the other
+- [ ] T046 [P] [US3] [tier:fast] RED: waiver tests in `tests/integration/waiver.test.ts` — waiving with a reason clears `needs-review`; the reason is recorded; a subsequent change to the tracked node re-raises it; the production is not releasable until a human decides (FR-021, FR-022, SC-006, quickstart S6)
+- [ ] T047 [P] [US3] [tier:fast] RED: waiver-refusal test — an empty or whitespace-only reason is refused (FR-022b)
+- [ ] T048 [P] [US3] [tier:powerful] RED: **dual-signal independence** tests in `tests/integration/dual-signal.test.ts` — using `tests/fixtures/dual-signal`, changing `spoken` raises `needs-review` on `narration` AND `stale` on `transcript`; rebuilding `transcript` does NOT clear the review; waiving the review does NOT change `transcript`'s state (FR-022a, quickstart S7). **The subtlest requirement in the spec** — this is where one signal most easily swallows the other
 
 ### Implementation for User Story 3
 
-- [ ] T045 [US3] [tier:balanced] Implement ledger waiver writing in `src/ledger/store.ts` — persist `waived_hash`, `reason`, `at`; refuse an empty reason (FR-021, FR-022b)
-- [ ] T046 [US3] [tier:powerful] Implement waiver evaluation in `src/state/resolve.ts` — `needs-review` is raised when the tracked node's current hash differs from `waived_hash`. **Storing a boolean instead would silently swallow every later revision** — the exact false-clean the advisory edge exists to prevent (FR-022)
-- [ ] T047 [US3] [tier:balanced] Implement `pc review <node> --waive --reason` in `src/cli/review.ts` — `--reason` required, usage error exits 2 (contracts/cli.md)
+- [ ] T049 [US3] [tier:balanced] Implement ledger waiver writing in `src/ledger/store.ts` — persist `waived_hash`, `reason`, `at`; refuse an empty reason (FR-021, FR-022b)
+- [ ] T050 [US3] [tier:powerful] Implement waiver evaluation in `src/state/resolve.ts` — `needs-review` is raised when the tracked node's current hash differs from `waived_hash`. **Storing a boolean instead would silently swallow every later revision** — the exact false-clean the advisory edge exists to prevent (FR-022)
+- [ ] T051 [US3] [tier:balanced] Implement `pc review <node> --waive --reason` in `src/cli/review.ts` — `--reason` required, usage error exits 2 (contracts/cli.md)
 
 **Checkpoint**: **Milestone 1 complete.** US1 and US3 both independently demonstrable with no provider, no store, no network.
 
@@ -145,20 +149,20 @@ so the boundary fails the build rather than eroding quietly.
 
 ### Tests for User Story 2
 
-- [ ] T048 [P] [US2] [tier:fast] RED: provider-contract conformance tests in `tests/contract/provider.test.ts` — a well-formed BuildResponse is accepted; exit non-zero is failure; zero outputs is failure; an undeclared output is failure (FR-033, contracts/provider.md)
-- [ ] T049 [P] [US2] [tier:fast] RED: build-records-provenance tests in `tests/integration/build.test.ts` — a successful build writes inputs-as-hashed, tool, and version; a failed build writes no record claiming success (FR-013, FR-017)
-- [ ] T050 [P] [US2] [tier:fast] RED: indivisibility test in `tests/integration/build.test.ts` — assert the CLI exposes no `--no-record` flag and no `record` verb (FR-014, SC-009, quickstart S8)
-- [ ] T051 [P] [US2] [tier:fast] RED: missing-provider test — building a target whose tool is unavailable fails naming it, and does not skip or substitute (FR-036, spec § Edge Cases)
-- [ ] T052 [P] [US2] [tier:fast] RED: provider-runnable-by-hand test in `tests/contract/provider.test.ts` — the fake provider produces outputs when piped a BuildRequest with no production-control present (FR-031, SC-008, quickstart S11)
+- [ ] T052 [P] [US2] [tier:fast] RED: provider-contract conformance tests in `tests/contract/provider.test.ts` — a well-formed BuildResponse is accepted; exit non-zero is failure; zero outputs is failure; an undeclared output is failure (FR-033, contracts/provider.md)
+- [ ] T053 [P] [US2] [tier:fast] RED: build-records-provenance tests in `tests/integration/build.test.ts` — a successful build writes inputs-as-hashed, tool, and version; a failed build writes no record claiming success (FR-013, FR-017)
+- [ ] T054 [P] [US2] [tier:fast] RED: indivisibility test in `tests/integration/build.test.ts` — assert the CLI exposes no `--no-record` flag and no `record` verb (FR-014, SC-009, quickstart S8)
+- [ ] T055 [P] [US2] [tier:fast] RED: missing-provider test — building a target whose tool is unavailable fails naming it, and does not skip or substitute (FR-036, spec § Edge Cases)
+- [ ] T056 [P] [US2] [tier:fast] RED: provider-runnable-by-hand test in `tests/contract/provider.test.ts` — the fake provider produces outputs when piped a BuildRequest with no production-control present (FR-031, SC-008, quickstart S11)
 
 ### Implementation for User Story 2
 
-- [ ] T053 [US2] [tier:balanced] Define BuildRequest/BuildResponse `zod` schemas in `src/providers/contract.ts` (contracts/provider.md)
-- [ ] T054 [US2] [tier:powerful] Implement the provider runner in `src/providers/run.ts` — subprocess, JSON on stdin, JSON on stdout, stderr as diagnostics; treat non-zero exit, zero outputs, or undeclared outputs as failure. **The architecture's boundary**: it must never branch on which tool it is invoking (Principle IV, FR-033)
-- [ ] T055 [US2] [tier:powerful] Implement `pc build` in `src/cli/build.ts` — resolve inputs to local paths, invoke the provider, hash the outputs **itself** rather than trusting the provider's claim, ingest, write the ledger — all in one invocation with no alternative path (FR-014, FR-030, contracts/provider.md)
-- [ ] T056 [US2] [tier:balanced] Record `producer_impure` from the provider's declaration and `built_at` as ISO-8601 UTC; ensure `built_at` is never read by any decision (FR-032, research R7)
-- [ ] T057 [US2] [tier:balanced] Implement producer version-drift reporting in `src/state/resolve.ts` — report the change; never auto-stale on it (FR-016)
-- [ ] T058 [P] [US2] [tier:balanced] Implement `pc validate` in `src/cli/validate.ts` — record the verdict; exit 1 on invalid (FR-006b, contracts/cli.md)
+- [ ] T057 [US2] [tier:balanced] Define BuildRequest/BuildResponse `zod` schemas in `src/providers/contract.ts` (contracts/provider.md)
+- [ ] T058 [US2] [tier:powerful] Implement the provider runner in `src/providers/run.ts` — subprocess, JSON on stdin, JSON on stdout, stderr as diagnostics; treat non-zero exit, zero outputs, or undeclared outputs as failure. **The architecture's boundary**: it must never branch on which tool it is invoking (Principle IV, FR-033)
+- [ ] T059 [US2] [tier:powerful] Implement `pc build` in `src/cli/build.ts` — resolve inputs to local paths, invoke the provider, hash the outputs **itself** rather than trusting the provider's claim, ingest, write the ledger — all in one invocation with no alternative path (FR-014, FR-030, contracts/provider.md)
+- [ ] T060 [US2] [tier:balanced] Record `producer_impure` — including the provider's stated **reason**, not just the fact — and `built_at` as ISO-8601 UTC; ensure `built_at` is never read by any decision; a provider declaring impurity without a reason is refused (FR-032, research R7)
+- [ ] T061 [US2] [tier:balanced] Implement producer version-drift reporting in `src/state/resolve.ts` — report the change; never auto-stale on it (FR-016)
+- [ ] T062 [P] [US2] [tier:balanced] Implement `pc validate` in `src/cli/validate.ts` — record the verdict; exit 1 on invalid (FR-006b, contracts/cli.md)
 
 **Checkpoint**: US2 independently demonstrable with the fake provider.
 
@@ -172,18 +176,18 @@ so the boundary fails the build rather than eroding quietly.
 
 ### Tests for User Story 4
 
-- [ ] T059 [P] [US4] [tier:fast] RED: content-addressing tests in `tests/unit/assets/store.test.ts` — identical bytes are a no-op; different bytes are a distinct address; a stored asset is immutable (FR-024, FR-028)
-- [ ] T060 [P] [US4] [tier:fast] RED: asset-add tests in `tests/integration/asset.test.ts` — a stand-in is written beside the file carrying the address, media type, and size (FR-023)
-- [ ] T061 [P] [US4] [tier:fast] RED: absent-asset test — an operation that needs the bytes fails loud naming the asset and its address; **status does not** (FR-036, spec § Edge Cases)
-- [ ] T062 [P] [US4] [tier:balanced] RED: S3 adapter contract test in `tests/contract/s3-store.test.ts` against MinIO via testcontainers; **the skip announces itself loudly** when Docker is absent — a silent skip is a false-clean (research R5, FR-027, SC-010)
+- [ ] T063 [P] [US4] [tier:fast] RED: content-addressing tests in `tests/unit/assets/store.test.ts` — identical bytes are a no-op; different bytes are a distinct address; a stored asset is immutable (FR-024, FR-028)
+- [ ] T064 [P] [US4] [tier:fast] RED: asset-add tests in `tests/integration/asset.test.ts` — a stand-in is written beside the file carrying the address, media type, and size (FR-023)
+- [ ] T065 [P] [US4] [tier:fast] RED: absent-asset test — an operation that needs the bytes fails loud naming the asset and its address; **status does not** (FR-036, spec § Edge Cases)
+- [ ] T066 [P] [US4] [tier:balanced] RED: S3 adapter contract test in `tests/contract/s3-store.test.ts` against MinIO via testcontainers; **the skip announces itself loudly** when Docker is absent — a silent skip is a false-clean (research R5, FR-027, SC-010)
 
 ### Implementation for User Story 4
 
-- [ ] T063 [US4] [tier:balanced] Define the `AssetStore` interface in `src/assets/store.ts` — constructor DI, interface-first; the in-memory double already satisfies it (constitution § Technology)
-- [ ] T064 [US4] [tier:balanced] Implement the S3-compatible adapter in `src/assets/s3.ts` using `@aws-sdk/client-s3` with a configurable endpoint; the backend is a config value, never an architectural commitment (FR-027, research R1)
-- [ ] T065 [US4] [tier:balanced] Implement the local read-through cache in `src/assets/cache.ts` writing to `.production/cache/` (gitignored)
-- [ ] T066 [US4] [tier:balanced] Implement input resolution in `src/assets/resolve.ts` — store → cache → local path, so providers receive only local paths and never credentials (FR-030)
-- [ ] T067 [US4] [tier:balanced] Implement `pc asset add` in `src/cli/asset.ts` — hash, upload-if-absent, write the stand-in (FR-023, FR-024)
+- [ ] T067 [US4] [tier:balanced] Define the `AssetStore` interface in `src/assets/store.ts` — constructor DI, interface-first; the in-memory double already satisfies it (constitution § Technology)
+- [ ] T068 [US4] [tier:balanced] Implement the S3-compatible adapter in `src/assets/s3.ts` using `@aws-sdk/client-s3` with a configurable endpoint; the backend is a config value, never an architectural commitment (FR-027, research R1)
+- [ ] T069 [US4] [tier:balanced] Implement the local read-through cache in `src/assets/cache.ts` writing to `.production/cache/` (gitignored)
+- [ ] T070 [US4] [tier:balanced] Implement input resolution in `src/assets/resolve.ts` — store → cache → local path, so providers receive only local paths and never credentials (FR-030)
+- [ ] T071 [US4] [tier:balanced] Implement `pc asset add` in `src/cli/asset.ts` — hash, upload-if-absent, write the stand-in (FR-023, FR-024)
 
 ---
 
@@ -193,18 +197,18 @@ so the boundary fails the build rather than eroding quietly.
 
 **Independent test**: Rebind a target to a different tool; the structure and prior records stay valid; the change is reported, not silently ignored.
 
-- [ ] T068 [P] [US5] [tier:fast] RED: tool-swap test in `tests/integration/swap.test.ts` — rebinding a target to a different provider leaves the graph and existing records valid; version drift is reported and does not by itself stale (FR-016, FR-034)
-- [ ] T069 [US5] [tier:balanced] Verify and, where needed, correct that no module encodes a specific provider's behavior; the runner treats every tool identically (FR-034, Principle VI)
+- [ ] T072 [P] [US5] [tier:fast] RED: tool-swap test in `tests/integration/swap.test.ts` — rebinding a target to a different provider leaves the graph and existing records valid; version drift is reported and does not by itself stale (FR-016, FR-034)
+- [ ] T073 [US5] [tier:balanced] Verify and, where needed, correct that no module encodes a specific provider's behavior; the runner treats every tool identically (FR-034, Principle VI)
 
 ---
 
 ## Phase 8: Polish & Cross-Cutting Concerns
 
-- [ ] T070 [P] [tier:fast] Add `npm run test:offline` and `npm run test:integration:store` scripts backing quickstart S9/S10
-- [ ] T071 [P] [tier:fast] Verify every source file is under 500 lines; decompose any that is not (constitution § Technology)
-- [ ] T072 [P] [tier:balanced] Author `README.md` usage for the CLI surface and the provider contract, linking contracts/ rather than restating it
-- [ ] T073 [P] [tier:fast] Add `examples/` fixture episode with a note that it is a fixture and that authored content never lives in this repository (Principle VII)
-- [ ] T074 [tier:powerful] Walk all 12 quickstart scenarios end-to-end and confirm each behaves as written; treat any divergence as a defect in the code or the spec, not as a scenario to reword
+- [ ] T074 [P] [tier:fast] Add `npm run test:offline` and `npm run test:integration:store` scripts backing quickstart S9/S10
+- [ ] T075 [P] [tier:fast] Verify every source file is under 500 lines; decompose any that is not (constitution § Technology)
+- [ ] T076 [P] [tier:balanced] Author `README.md` usage for the CLI surface and the provider contract, linking contracts/ rather than restating it
+- [ ] T077 [P] [tier:fast] Add `examples/` fixture episode with a note that it is a fixture and that authored content never lives in this repository (Principle VII)
+- [ ] T078 [tier:powerful] Walk all 12 quickstart scenarios end-to-end and confirm each behaves as written; treat any divergence as a defect in the code or the spec, not as a scenario to reword
 
 ---
 
@@ -257,11 +261,12 @@ built on it inherits the error.
 
 ### Tier distribution
 
-74 tasks, per `stackctl resolve-tiers`: **36 `fast`** (RED tests, fixtures, scaffolding),
-**29 `balanced`** (standard implementation), **9 `powerful`**.
+78 tasks, per `stackctl resolve-tiers`: **38 `fast`** (RED tests, fixtures, scaffolding),
+**29 `balanced`** (standard implementation), **11 `powerful`**.
 
-The nine `powerful` tasks are the tree hash (T009), freshness (T033), state resolution
-(T034), the milestone-boundary test (T041), dual-signal independence (T044), waiver
-evaluation (T046), the provider runner (T054), `pc build` (T055), and the quickstart walk
-(T074) — each cross-cutting, subtle, or high-blast-radius. Everything else earns a cheaper
+The eleven `powerful` tasks are the tree hash (T009), freshness (T033), state resolution
+(T034), `modified` detection (T042), `pc explain` (T044), the milestone-boundary test
+(T045), dual-signal independence (T048), waiver evaluation (T050), the provider runner
+(T058), `pc build` (T059), and the quickstart walk (T078) — each cross-cutting, subtle, or
+high-blast-radius. Everything else earns a cheaper
 tier, which is the point of tagging rather than defaulting.

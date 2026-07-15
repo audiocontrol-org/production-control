@@ -59,20 +59,36 @@ may verify what it received; it is never a thing the provider must fetch.
 |---|---|---|
 | `outputs` | yes | Paths **relative to `output_dir`**. Must be non-empty |
 | `tool` | yes | Name and version, recorded in the ledger for drift reporting (FR-016) |
-| `impure` | no | `true` if this tool cannot promise identical output from identical input |
+| `impure` | no | Absent means referentially transparent. Otherwise `{ "reason": "<why>" }` — see below |
 | `validation` | no | The provider's own verdict on what it produced |
+
+```json
+"impure": { "reason": "synthesizes narration via a hosted model; output varies by model version" }
+```
 
 ## Rules
 
 1. **A provider MUST be runnable by hand** with local inputs and no production-control
    present (FR-031). If it cannot be, the boundary is drawn wrong.
 2. **A provider MUST NOT contact the asset store** or hold credentials for it (FR-030).
-3. **A provider SHOULD be a pure function** — inputs in, outputs out; no hidden state, no
-   global config, no cache, no network. production-control provides the world; the provider
-   transforms it.
-4. **A provider that cannot be pure MUST declare `impure: true`** (FR-032). A model call or
-   a remote font fetch makes a tool impure. Purity is a norm, not an invariant — but an
-   *undeclared* impurity turns "deterministic production" into a claim nobody checked.
+3. **A provider SHOULD be referentially transparent** — the same inputs yield the same
+   outputs. No hidden state, no global config, no cache, no network.
+   production-control provides the world; the provider transforms it.
+
+   *Referentially transparent*, not *pure*: a provider writes files, so it has side effects
+   by definition. What must hold is that its outputs are a function of its inputs.
+
+4. **A provider that cannot be MUST declare `impure` AND state why** (FR-032). A clock, a
+   random source, a remote fetch, or a model call all make a tool impure. Referential
+   transparency is a norm, not an invariant — but an *undeclared* impurity turns
+   "deterministic production" into a claim nobody checked.
+
+   **The reason is not paperwork.** `impure: true` says only "do not expect the same bytes
+   twice." A reason says *which kind* of impurity — a font fetch is incidental and fixable
+   by vendoring; a model call is inherent and permanent; a clock in a filename is a bug
+   someone should just fix. A reader deciding whether to trust, cache, or repair an artifact
+   needs to know which. Same logic as requiring a reason on a waiver: without one, it is not
+   a decision, just a flag.
 5. **A provider MUST declare everything it produces.** Emitting an undeclared file is a
    failure, not a bonus (FR-033).
 6. **A provider MUST NOT write outside `output_dir`.** Not enforced in v0.1 (sandboxing is

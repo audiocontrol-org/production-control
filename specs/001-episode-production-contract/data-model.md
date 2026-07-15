@@ -5,6 +5,32 @@
 Every shape here is parsed at the boundary through a `zod` schema (research R2). Nothing
 downstream sees an unvalidated value.
 
+## Two kinds of relationship — never call both "edge"
+
+The graph carries **two distinct relationships**, and conflating them is the easiest way to
+get this system wrong. An *identity* is not a relationship: it is what a node *is*, the
+thing relationships are drawn between.
+
+| | **Dependency** (`inputs`) | **Observation** (`follows`) |
+|---|---|---|
+| Reads as | "is built from" | "is a response to" |
+| Drawn from | a derived node | an authored node |
+| On upstream change | downstream goes `stale` | tracker goes `needs-review` |
+| Resolved by | a machine rebuilding | a human deciding |
+| Propagates | yes, transitively | **no — it stops here** |
+
+A dependency is a claim about *derivation*. An observation is a claim about *attention*:
+"someone should look at this again." FR-022a exists because these must both fire and
+neither may suppress the other.
+
+**The consequence is easy to miss.** Revising `spoken` does *not* stale `voiceover` or
+`podcast`, even though the podcast is ultimately a performance of that script — because
+`voiceover ← [narration]` and narration's *bytes* have not changed. It raises
+`needs-review` on narration and stops. Only when a human re-records does the dependency
+chain carry the change downstream. **The human is a node in the graph, and propagation
+halts at them.** `pc explain` (FR-011a) exists to make this visible, because a naive reader
+expects observation to propagate like dependency, and it does not.
+
 ## Core distinction
 
 Every node is exactly one of two kinds. This is the model's load-bearing decision — it is
@@ -67,7 +93,7 @@ Generic and reusable; contains nothing subject-specific (FR-004, Principle VII).
 | Field | Type | Notes |
 |---|---|---|
 | `cmd` | string[] | argv. The system does not interpret it beyond executing it |
-| `impure` | boolean? | Default `false`. Declares the tool cannot promise identical output from identical input (FR-032) |
+| `impure` | `{ reason: string }?` | Absent = referentially transparent. Present declares the tool cannot promise identical output from identical input, and states why (FR-032) |
 
 ### Ledger — `.production/ledger.yaml`
 
@@ -85,7 +111,7 @@ state only — git holds the history (design record).
 | Field | Type | Notes |
 |---|---|---|
 | `producer` | `{ tool: string, version: string }` | Version drift is reported, never auto-staling (FR-016) |
-| `producer_impure` | boolean? | Recorded as declared at build time |
+| `producer_impure` | `{ reason: string }?` | Absent = referentially transparent. Recorded as declared at build time, reason included — a bare flag would not say whether the impurity is incidental, inherent, or a bug (FR-032) |
 | `inputs` | map<Identity, Hash> | Hashes **as of the build** — the comparison basis |
 | `output` | `{ path: string, hash: Hash }` | |
 | `built_at` | ISO-8601 UTC | Recorded, never decided on (research R7) |
@@ -128,13 +154,19 @@ kinds answer different questions.
 
 **Derived** (FR-006):
 
-| State | Meaning |
-|---|---|
-| `fresh` | Recorded inputs match reality |
-| `stale` | A declared input's content differs from what was recorded |
-| `missing` | Never built |
-| `blocked` | An input is absent, so the question cannot be asked |
-| `invalid` | Validation failed |
+| State | Meaning | Remedy |
+|---|---|---|
+| `fresh` | Recorded inputs match reality, and the output is what we built | — |
+| `stale` | A declared input's content differs from what was recorded | rebuild |
+| `modified` | Inputs unchanged, but the **output's** content differs from what was recorded — someone edited it outside the system (FR-017a) | a human decides |
+| `missing` | Never built | build |
+| `blocked` | An input is absent, so the question cannot be asked | supply the input |
+| `invalid` | Validation failed | fix and rebuild |
+
+`stale` and `modified` have **opposite remedies**, which is why they cannot share a state:
+rebuilding a `stale` node is correct, while rebuilding a `modified` node destroys a human's
+work. This is the advisory-edge insight applied to derived nodes — a human touched a
+machine-made thing, so the machine must ask rather than assume.
 
 **Authored** (FR-006):
 
@@ -175,7 +207,21 @@ for each declared input of a derived node:
     current  = hash(resolve(input))
     recorded = ledger.artifacts[node].inputs[input]
     if current != recorded  -> stale, cause: input changed
+
+# then, only if no input moved (FR-017a):
+current  = hash(node.output.path)
+recorded = ledger.artifacts[node].output.hash
+if current != recorded  -> modified, cause: output edited outside the system
 ```
+
+**The output check closes a false-clean.** The ledger already records `output.hash`; before
+FR-017a nothing ever read it. A hand-edited terminal output — a podcast, a website, an
+ebook, anything with nothing downstream — had unchanged inputs and therefore reported
+`fresh`, and would have shipped. Mid-chain edits were caught only by accident, via the
+downstream node noticing its recorded input hash no longer matched.
+
+The order matters: `stale` is evaluated first, because if the inputs moved, the output was
+*going* to be replaced anyway and the divergence is not news.
 
 **Transitive staleness is emergent, not implemented.** Rebuilding a node changes its output
 hash; that hash is a recorded input of its downstream nodes; the comparison above then

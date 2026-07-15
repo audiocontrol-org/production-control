@@ -247,7 +247,7 @@ is reported rather than silently ignored.
 
 - **FR-006**: The system MUST report exactly one state per part. The available states
   depend on the part's kind, because the two kinds answer different questions:
-  - *Derived*: `fresh`, `stale`, `missing`, `blocked`, or `invalid`.
+  - *Derived*: `fresh`, `stale`, `missing`, `blocked`, `invalid`, or `modified`.
   - *Authored*: `present`, `absent`, or `needs-review`.
 
   An authored part has no `stale` state — it has no producer, so staleness is not a
@@ -273,6 +273,11 @@ is reported rather than silently ignored.
   craft tool to be installed, and MUST NOT modify the production.
 - **FR-011**: The system MUST report the actionable frontier — the set of parts a human
   or agent could act on now — as a distinct query from full state.
+- **FR-011a**: The system MUST be able to explain a single part's state as a causal chain
+  back to the authored inputs responsible for it, naming each link. Where the chain reaches
+  a part awaiting a human decision, the explanation MUST say so and MUST NOT imply the
+  effect propagates past that point on its own — a pending human decision is where
+  propagation stops, not a link it passes through.
 - **FR-012**: The system MUST answer whether the production can be released. It MUST
   answer yes only when every target is fresh, every validation has passed, and no
   outstanding review remains unwaived. When the answer is no, it MUST name what blocks.
@@ -290,6 +295,17 @@ is reported rather than silently ignored.
 - **FR-016**: The system MUST report when a producing tool's version has changed since an
   output was built, and MUST NOT treat that alone as making the output stale.
 - **FR-017**: A failed build MUST NOT produce a record claiming success.
+- **FR-017a**: The system MUST detect that a derived output's content no longer matches
+  what was recorded when it was built, and MUST report it as `modified` — distinctly from
+  `stale`. The two are different situations with opposite remedies: `stale` means the
+  inputs moved and rebuilding is correct; `modified` means a human changed the output and
+  rebuilding would destroy their work. Reporting one as the other would either discard work
+  silently or prompt a rebuild that fixes nothing.
+- **FR-017b**: A `modified` output MUST block release under FR-012 until a human resolves
+  it. The system MUST NOT decide on its behalf whether the modification is legitimate.
+  *This version detects the divergence and stops; it does not adopt a policy on whether
+  editing generated outputs is permitted, and MUST NOT silently accept the edit — silent
+  acceptance is itself a policy, and not one anyone chose.*
 
 **Human-made artifacts and review**
 
@@ -342,9 +358,12 @@ is reported rather than silently ignored.
   credentials for it.
 - **FR-031**: A producing tool MUST remain runnable by hand, outside the system, with
   local inputs and no system present.
-- **FR-032**: A producing tool that cannot produce identical output from identical input
-  MUST declare itself as such. The system MUST record the output content actually
-  produced, so that everything downstream remains reproducible regardless.
+- **FR-032**: A producing tool SHOULD be referentially transparent: the same inputs yield
+  the same outputs. A tool that cannot be — because it consults a clock, a random source, a
+  network resource, or a model — MUST declare itself as such **and MUST state why**. A bare
+  "this is not reproducible" flag is not enough: the reason is what tells a reader whether
+  the impurity is fixable, incidental, or inherent. The system MUST record the output
+  content actually produced, so that everything downstream remains reproducible regardless.
 - **FR-033**: The system MUST treat a producing tool as failed when it exits with an
   error, produces nothing, or produces something it did not declare.
 - **FR-034**: The production's structure and records MUST remain valid when any producing

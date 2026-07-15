@@ -76,6 +76,35 @@ Note that `rebuild` and `validate` here are **actions**, not states. `pc next` a
 could you do", so it names the action; `unvalidated` is likewise an action prompt rather
 than a state (FR-006b).
 
+## `pc explain <node> [--json]`
+
+Walks the causal chain behind one node's state, back to the authored inputs responsible
+(FR-011a). Read verb — always exits 0.
+
+```
+$ pc explain podcast
+podcast  fresh
+  ← voiceover  fresh
+      ← narration  needs-review   spoken changed since take-03 was recorded
+                   └─ a human must decide; nothing downstream moves until they do
+
+$ pc explain transcript
+transcript  stale   spoken's content differs from the recorded input
+  ← spoken     present
+  ← narration  needs-review   spoken changed since take-03 was recorded
+```
+
+**The chain must show where it stops.** Revising `spoken` does not stale `voiceover` or
+`podcast` — `voiceover ← [narration]`, and narration's *bytes* have not changed. It raises
+`needs-review` on narration and halts. Only a human re-recording carries the change
+downstream.
+
+This verb exists because that is not what people expect. A reader who understands the design
+still predicts `spoken → voiceover → podcast`, reasoning about the podcast as "a performance
+of the script" rather than about the declared inputs. `pc explain` shows the real path, and
+shows the human standing in it. An explanation that implied propagation past a pending
+decision would be worse than no explanation.
+
 ## `pc build <target> [--json]`
 
 Builds **and records provenance as one indivisible act** (FR-014).
