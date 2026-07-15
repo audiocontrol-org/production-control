@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { execFile } from 'node:child_process';
 import { readdir, readFile } from 'node:fs/promises';
 import { promisify } from 'node:util';
-import path from 'node:path';
+import * as path from 'node:path';
 
 const exec = promisify(execFile);
 const ROOT = path.resolve(import.meta.dirname, '..', '..');
@@ -48,7 +48,10 @@ describe('build emit', () => {
       }
     }
 
-    expect(offenders, `dist/ contains unrewritten @/ imports Node cannot resolve: ${offenders.join(', ')}`).toEqual([]);
+    expect(
+      offenders,
+      `dist/ contains unrewritten @/ imports Node cannot resolve: ${offenders.join(', ')}`
+    ).toEqual([]);
   }, 120_000);
 
   it('every emitted entry point is actually loadable by node', async () => {
@@ -69,7 +72,10 @@ describe('build emit', () => {
     // Importing every emitted module proves the specifiers resolve for real,
     // rather than merely not matching a regex.
     for (const file of emitted) {
-      await expect(import(file), `node could not load ${path.relative(ROOT, file)}`).resolves.toBeDefined();
+      await expect(
+        import(file),
+        `node could not load ${path.relative(ROOT, file)}`
+      ).resolves.toBeDefined();
     }
   }, 120_000);
 });
