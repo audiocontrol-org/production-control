@@ -10,6 +10,7 @@
 {"id": "T010", "tierLabel": "fast", "model": "haiku", "commitRange": "77ae069..c7a4c56", "reviewClean": true}
 {"id": "T011", "tierLabel": "balanced", "model": "sonnet", "commitRange": "77ae069..c7a4c56", "reviewClean": true}
 {"id": "T012", "tierLabel": "balanced", "model": "sonnet", "commitRange": "77ae069..c7a4c56", "reviewClean": true}
+{"id": "T013", "tierLabel": "balanced", "model": "sonnet", "commitRange": "c7a4c56..59a3d2b", "reviewClean": true}
 {"id": "T014", "tierLabel": "fast", "model": "haiku", "commitRange": "77ae069..c7a4c56", "reviewClean": true}
 {"id": "T015", "tierLabel": "balanced", "model": "sonnet", "commitRange": "77ae069..c7a4c56", "reviewClean": true}
 {"id": "T016", "tierLabel": "balanced", "model": "sonnet", "commitRange": "77ae069..c7a4c56", "reviewClean": true}
