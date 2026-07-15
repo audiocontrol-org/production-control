@@ -1,5 +1,6 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
+import type { InputResolver } from '@/assets/resolve.js';
 import type { Graph, Node } from '@/graph/build.js';
 import type { ArtifactRecord, Ledger } from '@/ledger/schema.js';
 import { readLedger, writeLedger } from '@/ledger/store.js';
@@ -42,6 +43,11 @@ export interface BuildContext {
   readonly graph: Graph;
   readonly ledger: Ledger;
   readonly runner: ProviderRunner;
+  /**
+   * How a stand-in's bytes are made local, before a provider is spawned (FR-030). See
+   * `InputContext.assets` — this is the same seam, and step 1 below is where it is used.
+   */
+  readonly assets: InputResolver;
   /**
    * `built_at`, ISO-8601 UTC. Injected because a clock is a seam — and because reading one in
    * here would put a timestamp inside the module that must never decide on one (research R7).

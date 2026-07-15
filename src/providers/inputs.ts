@@ -1,6 +1,7 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
-import { resolveAuthored } from '@/assets/pointer.js';
+import { resolveAuthored, type AssetPointer } from '@/assets/pointer.js';
+import type { InputResolver } from '@/assets/resolve.js';
 import type { Graph, Node } from '@/graph/build.js';
 import { hashFile } from '@/hash/content.js';
 import type { Ledger } from '@/ledger/schema.js';
@@ -33,6 +34,17 @@ export interface InputContext {
   readonly episodeDir: string;
   readonly graph: Graph;
   readonly ledger: Ledger;
+  /**
+   * How a stand-in's bytes are made local (T070, FR-030). Injected — so a test needs no S3, and
+   * so this module never learns what a bucket or a credential is.
+   *
+   * Required rather than optional, and its resolution is deliberately LAZY (see
+   * `assets/config.ts`): an episode whose inputs are all ordinary files must build with no store
+   * configured at all, so "no store is configured" has to surface at the moment bytes are wanted
+   * rather than at the moment a build starts. An optional resolver would put that same decision
+   * here, where it would read as "no resolver, no bytes, carry on" — a fallback, not a refusal.
+   */
+  readonly assets: InputResolver;
 }
 
 /**
@@ -88,12 +100,17 @@ async function resolveOne(
  * addresses, when one is committed beside it.
  *
  * The stand-in case is where the boundary bites. The stand-in carries a content address and
- * nothing else; if the bytes it names are not on this machine, they must be FETCHED, and
- * fetching is not something a provider may be asked to do (FR-030). No asset store is
- * configured for this episode today, so there is nothing here to fetch them from — and the
- * honest answer is a refusal naming the asset and its address, never a build that proceeds
- * without them. (This is the refusal FR-036 requires and `pc status` deliberately does not
- * make: reporting state never needs the bytes; building does.)
+ * nothing else; if the bytes it names are not on this machine, they must be FETCHED — and
+ * fetching is not something a provider may be asked to do (FR-030). So it happens HERE, through
+ * an injected `InputResolver`, and what the provider receives is an ordinary local path.
+ *
+ * **This is the first operation that genuinely needs the bytes, and therefore the first place
+ * their absence can surface** (spec § Edge Cases). `pc status` resolved the same stand-in
+ * offline and answered, because the address was already in the file and reporting state needs
+ * nothing more (FR-025). A build needs the actual bytes, so a store that is unreachable — or
+ * that does not hold the address — is a REFUSAL here, naming the input and its content address
+ * (FR-036). Never a skipped target, never a default, never a build recorded against content
+ * nobody has.
  */
 async function resolveAuthoredInput(
   context: InputContext,
@@ -122,12 +139,15 @@ async function resolveAuthoredInput(
   if (resolution.kind === 'pointer') {
     const address = resolution.pointer.asset;
     if (!(await isFile(fullPath))) {
-      throw new Error(
-        `Cannot build "${targetId}": its declared input "${node.id}" is held outside version ` +
-          `control as asset ${address}, and those bytes are not present at "${declaredPath}" on ` +
-          `this machine. A provider is never handed a store or a credential (FR-030), so the ` +
-          `bytes must be local before the build runs. Fetch the asset and try again.`
+      // Not on this machine: fetch it. The provider still never learns the store exists (FR-030).
+      const localPath = await fetchAsset(
+        context,
+        targetId,
+        node.id,
+        declaredPath,
+        resolution.pointer
       );
+      return { path: localPath, hash: address };
     }
 
     // The bytes ARE here beside the stand-in. They are only this input if they hash to the
@@ -146,6 +166,54 @@ async function resolveAuthoredInput(
   }
 
   return { path: fullPath, hash: await hashFile(fullPath) };
+}
+
+/**
+ * Where a fetched asset is materialized for a provider to read. Under `.production/` — beside the
+ * read-through byte cache — because it is derived, disposable, and reproducible from the store.
+ */
+function assetDir(episodeDir: string): string {
+  return path.join(episodeDir, '.production', 'assets');
+}
+
+/** The read-through cache `storeBackedResolver` keeps, per `assets/cache.ts`'s stated convention. */
+export function assetCacheDir(episodeDir: string): string {
+  return path.join(episodeDir, '.production', 'cache');
+}
+
+/**
+ * Fetches a stand-in's bytes to a local path, or REFUSES naming the input AND its content address.
+ *
+ * The address is in the message because it is the only handle anyone has on bytes that are not in
+ * the repo: it is what an operator greps the bucket for, what tells two people they are talking
+ * about the same asset, and what distinguishes "the store is down" from "this asset was never
+ * uploaded". A refusal that named only the input would send someone to look at a file that is
+ * deliberately not there (FR-036).
+ *
+ * The underlying cause is preserved and quoted rather than replaced — "unreachable" and "not
+ * found at address" are different problems with different remedies, and collapsing them into one
+ * generic failure would cost the reader the only fact that tells them which they have.
+ */
+async function fetchAsset(
+  context: InputContext,
+  targetId: Identity,
+  inputId: Identity,
+  declaredPath: string,
+  pointer: AssetPointer
+): Promise<string> {
+  try {
+    return await context.assets.resolveToLocalPath(pointer, assetDir(context.episodeDir));
+  } catch (error) {
+    const cause = error instanceof Error ? error.message : String(error);
+    throw new Error(
+      `Cannot build "${targetId}": its declared input "${inputId}" is held outside version ` +
+        `control as asset ${pointer.asset} (declared at "${declaredPath}"), those bytes are not ` +
+        `on this machine, and they could not be obtained from the asset store — ${cause} ` +
+        `A provider is never handed a store or a credential (FR-030), so the bytes must be local ` +
+        `before the build runs. This build will not skip the target or substitute a default.`,
+      { cause: error }
+    );
+  }
 }
 
 /**

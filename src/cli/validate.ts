@@ -1,3 +1,5 @@
+import * as process from 'node:process';
+import { envInputResolver } from '@/assets/config.js';
 import {
   EXIT_FAILED,
   EXIT_OK,
@@ -10,6 +12,7 @@ import {
 } from '@/cli/runtime.js';
 import type { Identity } from '@/manifest/schema.js';
 import type { BuildContext } from '@/providers/build.js';
+import { assetCacheDir } from '@/providers/inputs.js';
 import { subprocessRunner } from '@/providers/run.js';
 import { validateTarget } from '@/providers/validate.js';
 
@@ -96,11 +99,15 @@ export async function validateCommand(
       return EXIT_USAGE;
     }
 
+    // `assets` for the same reason `pc build` binds one: validation re-invokes the provider, so
+    // it resolves the same inputs, and a stand-in's bytes must be local before the spawn (FR-030).
+    // Lazily configured — an episode with no asset inputs validates with no store configured.
     const context: BuildContext = {
       episodeDir,
       graph,
       ledger,
       runner: subprocessRunner(),
+      assets: envInputResolver(process.env, assetCacheDir(episodeDir)),
       at: new Date().toISOString(),
     };
 

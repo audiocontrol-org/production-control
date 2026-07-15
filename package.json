@@ -15,7 +15,8 @@
     "lint": "eslint .",
     "test": "vitest run",
     "test:offline": "vitest run --project integration tests/integration/offline.test.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:integration:store": "vitest run --project contract tests/contract/s3-store.test.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1087.0",

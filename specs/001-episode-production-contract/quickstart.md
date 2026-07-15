@@ -174,12 +174,6 @@ Requires Docker; this is the only scenario that does.
 npm run test:integration:store    # MinIO via testcontainers
 ```
 
-> **Not wired yet.** The S3 adapter is Milestone 2 (T066), and its MinIO contract test is
-> T062. The `test:integration:store` script does not exist until T062 adds it pointing at a
-> real target. It was deliberately removed rather than left pointing at a nonexistent vitest
-> project: a script that exits non-zero with "project not found" is a false signal, not a
-> fail-loud one, and it makes this scenario look broken when it is merely absent.
-
 **Expect**: pass against a real S3-compatible server. If Docker is unavailable the suite
 **announces the skip loudly** — a silent skip would be a false-clean.
 

@@ -1,3 +1,5 @@
+import * as process from 'node:process';
+import { envInputResolver } from '@/assets/config.js';
 import {
   EXIT_OK,
   EXIT_USAGE,
@@ -10,6 +12,7 @@ import type { Hash } from '@/hash/content.js';
 import type { ArtifactRecord } from '@/ledger/schema.js';
 import type { Identity } from '@/manifest/schema.js';
 import { buildTarget } from '@/providers/build.js';
+import { assetCacheDir } from '@/providers/inputs.js';
 import { subprocessRunner } from '@/providers/run.js';
 
 /**
@@ -127,8 +130,18 @@ export async function buildCommand(
 
     // Anything past this point that goes wrong is a REFUSAL (exit 1 via `runVerb`), naming what
     // failed and surfacing the provider's own stderr — never a record claiming success (FR-017).
+    // The resolver is bound here for the same reason the runner is: both reach outside this
+    // machine's declared content, and `CliDeps` is shared with the read verbs. It resolves its
+    // config LAZILY, so an episode with no asset inputs builds with no store configured (FR-025).
     const record = await buildTarget(
-      { episodeDir, graph, ledger, runner: subprocessRunner(), at: new Date().toISOString() },
+      {
+        episodeDir,
+        graph,
+        ledger,
+        runner: subprocessRunner(),
+        assets: envInputResolver(process.env, assetCacheDir(episodeDir)),
+        at: new Date().toISOString(),
+      },
       id
     );
 

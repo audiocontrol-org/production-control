@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import * as process from 'node:process';
 import { Command, CommanderError } from 'commander';
+import { assetAddCommand, createAssetDeps, readAssetAddOptions } from '@/cli/asset.js';
 import { buildCommand } from '@/cli/build.js';
 import { explainCommand } from '@/cli/explain.js';
 import { nextCommand } from '@/cli/next.js';
@@ -144,6 +145,29 @@ export function createProgram(deps: CliDeps): Command {
   // deliberately: commander's own "required option" refusal names the flag but not why it
   // exists, and "a waiver without a reason is not a decision" is the whole point of the rule
   // (FR-022b). The verb says that itself, and still exits 2.
+  // `pc asset add <file>` — the only verb that must reach the store to do its job (FR-023).
+  //
+  // There is no `pc asset update` and no `--force` beside it, and that absence is FR-028: every
+  // address is derived from the bytes, so a revision is a NEW asset at a new address and the
+  // prior one stays retrievable. An overwrite is not withheld here, it is unexpressible.
+  //
+  // Its deps come from `createAssetDeps()` rather than the shared `deps`: a store on `CliDeps`
+  // would put the AWS SDK on `pc status`'s import path (FR-010, FR-025).
+  const asset = program
+    .command('asset')
+    .description('Manage large assets held outside version control.');
+
+  asset
+    .command('add')
+    .argument('<file>', 'the file whose bytes to store')
+    .description('Store a file by content address and write its committable stand-in. Exits 0.')
+    .option('--media <type>', 'the media type — required when the extension does not imply one')
+    .option(JSON_FLAG, JSON_HELP)
+    .action(async (...args: unknown[]): Promise<void> => {
+      const file = z.string().parse(args[0]);
+      setExitCode(await assetAddCommand(createAssetDeps(), file, readAssetAddOptions(args[1])));
+    });
+
   program
     .command('review')
     .argument('<node>', 'the node whose review to decide')
