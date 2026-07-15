@@ -60,18 +60,30 @@
 - One genuine ambiguity was found in the design record and is recorded below rather than
   invented away.
 
-## Open item carried to /speckit-clarify
+## Clarification resolved (operator, 2026-07-15)
 
-**The timed transcript's status is contradictory in the design record.** Its Scope
-section claims the editorial+audio slice "forces the timed-transcript contract that video
-will later need," and its Open Questions section says the schema should be pinned during
-implementation. But no declared target in this version produces or consumes a timed
-transcript — the chain is longform→{website, ebook}, narration→voiceover→podcast.
+**The timed transcript is a v0.1 target.** The contradiction was real — the design's Scope
+claimed the slice "forces the timed-transcript contract" while declaring no target that
+produced one — but it resolved in favor of the Scope claim, not against it.
 
-This spec therefore does not require a timed transcript, on the reasoning that a spec
-should require what its targets need and nothing more. If the intent was for v0.1 to
-establish that contract, a target must exist that produces it, and this spec needs a
-requirement for it.
+Operator's reasoning: video must be created from the narration, and audiobook indices are
+needed; forced alignment is the only way to obtain either. Video cut lists hang on
+word-level timings and audiobook indices need the same timings against the same script, so
+the alternative is deriving alignment twice or hand-timing forever. The consumers are
+deferred but known and planned, which makes this keystone work rather than speculation.
 
-This is a scope question for the operator and is the right subject for `/speckit-clarify`.
-It is recorded here rather than guessed at.
+The initial draft's proposal to drop it was wrong: it reasoned from the declared graph
+rather than from what the work requires.
+
+Recorded consequences:
+- Spec Assumptions now declare the transcript as a target, with its rationale and the
+  reason it does not couple v0.1 to the video tooling (its producer is whichever tool
+  satisfies *narration + script → timings*; the system is ignorant of which).
+- Two edge cases added: the interaction where an authored part is both tracked-against and
+  a declared input to the same output (both signals must fire independently), and the rule
+  that an output with no consumer is still first-class.
+- The design record's Scope and Open Questions were corrected to match.
+
+Remaining open (schema, not scope): segment- vs word-level timings, how the transcript
+references script structure, and how alignment failure is represented. Deliberately left
+for contact with a real aligner.

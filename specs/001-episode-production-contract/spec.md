@@ -203,6 +203,15 @@ is reported rather than silently ignored.
   operations that genuinely need bytes fail, and they name why.
 - **A stand-in references an asset absent from the store.** The system fails loud rather
   than reporting the input as present.
+- **An authored part is both tracked-against and a declared input to the same output.**
+  Revising a script whose performance was recorded, where an output derives from both the
+  script and the recording, MUST produce both signals independently: the recording reports
+  needs-review (a human must decide), and the derived output reports stale (a machine can
+  rebuild it). Neither signal may suppress the other, and rebuilding the output MUST NOT
+  clear the review.
+- **A derived output has no consumer.** An output that nothing else depends on is still a
+  first-class output with the same states and the same records. The system MUST NOT treat
+  having no downstream as a reason to skip, defer, or deprioritize it.
 
 ## Requirements *(mandatory)*
 
@@ -371,9 +380,21 @@ is reported rather than silently ignored.
 - **A production is a single directory.** Cross-production dependencies are not modeled.
 - **One recipe per production.** A production names exactly one recipe; composing recipes
   is not modeled.
-- **The initial outputs are editorial and audio** — a website, an ebook, a voice-over, and
-  a podcast. This exercises two genuinely different crafts without depending on the
-  maturity of the video tooling.
+- **The initial outputs are editorial and audio** — a website, an ebook, a voice-over, a
+  podcast, and a timed transcript of the narration. This exercises two genuinely different
+  crafts without depending on the maturity of the video tooling.
+- **The timed transcript is produced in this version although its consumers are not.**
+  Aligning a recorded narration to the script it performs is the only way to make that
+  narration addressable: video cut lists hang on word-level timings, and audiobook indices
+  and chapter marks need the same timings against the same script. Both consumers are
+  known and planned, so this is not speculative work — deriving the alignment twice later,
+  or hand-timing it forever, is the alternative. It is also the only output in this version
+  that is structured data rather than media bytes, which makes it the contract most worth
+  proving before anything depends on it.
+- **Producing the transcript does not depend on the video tooling.** Its producer is
+  whichever tool satisfies "narration plus script yields timings"; the system is
+  deliberately ignorant of which tool that is, so requiring the transcript does not couple
+  this version to the video tooling's maturity.
 - **Building is single-target and sequential.** Scheduling, parallelism, caching, and
   remote execution are not part of this version.
 - **Producing tools are trusted.** The system does not enforce that a tool touches only
