@@ -50,10 +50,16 @@ may verify what it received; it is never a thing the provider must fetch.
   "version": 1,
   "outputs": [{ "path": "podcast.mp3" }],
   "tool": { "name": "audio-tooling", "version": "1.2.0" },
-  "impure": false,
   "validation": { "state": "passed" }
 }
 ```
+
+Note the absence of `impure`: **that is how a referentially transparent tool declares itself
+— by saying nothing.** `"impure": false` is a REFUSAL, not a synonym for absence. Admitting
+the boolean would re-open the flag-shaped declaration FR-032 exists to close: a flag says
+only "expect different bytes", where a reason says *which kind* of impurity, which is the
+part a reader actually needs. There is exactly one way to declare impurity, and it carries
+its reason.
 
 | Field | Required | Meaning |
 |---|---|---|

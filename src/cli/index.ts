@@ -4,6 +4,7 @@ import { Command, CommanderError } from 'commander';
 import { explainCommand } from '@/cli/explain.js';
 import { nextCommand } from '@/cli/next.js';
 import { releaseCheckCommand } from '@/cli/release-check.js';
+import { readReviewOptions, reviewCommand } from '@/cli/review.js';
 import {
   createDefaultDeps,
   nameError,
@@ -102,6 +103,23 @@ export function createProgram(deps: CliDeps): Command {
     .option(JSON_FLAG, JSON_HELP)
     .action(async (...args: unknown[]): Promise<void> => {
       setExitCode(await releaseCheckCommand(deps, readOptions(args[0])));
+    });
+
+  // The one verb here that WRITES. `--reason` is declared optional to commander and required by
+  // the verb, deliberately: commander's own "required option" refusal names the flag but not why
+  // it exists, and "a waiver without a reason is not a decision" is the whole point of the rule
+  // (FR-022b). The verb says that itself, and still exits 2.
+  program
+    .command('review')
+    .argument('<node>', 'the node whose review to decide')
+    .description('Record a human decision about advisory drift. Exits 0 once recorded.')
+    .option('--waive', 'accept the tracked node as it now stands, pinning its current hash')
+    .option('--reason <text>', 'why — required; a waiver without a reason is not a decision')
+    .option(EPISODE_FLAG, EPISODE_HELP)
+    .option(JSON_FLAG, JSON_HELP)
+    .action(async (...args: unknown[]): Promise<void> => {
+      const node = z.string().parse(args[0]);
+      setExitCode(await reviewCommand(deps, node, readReviewOptions(args[1])));
     });
 
   return program;
