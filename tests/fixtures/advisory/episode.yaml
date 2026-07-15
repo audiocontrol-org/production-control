@@ -8,4 +8,4 @@ authored:
   narration:
     path: assets/narration/take-03.wav
     follows: spoken
-targets: [voiceover]
+targets: [voiceover, podcast]

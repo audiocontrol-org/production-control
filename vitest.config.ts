@@ -28,6 +28,10 @@ export default defineConfig({
           name: 'integration',
           include: ['tests/integration/**/*.test.ts', 'tests/integration/**/*.spec.ts'],
           exclude: ['tests/fixtures/**'],
+          // The integration tests drive the BUILT binary (exit codes are the contract, and an
+          // exit code is a property of a process). Building once here — rather than in each
+          // file's beforeAll — keeps parallel test files from racing each other into dist/.
+          globalSetup: ['tests/integration/global-setup.ts'],
         },
       },
       {

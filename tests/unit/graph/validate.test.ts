@@ -109,7 +109,12 @@ describe('graph/validate', () => {
       expect(graph.targets).toEqual(['epub', 'website']);
     });
 
-    it('Case 4: Only targets reachable from the manifests targets need be present (comment: we include all profile targets consistently)', () => {
+    it('Case 4: Only targets reachable from the manifests targets are present — a profile is a catalogue an episode selects from (FR-004)', () => {
+      // The profile can produce `website`, but this episode asked for `epub` and nothing it
+      // asked for is built from `website`. So `website` is not in this episode's graph, and
+      // its unauthored input (`gallery`) is not this episode's problem — which is the whole
+      // of FR-004: if selecting `epub` obliged the episode to author `gallery` too, a
+      // "generic, reusable recipe" would be usable by exactly one episode shape.
       const manifest: EpisodeManifest = {
         version: 1,
         id: 'test',
@@ -131,7 +136,8 @@ describe('graph/validate', () => {
             provider: provider(['npx', 'epub-tooling', 'build']),
           },
           website: {
-            inputs: ['longform'],
+            // `gallery` is authored by NO episode here. Reachable, this would be a refusal.
+            inputs: ['longform', 'gallery'],
             provider: provider(['npx', 'web-tooling', 'build']),
           },
         },
@@ -139,11 +145,114 @@ describe('graph/validate', () => {
 
       const graph = buildGraph(manifest, profile);
 
-      // We include all profile targets in the graph
+      // The declared target and its authored input are present...
       expect(graph.nodes.has('epub')).toBe(true);
-      expect(graph.nodes.has('website')).toBe(true);
-      // But targets on Graph reflects manifest's declared targets
+      expect(graph.nodes.has('longform')).toBe(true);
+      // ...and the unreachable profile target is ABSENT. Not present-but-ignored: absent.
+      // A node in the graph is a node `pc status` reports on, and reporting `website` would
+      // answer a question this operator never asked and cannot act on.
+      expect(graph.nodes.has('website')).toBe(false);
+      expect(graph.nodes.has('gallery')).toBe(false);
+
+      // `targets` is what was ASKED FOR, which stays exactly the manifest's list.
       expect(graph.targets).toEqual(['epub']);
+
+      // And the payoff: the unreachable target's dangling input is NOT a refusal.
+      expect(() => validateGraph(manifest, profile)).not.toThrow();
+    });
+
+    it('Case 4a: an INTERMEDIATE target — reachable via another target inputs, never declared — IS in the graph', () => {
+      // The counterpart to Case 4, and the reason the rule is CLOSURE rather than "just the
+      // declared targets": `chain` declares `podcast`, which is built from `voiceover`. Drop
+      // `voiceover` from the graph and `podcast` has an input that is not a node — the exact
+      // "Cannot resolve identity" failure that resolution must be structurally incapable of.
+      const manifest: EpisodeManifest = {
+        version: 1,
+        id: 'test',
+        title: 'Test',
+        profile: 'test-profile',
+        authored: {
+          narration: { path: 'narration.mp3' },
+        },
+        targets: ['podcast'],
+      };
+
+      const profile: Profile = {
+        version: 1,
+        targets: {
+          voiceover: {
+            inputs: ['narration'],
+            provider: provider(['npx', 'audio-tooling', 'master']),
+          },
+          podcast: {
+            inputs: ['voiceover'],
+            provider: provider(['npx', 'audio-tooling', 'publish']),
+          },
+          transcript: {
+            inputs: ['narration', 'spoken'],
+            provider: provider(['npx', 'alignment-tooling', 'align']),
+          },
+        },
+      };
+
+      const graph = buildGraph(manifest, profile);
+
+      expect(graph.nodes.has('podcast')).toBe(true);
+      // Never declared, but `podcast` is built from it — so it is this episode's business.
+      expect(graph.nodes.has('voiceover')).toBe(true);
+      expect(graph.nodes.has('transcript')).toBe(false);
+      // Declared targets, not the closure: `voiceover` is in the graph but was not asked for.
+      expect(graph.targets).toEqual(['podcast']);
+
+      // Every input of every node in the graph is itself a node in the graph. This is the
+      // invariant `resolveStatus` relies on, so assert it directly rather than by proxy.
+      for (const node of graph.nodes.values()) {
+        for (const input of node.inputs ?? []) {
+          expect(graph.nodes.has(input), `input "${input}" of "${node.id}" is not a node`).toBe(
+            true
+          );
+        }
+      }
+
+      // `transcript`'s unauthored `spoken` is unreachable, so it is not a refusal.
+      expect(() => validateGraph(manifest, profile)).not.toThrow();
+    });
+
+    it('Case 4b: an authored node is in the graph even when nothing reachable consumes it', () => {
+      // Authored presence is a FACT the operator declared, not a consequence of something
+      // consuming it. An authored file nobody builds from is still an authored file.
+      const manifest: EpisodeManifest = {
+        version: 1,
+        id: 'test',
+        title: 'Test',
+        profile: 'test-profile',
+        authored: {
+          longform: { path: 'article.mdx' },
+          // Nothing reachable from `epub` is built from `narration`.
+          narration: { path: 'narration.mp3' },
+        },
+        targets: ['epub'],
+      };
+
+      const profile: Profile = {
+        version: 1,
+        targets: {
+          epub: {
+            inputs: ['longform'],
+            provider: provider(['npx', 'epub-tooling', 'build']),
+          },
+          voiceover: {
+            inputs: ['narration'],
+            provider: provider(['npx', 'audio-tooling', 'master']),
+          },
+        },
+      };
+
+      const graph = buildGraph(manifest, profile);
+
+      expect(graph.nodes.get('narration')?.kind).toBe('authored');
+      expect(graph.nodes.has('voiceover')).toBe(false);
+      expect(() => validateGraph(manifest, profile)).not.toThrow();
     });
   });
 
@@ -416,6 +525,78 @@ describe('graph/validate', () => {
       };
 
       expect(() => validateGraph(manifest, profile)).not.toThrow();
+    });
+
+    it('Case 11a: a dangling input is refused wherever it sits in the inputs list — scoping is by REACHABILITY, never by how far a check happened to get', () => {
+      // `blocked` in tests/fixtures is `transcript ← [narration, spoken]` with `spoken`
+      // unauthored, and `narration` comes FIRST. A fix that scoped validation by bailing at
+      // the first unresolvable input would let that fixture pass for the wrong reason, and
+      // would then break the moment someone reordered a profile's `inputs` list. The
+      // reachable set is computed from the manifest, so position cannot matter — assert it
+      // in both orders rather than trusting that it does not.
+      const base = (
+        inputs: readonly string[]
+      ): { manifest: EpisodeManifest; profile: Profile } => ({
+        manifest: {
+          version: 1,
+          id: 'test',
+          title: 'Test',
+          profile: 'test-profile',
+          authored: { narration: { path: 'narration.mp3' } },
+          targets: ['transcript'],
+        },
+        profile: {
+          version: 1,
+          targets: {
+            transcript: {
+              inputs: [...inputs],
+              provider: provider(['npx', 'alignment-tooling', 'align']),
+            },
+          },
+        },
+      });
+
+      // Dangling input LAST — the position a first-failure short-circuit would never reach.
+      const last = base(['narration', 'spoken']);
+      expect(() => validateGraph(last.manifest, last.profile)).toThrow(/spoken/);
+
+      // Dangling input FIRST — same refusal, same name.
+      const first = base(['spoken', 'narration']);
+      expect(() => validateGraph(first.manifest, first.profile)).toThrow(/spoken/);
+    });
+
+    it('Case 11b: a cycle REACHABLE from a declared target is still refused; one among targets the episode never asked for is not its problem', () => {
+      const cyclicProfile: Profile = {
+        version: 1,
+        targets: {
+          epub: {
+            inputs: ['longform'],
+            provider: provider(['npx', 'epub-tooling', 'build']),
+          },
+          // A cycle sitting in the catalogue: a -> b -> a.
+          a: { inputs: ['b'], provider: provider(['npx', 'tooling', 'build-a']) },
+          b: { inputs: ['a'], provider: provider(['npx', 'tooling', 'build-b']) },
+        },
+      };
+
+      const asks = (targets: readonly string[]): EpisodeManifest => ({
+        version: 1,
+        id: 'test',
+        title: 'Test',
+        profile: 'test-profile',
+        authored: { longform: { path: 'article.mdx' } },
+        targets: [...targets],
+      });
+
+      // Declaring `a` walks straight into the cycle: still a refusal, still named.
+      expect(() => validateGraph(asks(['a']), cyclicProfile)).toThrow(/a.*b|cycle/i);
+
+      // Declaring only `epub` reaches neither `a` nor `b`. Refusing to answer `pc status`
+      // here would be refusing over a graph this episode does not have.
+      expect(() => validateGraph(asks(['epub']), cyclicProfile)).not.toThrow();
+      const graph = buildGraph(asks(['epub']), cyclicProfile);
+      expect(graph.nodes.has('a')).toBe(false);
+      expect(graph.nodes.has('b')).toBe(false);
     });
   });
 

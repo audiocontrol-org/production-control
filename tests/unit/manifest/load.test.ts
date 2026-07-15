@@ -38,7 +38,7 @@ describe('manifest/load', () => {
       const manifest = await loadEpisode(path.join(FIXTURES, 'advisory'));
       expect(manifest.id).toBe('advisory');
       expect(manifest.authored.narration?.follows).toBe('spoken');
-      expect(manifest.targets).toEqual(['voiceover']);
+      expect(manifest.targets).toEqual(['voiceover', 'podcast']);
     });
 
     it('loads the dual-signal fixture', async () => {
