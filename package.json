@@ -14,8 +14,7 @@
     "build": "tsc && tsc-alias",
     "lint": "eslint .",
     "test": "vitest run",
-    "test:offline": "vitest run --project offline",
-    "test:integration:store": "vitest run --project integration-store",
+    "test:offline": "vitest run --project integration tests/integration/offline.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

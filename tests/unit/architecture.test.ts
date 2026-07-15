@@ -26,7 +26,31 @@ const REPO_ROOT = path.resolve(HERE, '..', '..');
 const SRC_DIR = path.join(REPO_ROOT, 'src');
 
 /** Milestone 1 — the oracle. Every `.ts` file under these is a root of the walk. */
-const ROOT_DIRS = ['src/state', 'src/graph', 'src/manifest', 'src/hash', 'src/ledger'];
+const ORACLE_ROOT_DIRS = ['src/state', 'src/graph', 'src/manifest', 'src/hash', 'src/ledger'];
+
+/**
+ * The CLI over the oracle (T027, SC-001, FR-010).
+ *
+ * Rooted here rather than in `tests/integration/offline.test.ts` so there is exactly ONE copy of
+ * the walker. A second copy would drift, and a drifted boundary check is worse than none: it
+ * reports a boundary that is not the one being enforced.
+ *
+ * SC-001's claim is about the shipped surface, not just the library behind it — "an agent can
+ * determine the complete state of a production with no network access and no craft tools" is a
+ * claim about running `pc`. Rooting only `src/state` et al. would leave the process an agent
+ * actually runs unchecked, and `src/cli/episode.ts` could import an S3 client while this test
+ * stayed green.
+ *
+ * **When Milestone 2's `pc build` lands, this will go red, and that is correct.** `pc build`
+ * exists to exec a craft tool (FR-029), so it reaches `child_process` BY DESIGN. The fix at that
+ * point is to narrow these roots to the read verbs — `status`, `next`, `explain`,
+ * `release-check` — which is precisely what FR-010 ("REPORTING state") constrains. Do not delete
+ * the check, and do not add `pc build`'s dependencies to the allowed set: that would silently
+ * relicense the whole CLI to reach the network.
+ */
+const CLI_ROOT_DIRS = ['src/cli'];
+
+const ROOT_DIRS = [...ORACLE_ROOT_DIRS, ...CLI_ROOT_DIRS];
 
 /** Milestone 2 — the execution layer. Any internal module under here is off limits. */
 const FORBIDDEN_INTERNAL_DIRS = ['src/providers'];
@@ -242,6 +266,7 @@ function importsOf(file: string): readonly string[] {
 }
 
 const ROOT_FILES = ROOT_DIRS.flatMap((dir) => listTsFiles(path.join(REPO_ROOT, dir)));
+const CLI_ROOT_FILES = CLI_ROOT_DIRS.flatMap((dir) => listTsFiles(path.join(REPO_ROOT, dir)));
 
 function isForbiddenInternal(file: string): boolean {
   const relative = rel(file);
@@ -440,6 +465,33 @@ describe('architecture: the Milestone 1 / Milestone 2 boundary', () => {
         failures.length === 0
           ? ''
           : `Milestone 1 must stand alone. Forbidden import chains:\n${failures.join('\n')}`
+      ).toEqual([]);
+    });
+
+    it('no `pc` module reaches the network either — the CLI is offline BY CONSTRUCTION (T027, SC-001, FR-010)', () => {
+      // The mechanical half of T027. The runtime half lives in
+      // `tests/integration/offline.test.ts`, which proves `pc status` answers with a hostile
+      // asset store standing by and with PATH emptied. Neither is sufficient alone: a runtime
+      // test only proves the paths it happens to walk never dialled out, and this only proves
+      // the code CANNOT. Together they are the whole claim.
+      expect(
+        CLI_ROOT_FILES.length,
+        'src/cli has no modules — this test is vacuous'
+      ).toBeGreaterThan(0);
+
+      const failures: string[] = [];
+      for (const root of CLI_ROOT_FILES) {
+        for (const violation of walk(root).violations) {
+          failures.push(formatViolation(root, violation));
+        }
+      }
+
+      expect(
+        failures,
+        failures.length === 0
+          ? ''
+          : `Reporting state must require no network and no craft tool (FR-010). ` +
+              `Forbidden import chains from the CLI:\n${failures.join('\n')}`
       ).toEqual([]);
     });
 

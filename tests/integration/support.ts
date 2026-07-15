@@ -53,6 +53,18 @@ export interface CliResult {
 }
 
 /**
+ * Overrides for the child process `pc` runs in.
+ *
+ * `env` REPLACES the child's environment rather than merging into it — that is `execFile`'s own
+ * semantics, and preserving it here is the point: a caller proving that `pc status` needs no
+ * craft tool does it by handing over a PATH with nothing on it (T027, FR-010), and a helper that
+ * quietly merged the harness's real PATH back in would make that proof a lie.
+ */
+export interface RunOptions {
+  readonly env?: NodeJS.ProcessEnv;
+}
+
+/**
  * Builds the CLI, so these tests can never pass against a stale `dist/`.
  *
  * A green suite over a binary compiled from code that no longer exists is worse than a red
@@ -95,12 +107,15 @@ export async function buildCli(): Promise<void> {
  * (`ENOENT`) rather than an exit status, and reporting that as an exit code would invent a
  * result the process never produced.
  */
-export function pc(args: readonly string[]): Promise<CliResult> {
+export function pc(args: readonly string[], options?: RunOptions): Promise<CliResult> {
   return new Promise((resolve, reject) => {
     childProcess.execFile(
       process.execPath,
       [CLI, ...args],
-      { cwd: REPO_ROOT },
+      // Spread-guarded rather than `env: options?.env`: under `exactOptionalPropertyTypes` a
+      // present-but-undefined `env` is a different thing from an absent one, and `execFile`
+      // reads the former as "an environment was supplied", not "inherit mine".
+      { cwd: REPO_ROOT, ...(options?.env !== undefined ? { env: options.env } : {}) },
       (error, stdout, stderr) => {
         if (error === null) {
           resolve({ code: 0, stdout, stderr });
@@ -127,8 +142,19 @@ const tempDirs: string[] = [];
  * change what every other test means.
  */
 export async function copyFixture(name: string): Promise<string> {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), `pc-cli-${name}-`));
-  await fs.cp(path.join(FIXTURES, name), dir, { recursive: true });
+  return copyDir(path.join(FIXTURES, name), name);
+}
+
+/**
+ * Copies an arbitrary directory to a temp directory, tracked for cleanup like `copyFixture`.
+ *
+ * This is what CLONING an episode is (T026): `copyFixture` only ever reaches into the committed
+ * fixtures, but a clone is taken of a BUILT episode — one that already has its `dist/` artifacts
+ * and its `.production/ledger.yaml` — and that episode is itself a temp directory.
+ */
+export async function copyDir(source: string, label: string): Promise<string> {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), `pc-cli-${label}-`));
+  await fs.cp(source, dir, { recursive: true });
   tempDirs.push(dir);
   return dir;
 }
