@@ -35,8 +35,8 @@ something executable, and its value comes precisely from its refusal to be creat
 about it. You would not use a compiler that occasionally rewrote your functions
 because it thought of something better.
 
-production-control is a compiler for authored work: source materials in, publication
-formats out, faithfully, reproducibly, and without editorializing.
+production-control compiles authored work into publishable media: source materials
+in, publication formats out, faithfully, reproducibly, and without editorializing.
 
 ## Principles
 
@@ -85,18 +85,28 @@ and recording where it came from are one indivisible act, because any step that
 *can* be skipped eventually will be, and a ledger that is wrong is worse than no
 ledger at all.
 
+## Crafts remain specialized
+
+production-control is not the place where media expertise accumulates.
+
+Editorial remains editorial. Audio remains audio. Video remains video. Publishing
+remains publishing. production-control coordinates those crafts through stable
+contracts and records the relationships between their outputs.
+
+If a production concern can be solved by improving a specialized tool rather than
+expanding the orchestration layer, the specialized tool should change.
+
 ## Boring by design
 
 production-control intentionally remains boring.
 
 It will not become an AI author. It will not become a video editor, a DAW, a
-graphics application, or a replacement for writing tools. It does not own
-media-specific expertise and should never acquire any.
+graphics application, or a replacement for writing tools.
 
-It grows by supporting more production targets — never by expanding its own
-intelligence. Every new medium is a new participant in the ecosystem, not a change
-to the philosophy. When a decision could be resolved by making the system smarter or
-by making the contract clearer, the contract wins.
+It grows by supporting more publication targets and production workflows — never by
+expanding its own intelligence. Every new medium is a new participant in the
+ecosystem, not a change to the philosophy. When a decision could be resolved by
+making the system smarter or by making the contract clearer, the contract wins.
 
 ## What success looks like
 
