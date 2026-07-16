@@ -255,7 +255,7 @@ A reasonable fix is to add refusal cases here for empty and whitespace-only impu
 ### AUDIT-20260716-18 — Docker-absent is a permanently green skip: FR-027's only real proof can go unexecuted forever with no gate
 
 Finding-ID: AUDIT-20260716-18
-Status:     open
+Status:     fixed-9744520
 Severity:   high
 Per-lane:   claude=high
 Decision:   single-model (gate-counted high)
@@ -287,7 +287,7 @@ A reasonable fix is symmetry with the branch immediately above it: after `fetchA
 ### AUDIT-20260716-20 — The execution ledger records 78/78 `reviewClean: true`, which the audited commit history directly contradicts
 
 Finding-ID: AUDIT-20260716-20
-Status:     open
+Status:     fixed-9744520
 Severity:   high
 Per-lane:   claude=high
 Decision:   adjudicated (gate-counted high) — blast-radius=unstated, reachability=unstated, fix-debt=no; no down-calibration signal — high retained.
