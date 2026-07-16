@@ -72,9 +72,16 @@ export const BuildToolSchema = z.object({
  * contract spells the "referentially transparent" case as *omitting* the field, and accepting
  * the boolean would re-admit the flag-shaped impurity FR-032 exists to forbid — one release
  * later, `impure: true` would be arriving with nothing to say.
+ *
+ * `reason` is refused when empty OR whitespace-only, by the SAME trimmed refinement `WaiverSchema`
+ * uses (`src/ledger/schema.ts`), so a declared impurity and a waived review behave identically
+ * (FR-032/FR-022b, AUDIT-20260716-17). A bare `.min(1)` would let `"   "` through — three spaces
+ * state no more than the empty string does — so the check trims before measuring.
  */
 export const BuildImpureSchema = z.object({
-  reason: z.string().min(1, 'must state why the provider is not referentially transparent'),
+  reason: z
+    .string()
+    .refine((value) => value.trim().length > 0, 'reason must not be empty or whitespace-only'),
 });
 
 /**

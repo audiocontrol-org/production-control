@@ -1,4 +1,4 @@
-import type { Graph } from '@/graph/build.js';
+import type { Graph, Node } from '@/graph/build.js';
 import type { Identity } from '@/manifest/schema.js';
 import type { Cause, EpisodeStatus, NodeState, NodeStatus } from '@/state/resolve.js';
 
@@ -103,9 +103,10 @@ interface Descent {
  *
  * The rules, and what each one refuses to say:
  *
- *   - A DERIVED node's state comes from its declared `inputs`. Descend into every one of them
- *     as a `dependency` link. This is the propagating edge, and following it is the only way
- *     the chain reaches the authored inputs actually responsible.
+ *   - A DERIVED node's state comes from its declared `inputs`. Descend into the ones IMPLICATED
+ *     by the state as `dependency` links — the single input the cause names when it names one,
+ *     every input otherwise (see `causalInputs`). This is the propagating edge, and following it
+ *     is the only way the chain reaches the authored inputs actually responsible.
  *
  *   - An AUTHORED node awaiting a human decision (`needs-review`) HALTS the walk (FR-011a).
  *     Nothing upstream of it is reported as reaching the root, because nothing does: the
@@ -132,7 +133,23 @@ function visit(
     );
   }
 
-  const isPendingDecision = descent.status.state === 'needs-review';
+  // The halt is for an AUTHORED node awaiting a human decision (FR-011a) — the halt text asserts
+  // a fact about authored bytes ("its own bytes have not changed"), and only an authored node can
+  // be `needs-review` (FR-006). Keying the halt on state alone would silently truncate the chain
+  // at any node that happened to be `needs-review`, printing that unverified claim and dropping
+  // the responsible inputs (AUDIT-20260716-23). A derived node in `needs-review` is a
+  // graph/status disagreement, and this codebase refuses those loudly rather than papering over
+  // them.
+  const isAuthored = node.kind === 'authored';
+  if (!isAuthored && descent.status.state === 'needs-review') {
+    throw new Error(
+      `Derived node "${descent.status.id}" resolved to "needs-review", a state only an authored ` +
+        `node can hold (FR-006). The status report and the graph disagree, so no chain can be ` +
+        `trusted.`
+    );
+  }
+
+  const isPendingDecision = isAuthored && descent.status.state === 'needs-review';
   const halt: Halt | undefined = isPendingDecision
     ? { kind: 'pending-human-decision', message: HALT_PENDING_DECISION }
     : undefined;
@@ -159,7 +176,7 @@ function visit(
     return;
   }
 
-  for (const input of node.inputs ?? []) {
+  for (const input of causalInputs(node, descent.status)) {
     visit(graph, byId, links, {
       status: lookup(byId, input),
       via: 'dependency',
@@ -167,6 +184,30 @@ function visit(
       depth: descent.depth + 1,
     });
   }
+}
+
+/**
+ * The declared inputs actually IMPLICATED in this node's state (FR-011a, AUDIT-20260716-24).
+ *
+ * When the cause names a specific input — `stale` on a changed input, `blocked` on an absent one
+ * — the chain follows ONLY that input. An unrelated FRESH input did not contribute to the state
+ * being explained, and rendering it as part of the causal chain would point a reader (or an
+ * unattended consumer treating every link as causal) at the wrong branch of the graph.
+ *
+ * When no single input is implicated — a `fresh` node's provenance, a `missing` node that was
+ * simply never built, an `input-removed` cause whose named identity is no longer a declared input
+ * — every declared input is part of the honest answer, and all are followed.
+ *
+ * Following only the causal input also collapses a diamond to the one path that matters, so a
+ * shared upstream node is not reported twice for a state that only one branch caused.
+ */
+function causalInputs(node: Node, status: NodeStatus): readonly Identity[] {
+  const inputs = node.inputs ?? [];
+  const causal = status.cause.identity;
+  if (causal !== undefined && inputs.includes(causal)) {
+    return [causal];
+  }
+  return inputs;
 }
 
 /**

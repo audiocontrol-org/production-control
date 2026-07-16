@@ -46,6 +46,7 @@ const JsonReportSchema = z.object({
   bytes: z.number(),
   stored: z.boolean(),
   standin_written: z.boolean(),
+  original_removed: z.boolean(),
 });
 
 /** Collects a verb's two streams, so a test can assert which one an outcome went to. */
@@ -120,8 +121,12 @@ describe('pc asset add writes a stand-in carrying the real facts (FR-023)', () =
     // catch a verb that wrote a well-formed hash of something other than these bytes.
     expect(pointer.asset).toBe(hashBytes(Buffer.from(contents, 'utf8')));
     expect(pointer.bytes).toBe(Buffer.byteLength(contents, 'utf8'));
-    expect(pointer.bytes).toBe((await fs.stat(file)).size);
     expect(pointer.media).toBe('audio/wav');
+
+    // The original bytes moved OUT of the working tree: only the stand-in remains committable
+    // (FR-023, AUDIT-20260716-22). Both existing beside each other is the bug this verb must not
+    // leave behind.
+    expect(await exists(file)).toBe(false);
 
     // And the bytes are genuinely in the store, retrievable at exactly that address.
     expect(await store.get(pointer.asset)).toEqual(Buffer.from(contents, 'utf8'));
@@ -137,7 +142,9 @@ describe('pc asset add writes a stand-in carrying the real facts (FR-023)', () =
 
     const answer = parseJsonText(output.stdout.join('\n'));
     const reported = AssetPointerSchema.parse(answer);
-    const expected = hashBytes(await fs.readFile(file));
+    // Computed from the known bytes, not re-read from `file`: the verb has moved the original into
+    // the store and removed it, so there is nothing left on disk to read (AUDIT-20260716-22).
+    const expected = hashBytes(Buffer.from(contents, 'utf8'));
 
     expect(reported.asset).toBe(expected);
     expect(expected.startsWith('sha256:')).toBe(true);
@@ -266,6 +273,115 @@ describe('changed bytes are a NEW asset, never an overwrite (FR-028)', () => {
     expect(await store.get(after.asset)).toEqual(Buffer.from(revised, 'utf8'));
 
     expect(JsonReportSchema.parse(parseJsonText(output.stdout.join('\n'))).stored).toBe(true);
+  });
+});
+
+describe('the original bytes move OUT of the working tree (FR-023, AUDIT-20260716-22)', () => {
+  it('**removes the original after storing it, leaving ONLY the stand-in — and the bytes stay retrievable by the stand-in address**', async () => {
+    const contents = 'the large binary that must not stay in git';
+    const file = await fileWith('take-01.wav', contents);
+    const store = new MemoryAssetStore();
+    const output = capture();
+
+    const code = await assetAddCommand(depsFor(output, store), file, { json: true });
+    expect(output.stderr).toEqual([]);
+    expect(code).toBe(0);
+
+    // THE ASSERTION. The original bytes are GONE from the working tree; only the committable
+    // stand-in remains. Both existing side by side is the exact defect (a stand-in that claims the
+    // bytes left git, beside the bytes still sitting in git).
+    expect(await exists(file)).toBe(false);
+    expect(await exists(`${file}.asset`)).toBe(true);
+
+    // And they are not merely deleted — they are SAFE: retrievable from the store by the very
+    // address the stand-in commits to. Never a delete-before-confirm.
+    const pointer = AssetPointerSchema.parse(await readStandin(file));
+    expect(await store.has(pointer.asset)).toBe(true);
+    expect(await store.get(pointer.asset)).toEqual(Buffer.from(contents, 'utf8'));
+
+    const report = JsonReportSchema.parse(parseJsonText(output.stdout.join('\n')));
+    expect(report.original_removed).toBe(true);
+    expect(report.stored).toBe(true);
+  });
+
+  it('a file already stored (has-hit, put is a no-op) is STILL removed — the bytes are safe in the store', async () => {
+    // The bytes are pre-loaded into the store, so `put` short-circuits. The delete must still fire:
+    // "already stored" means the store holds them, which is exactly the safe-to-remove condition.
+    const contents = 'these bytes were uploaded on a previous machine';
+    const store = new MemoryAssetStore();
+    const address = await store.put(Buffer.from(contents, 'utf8'));
+    expect(await store.has(address)).toBe(true);
+
+    const file = await fileWith('take-01.wav', contents);
+    const output = capture();
+    expect(await assetAddCommand(depsFor(output, store), file, { json: true })).toBe(0);
+
+    expect(await exists(file)).toBe(false);
+    const report = JsonReportSchema.parse(parseJsonText(output.stdout.join('\n')));
+    expect(report.stored).toBe(false); // put was a no-op...
+    expect(report.original_removed).toBe(true); // ...but the local copy still moved out
+    expect(await store.get(address)).toEqual(Buffer.from(contents, 'utf8'));
+  });
+
+  it('a store it CANNOT confirm keeps the local bytes — never delete-before-confirm', async () => {
+    const contents = 'bytes that must not be lost';
+    const file = await fileWith('take-01.wav', contents);
+    const store = new MemoryAssetStore();
+    store.setUnreachable(true);
+    const output = capture();
+
+    // The store cannot be reached, so it can neither take the bytes nor confirm it holds them.
+    const code = await assetAddCommand(depsFor(output, store), file, {});
+    expect(code).toBe(1);
+
+    // The critical half: the original is STILL on disk. Deleting bytes the store never confirmed
+    // taking would strand them nowhere — the exact loss this verb must never cause.
+    expect(await exists(file)).toBe(true);
+    expect(await fs.readFile(file, 'utf8')).toBe(contents);
+  });
+
+  it('re-adding an already-added file (original gone, stand-in present) is an idempotent no-op', async () => {
+    const contents = 'settled bytes';
+    const file = await fileWith('take-01.wav', contents);
+    const store = new MemoryAssetStore();
+
+    // First add: the original is moved into the store and removed.
+    expect(await assetAddCommand(depsFor(capture(), store), file, {})).toBe(0);
+    expect(await exists(file)).toBe(false);
+    const standinBefore = await fs.readFile(`${file}.asset`, 'utf8');
+
+    // Re-add the SAME path — which now names only a stand-in. The bytes are safe in the store, so
+    // the postcondition already holds: nothing to store, nothing to write, nothing to remove.
+    const output = capture();
+    const code = await assetAddCommand(depsFor(output, store), file, { json: true });
+    expect(code).toBe(0);
+    expect(await fs.readFile(`${file}.asset`, 'utf8')).toBe(standinBefore);
+
+    const report = JsonReportSchema.parse(parseJsonText(output.stdout.join('\n')));
+    expect(report.stored).toBe(false);
+    expect(report.standin_written).toBe(false);
+    expect(report.original_removed).toBe(false);
+    expect(store.size()).toBe(1);
+  });
+
+  it('re-add refuses when the original is gone AND the store lost the bytes — it never claims a false success', async () => {
+    // A stand-in points at bytes that live neither on disk nor in the store. There is nothing to
+    // add and nothing to recover; reporting success would be asserting an asset nobody can produce.
+    const contents = 'bytes lost everywhere';
+    const address = hashBytes(Buffer.from(contents, 'utf8'));
+    const file = path.join(await tempDir(), 'take-01.wav');
+    await fs.writeFile(
+      `${file}.asset`,
+      `asset: ${address}\nmedia: audio/wav\nbytes: ${String(Buffer.byteLength(contents, 'utf8'))}\n`
+    );
+
+    const store = new MemoryAssetStore(); // empty — never held these bytes
+    const output = capture();
+
+    const code = await assetAddCommand(depsFor(output, store), file, {});
+    expect(code).toBe(2);
+    expect(output.stdout).toEqual([]);
+    expect(output.stderr.join('\n')).toContain(address);
   });
 });
 

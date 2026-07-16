@@ -283,4 +283,125 @@ describe('state/resolve — freshness (T022)', () => {
       expect(podcastNode.cause.identity).toBe('voiceover');
     }
   );
+
+  it(
+    'Case 6 (AUDIT-20260716-03): an input REMOVED from the manifest -> stale, naming the removed ' +
+      'input — the mirror of the added-input case, not a false-clean fresh',
+    async () => {
+      const episodeDir = await makeTempEpisodeDir();
+      // The surviving declared input still matches the ledger exactly...
+      const spokenHash = await writeAndHash(episodeDir, 'script.md', 'the surviving script');
+      // ...and `coverart` is a real input the node WAS recorded as built from, whose bytes are
+      // unchanged — the only thing that changed is that the manifest no longer declares it.
+      const removedHash = await writeAndHash(episodeDir, 'coverart.png', 'cover art bytes');
+      // ...and the output on disk still matches its recorded hash. Every content check passes;
+      // only the input SET shrank.
+      const outputHash = await writeAndHash(
+        episodeDir,
+        'dist/voiceover.wav',
+        'mastered audio bytes'
+      );
+
+      const manifest: EpisodeManifest = {
+        version: 1,
+        id: 'freshness-input-removed',
+        title: 'Freshness: input removed',
+        profile: 'test-profile',
+        authored: { spoken: { path: 'script.md' }, coverart: { path: 'coverart.png' } },
+        // `voiceover` no longer declares `coverart` as an input, though it was built from it.
+        targets: ['voiceover'],
+      };
+      const profile: Profile = {
+        version: 1,
+        targets: {
+          voiceover: {
+            inputs: ['spoken'],
+            provider: provider(['npx', 'audio-tooling', 'master']),
+          },
+        },
+      };
+      const ledger: Ledger = {
+        version: 1,
+        artifacts: {
+          voiceover: {
+            producer: { tool: 'audio-tooling', version: '1.0.0' },
+            // Recorded as built from BOTH — the manifest now declares only `spoken`.
+            inputs: { spoken: spokenHash, coverart: removedHash },
+            output: { path: 'dist/voiceover.wav', hash: outputHash },
+            built_at: FIXED_TIMESTAMP,
+          },
+        },
+        reviews: {},
+      };
+
+      const status = await resolveStatus({ episodeDir, manifest, profile, ledger });
+      const node = getNode(status, 'voiceover');
+
+      // Before the fix this reported `fresh`/`ok`: every surviving input and the output matched.
+      expect(node.state).toBe('stale');
+      expect(node.cause.code).toBe('input-removed');
+      expect(node.cause.identity).toBe('coverart');
+    }
+  );
+
+  it(
+    'Case 7 (AUDIT-20260716-03 red-team): an ABSENT declared input still OUTRANKS a removed input ' +
+      '(FR-006a) — blocked, not stale, even when the input set also shrank',
+    async () => {
+      const episodeDir = await makeTempEpisodeDir();
+      const spokenHash = await writeAndHash(episodeDir, 'script.md', 'the surviving script');
+      // A newly declared input whose file does NOT exist -> absent -> blocked.
+      // (`missing.md` is never written.)
+      // A recorded input that is no longer declared -> would be `input-removed` on its own.
+      const removedHash = await writeAndHash(episodeDir, 'coverart.png', 'cover art bytes');
+      const outputHash = await writeAndHash(
+        episodeDir,
+        'dist/voiceover.wav',
+        'mastered audio bytes'
+      );
+
+      const manifest: EpisodeManifest = {
+        version: 1,
+        id: 'freshness-absent-outranks-removed',
+        title: 'Freshness: absent outranks removed',
+        profile: 'test-profile',
+        authored: {
+          spoken: { path: 'script.md' },
+          missing: { path: 'missing.md' },
+          coverart: { path: 'coverart.png' },
+        },
+        targets: ['voiceover'],
+      };
+      const profile: Profile = {
+        version: 1,
+        targets: {
+          voiceover: {
+            // `missing` is declared but absent; `coverart` was recorded but is no longer declared.
+            inputs: ['spoken', 'missing'],
+            provider: provider(['npx', 'audio-tooling', 'master']),
+          },
+        },
+      };
+      const ledger: Ledger = {
+        version: 1,
+        artifacts: {
+          voiceover: {
+            producer: { tool: 'audio-tooling', version: '1.0.0' },
+            inputs: { spoken: spokenHash, coverart: removedHash },
+            output: { path: 'dist/voiceover.wav', hash: outputHash },
+            built_at: FIXED_TIMESTAMP,
+          },
+        },
+        reviews: {},
+      };
+
+      const status = await resolveStatus({ episodeDir, manifest, profile, ledger });
+      const node = getNode(status, 'voiceover');
+
+      // The absent input is reported first, before any set-difference is examined.
+      expect(node.state).toBe('blocked');
+      expect(node.cause.code).toBe('input-absent');
+      expect(node.cause.identity).toBe('missing');
+    }
+  );
 });

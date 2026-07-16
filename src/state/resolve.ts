@@ -37,10 +37,12 @@ export interface Cause {
     | 'ok'
     | 'never-built'
     | 'input-changed'
+    | 'input-removed'
     | 'input-absent'
     | 'output-edited'
     | 'validation-failed'
     | 'followed-changed'
+    | 'followed-absent'
     | 'path-absent'
     | 'present';
   readonly message: string;
@@ -177,6 +179,13 @@ async function resolveDerivedNode(
         identity: assessment.identity,
       });
 
+    case 'input-removed':
+      return report('stale', {
+        code: 'input-removed',
+        message: message.inputRemoved(node.id, assessment.identity, assessment.recorded),
+        identity: assessment.identity,
+      });
+
     case 'output-absent':
       return report('missing', {
         code: 'path-absent',
@@ -259,10 +268,19 @@ function producerDriftFor(ledger: Ledger, id: Identity): ProducerDrift | undefin
  * followed node's content differs from the baseline a human last accepted, the tracking node
  * asks a human to look — and stops there. Propagation halts at the human.
  *
- * Precedence (FR-022c): absence outranks needs-review, in both directions the requirement can
- * be read. Drift cannot be claimed on a node whose own file cannot be read, and it cannot be
- * claimed against a followed node whose file cannot be read either. Both are checked before
- * any drift comparison, so neither can be papered over with a claim about content nobody saw.
+ * Precedence (FR-022c): the node's OWN absence outranks everything. A node whose own declared
+ * file cannot be read is `absent`, full stop — no drift, and no review question, can be claimed
+ * on a node that is not there. That check runs first.
+ *
+ * A node whose own file IS present but whose FOLLOWED node cannot be read is a DIFFERENT
+ * situation, and must not borrow the followed node's state word. It is not `absent` — its own
+ * bytes are right there — and drift cannot be CLAIMED either, because the followed content cannot
+ * be read to compare against the baseline. What remains true is that a human question is open:
+ * the followed node must be restored before the review can be answered. So the tracking node
+ * reports `needs-review`, with a cause that names the followed node and says why. This keeps the
+ * state a fact about THIS node (AUDIT-20260716-30), and keeps an unresolved human question in the
+ * release blocker set (FR-017b) rather than letting a deletion of the followed file turn the
+ * release light green (AUDIT-20260716-29).
  */
 async function resolveAuthoredNode(
   resolver: ContentResolver,
@@ -290,8 +308,14 @@ async function resolveAuthoredNode(
 
   const followedResolution = await resolver.resolve(followed);
   if (followedResolution.kind === 'absent') {
-    return report('absent', {
-      code: 'path-absent',
+    // Control only reaches here after `own.kind !== 'absent'` — this node's own file resolved.
+    // The FOLLOWED node is the one that cannot be read. Reporting `absent`/`path-absent` here
+    // would make a claim about the wrong file and would silently drop this node out of the
+    // release blocker set. The truthful, self-describing state is `needs-review`: a human must
+    // restore the followed node before the review question can be answered (AUDIT-20260716-30,
+    // AUDIT-20260716-29).
+    return report('needs-review', {
+      code: 'followed-absent',
       message: message.followedAbsent(
         node.id,
         followed,

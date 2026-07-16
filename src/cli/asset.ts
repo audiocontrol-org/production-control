@@ -78,6 +78,13 @@ export interface AssetAddJson {
   readonly stored: boolean;
   /** `false` = the stand-in beside the file already said exactly this. */
   readonly standin_written: boolean;
+  /**
+   * `true` = the original bytes were moved OUT of the working tree this run (the store confirmed it
+   * holds them, then the local file was removed) so only the stand-in remains committable (FR-023,
+   * AUDIT-20260716-22). `false` = nothing was removed: an already-added file re-run whose original
+   * was gone before this invocation, so there was nothing left to move.
+   */
+  readonly original_removed: boolean;
 }
 
 /**
@@ -93,12 +100,28 @@ function renderAssetAdd(answer: AssetAddJson): readonly string[] {
     `  bytes:    ${String(answer.bytes)}`,
     `  stand-in: ${answer.standin}  (${answer.standin_written ? 'written' : 'unchanged'})`,
   ];
+  if (answer.original_removed) {
+    lines.push(
+      `  original: ${answer.file} moved into the store and removed — only the stand-in stays in git (FR-023).`
+    );
+  }
   if (!answer.stored) {
     lines.push(
       `  These exact bytes are already stored at this address — nothing was uploaded (FR-024).`
     );
   }
   return lines;
+}
+
+/** Emits the answer as `--json` or as the human rendering, so every exit path reports identically. */
+function emit(deps: AssetDeps, options: AssetAddOptions, answer: AssetAddJson): void {
+  if (options.json === true) {
+    deps.output.out(toJsonText(answer));
+  } else {
+    for (const line of renderAssetAdd(answer)) {
+      deps.output.out(line);
+    }
+  }
 }
 
 type MediaResolution =
@@ -142,12 +165,20 @@ async function readFileIfExists(filePath: string): Promise<Buffer | null> {
 }
 
 /**
- * Adds `file` to the store and writes its stand-in, or refuses NAMING what is wrong.
+ * Adds `file` to the store, writes its stand-in, and moves the original OUT of the working tree —
+ * or refuses NAMING what is wrong.
  *
  * The order is deliberate. Everything that can be decided from the caller's own arguments — does
  * the file exist, is the media type knowable — is settled BEFORE the store is touched, so a
  * mistyped path or a missing `--media` never turns into a network round trip and never reports an
  * unconfigured store to someone whose real problem was a typo.
+ *
+ * **The original bytes are removed only AFTER the store has confirmed it holds them** (FR-023,
+ * AUDIT-20260716-22): the point of the verb is that the large bytes stop living in git and only the
+ * committable stand-in stays. Leaving the original beside the stand-in would ship BOTH — the very
+ * bytes the stand-in exists to replace, still exactly where git would pick them up. The removal is
+ * never a delete-before-confirm: if the store cannot be reached or does not report holding the
+ * address, this throws and the local bytes stay put.
  */
 export async function assetAddCommand(
   deps: AssetDeps,
@@ -157,11 +188,9 @@ export async function assetAddCommand(
   return runVerb(deps.output, 'asset add', async () => {
     const bytes = await readFileIfExists(file);
     if (bytes === null) {
-      deps.output.err(
-        `pc asset add: nothing exists at "${file}". Name a file that is on this machine — this ` +
-          `verb reads bytes and stores them; it cannot add a file it cannot read (FR-036).`
-      );
-      return EXIT_USAGE;
+      // The original is not beside the stand-in. Either this file was never added, or a prior
+      // `pc asset add` already moved its bytes into the store and removed it — a re-add.
+      return await reAddOrMissing(deps, file, options);
     }
 
     if (options.media !== undefined && options.media.trim().length === 0) {
@@ -227,7 +256,20 @@ export async function assetAddCommand(
       await fs.writeFile(standinPath, standinText(pointer));
     }
 
-    const answer: AssetAddJson = {
+    // The committable half is on disk now. Move the original OUT — but only after the store CONFIRMS
+    // it holds these bytes at this address. `has` is checked again here rather than trusting the
+    // `put`/`already-stored` reasoning above, so the delete is provably a move into the store and
+    // never a delete-before-confirm that could strand bytes nowhere (FR-023, AUDIT-20260716-22).
+    if (!(await store.has(address))) {
+      throw new Error(
+        `pc asset add: refusing to remove "${file}". Its bytes hash to ${address}, but the store ` +
+          `does not report holding that address, so deleting the local copy would lose them — the ` +
+          `store did not durably accept the bytes it was given (FR-036).`
+      );
+    }
+    await fs.unlink(file);
+
+    emit(deps, options, {
       file,
       standin: standinPath,
       asset: address,
@@ -235,16 +277,56 @@ export async function assetAddCommand(
       bytes: bytes.length,
       stored: !alreadyStored,
       standin_written: standinWritten,
-    };
-
-    if (options.json === true) {
-      deps.output.out(toJsonText(answer));
-    } else {
-      for (const line of renderAssetAdd(answer)) {
-        deps.output.out(line);
-      }
-    }
+      original_removed: true,
+    });
 
     return EXIT_OK;
   });
+}
+
+/**
+ * The original bytes are not beside the stand-in. This is either a file that was never added, or a
+ * re-add of one whose bytes a prior run already moved into the store. Distinguish by the stand-in,
+ * and confirm the store STILL holds the bytes before calling a re-add a no-op: a stand-in whose
+ * bytes live neither on disk nor in the store is a fabricated record, not a success (FR-023, FR-036,
+ * AUDIT-20260716-22).
+ */
+async function reAddOrMissing(
+  deps: AssetDeps,
+  file: string,
+  options: AssetAddOptions
+): Promise<number> {
+  const existing = await readPointer(file);
+  if (existing === null) {
+    deps.output.err(
+      `pc asset add: nothing exists at "${file}". Name a file that is on this machine — this ` +
+        `verb reads bytes and stores them; it cannot add a file it cannot read (FR-036).`
+    );
+    return EXIT_USAGE;
+  }
+
+  const store = await deps.store.store();
+  if (!(await store.has(existing.asset))) {
+    deps.output.err(
+      `pc asset add: "${file}" is gone and its stand-in "${file}${POINTER_SUFFIX}" points at ` +
+        `${existing.asset}, which the store does not hold. The bytes are neither beside the ` +
+        `stand-in nor in the store, so there is nothing to add and nothing to recover (FR-036).`
+    );
+    return EXIT_USAGE;
+  }
+
+  // Already added: the bytes are safely in the store and the stand-in is beside the file. The verb's
+  // whole postcondition already holds, so this is an idempotent no-op — nothing stored, nothing
+  // written, nothing removed.
+  emit(deps, options, {
+    file,
+    standin: `${file}${POINTER_SUFFIX}`,
+    asset: existing.asset,
+    media: existing.media,
+    bytes: existing.bytes,
+    stored: false,
+    standin_written: false,
+    original_removed: false,
+  });
+  return EXIT_OK;
 }

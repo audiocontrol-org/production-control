@@ -1,3 +1,4 @@
+import * as crypto from 'node:crypto';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import type { InputResolver } from '@/assets/resolve.js';
@@ -30,11 +31,25 @@ import type { ProviderRunner } from '@/providers/run.js';
  *      spawn: a provider must never be started against a world that is not ready for it.
  *   2. Invoke the provider into a fresh, empty `output_dir`.
  *   3. Hash the produced output HERE, never trusting the provider's word for it.
- *   4. Ingest it to its final `dist/` location.
+ *   4. STAGE the bytes to a temp sibling under `dist/` — off to the side, NOT yet their final path.
  *   5. Write the record: inputs as SUPPLIED, tool as REPORTED, output hash as COMPUTED.
+ *   6. COMMIT the bytes with a single atomic `rename` into their final `dist/` location.
  *
- * A failure at any step throws, and the ledger is written only at step 5 — so a failed build
- * writes no record claiming success and leaves any previous record untouched (FR-017).
+ * A failure at any step throws. Steps 4–6 are ordered so the VISIBLE artifact changes LAST and
+ * ATOMICALLY. A failure before step 6 leaves the previous artifact bytes exactly where they were
+ * and discards the staged copy — the new bytes never overwrite the old where a reader could observe
+ * a half-done state. The one interruptible window is the single rename in step 6: an interrupt
+ * there can leave the freshly written record (`H_new`) beside the previous bytes (`H_old`), which
+ * `src/state/modified.ts` reports as a divergence and a rerun repairs — but the bytes on disk are
+ * never a partial file, and the record is never stranded over bytes it does not describe.
+ *
+ * This is why step 4 does NOT `copyFile` straight onto the final `dist/` path (the prior shape,
+ * AUDIT-20260716-14): doing so overwrote the visible artifact BEFORE the record existed, so a record
+ * failure (readLedger throwing, writeLedger hitting ENOSPC/EPERM, an interrupt) left the ledger
+ * asserting `H_old` for bytes already replaced with `H_new` — the ledger claiming an origin for
+ * bytes that are not the bytes on disk. So it is NOT true that a failure leaves the artifact bytes
+ * untouched only because the record is written last; it is true because the bytes are not made
+ * visible until after the record lands (FR-017).
  */
 
 export interface BuildContext {
@@ -81,8 +96,29 @@ export async function buildTarget(context: BuildContext, id: Identity): Promise<
       outputDir,
     });
 
-    const recordedPath = await ingest(context.episodeDir, output);
-    return await record(context, id, decl, inputs, response, recordedPath, output.hash);
+    // Step 4: stage the produced bytes to a temp sibling — NOT their final path yet.
+    const staged = await stage(context.episodeDir, output);
+    try {
+      // Step 5: write the record. If this throws, nothing visible has changed — the staged bytes
+      // are off to the side and the `finally` below removes them, leaving the prior artifact intact.
+      const artifact = await record(
+        context,
+        id,
+        decl,
+        inputs,
+        response,
+        staged.recordedPath,
+        output.hash
+      );
+      // Step 6: make the change visible in ONE atomic rename, within `dist/` (one filesystem).
+      await fs.rename(staged.tempPath, staged.destination);
+      return artifact;
+    } finally {
+      // Remove the staged temp if it is still there: on the success path the rename already consumed
+      // it (`force` ignores the resulting ENOENT); on any failure path this clears the orphan so a
+      // half-produced artifact never lingers in `dist/` (AUDIT-20260716-14).
+      await fs.rm(staged.tempPath, { force: true });
+    }
   } finally {
     // The provider's scratch space is ours to clean up, on every path. A failed build must not
     // leave a half-produced artifact lying inside `dist/` looking like a build product.
@@ -116,15 +152,32 @@ function providerOf(node: Node): ProviderDecl {
   return decl;
 }
 
+/** What `stage` hands back: where the bytes will finally live, where they are staged, and the
+ * episode-relative posix path the record will state. */
+interface StagedOutput {
+  readonly recordedPath: string;
+  readonly destination: string;
+  readonly tempPath: string;
+}
+
 /**
- * Moves the produced bytes from the provider's scratch directory to their final home under
- * `dist/`, and returns the path as the record will state it (episode-relative, posix).
+ * STAGES the produced bytes: copies them to a UNIQUE temp sibling under `<episodeDir>/dist`, and
+ * returns that temp path, the final `destination`, and the `recordedPath` the record will state
+ * (episode-relative, posix). The caller writes the record, then `rename`s the temp into
+ * `destination` — so the visible artifact only ever appears via that ONE atomic rename, never a
+ * `copyFile` straight onto the live path (AUDIT-20260716-14).
  *
- * `copyFile` then let the `finally` above remove the scratch dir, rather than `rename`: the two
- * are only equivalent within one filesystem, and `dist/` is exactly the kind of directory
- * someone mounts elsewhere.
+ * The copy targets a temp (rather than moving the scratch file) because the provider's scratch dir
+ * may sit on a different filesystem than `dist/`, where `rename` would fail — but the
+ * temp→destination rename is WITHIN `dist/`, one filesystem, so it is atomic. `crypto.randomUUID`
+ * names the temp because `Math.random`/`Date.now` are unavailable in this environment; a crash
+ * mid-copy leaves the temp as an orphan under `dist/`, which `buildTarget`'s `finally` removes.
+ *
+ * The output is always a FILE, never a directory: `invoke.ts` hashes it with `hashFile` and
+ * `onlyOutput` admits exactly one, so a directory-valued output would already have thrown upstream.
+ * The file-to-file copy-then-rename here is the only shape ingest is ever handed.
  */
-async function ingest(episodeDir: string, output: ProducedOutput): Promise<string> {
+async function stage(episodeDir: string, output: ProducedOutput): Promise<StagedOutput> {
   const recordedPath = path.posix.join('dist', output.relPath);
   const destination = path.join(episodeDir, recordedPath);
 
@@ -141,10 +194,13 @@ async function ingest(episodeDir: string, output: ProducedOutput): Promise<strin
     );
   }
 
+  // `dirname(destination)` is at or under `distRoot`, so this also creates `distRoot`, where the
+  // temp sibling lands. Both the temp and its eventual destination are then within one filesystem.
   await fs.mkdir(path.dirname(destination), { recursive: true });
-  await fs.copyFile(output.fullPath, destination);
+  const tempPath = path.join(distRoot, `.pc-ingest-${crypto.randomUUID()}`);
+  await fs.copyFile(output.fullPath, tempPath);
 
-  return recordedPath;
+  return { recordedPath, destination, tempPath };
 }
 
 /**

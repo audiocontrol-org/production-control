@@ -88,7 +88,12 @@ export const ProviderDeclSchema = z.object({
   cmd: z.array(z.string()),
   impure: z
     .object({
-      reason: z.string(),
+      // Non-empty and non-whitespace (FR-032), mirroring WaiverSchema and
+      // BuildImpureSchema — a declared impurity without a real reason is a bare
+      // flag, which is exactly what FR-032 forbids.
+      reason: z
+        .string()
+        .refine((value) => value.trim().length > 0, 'reason must not be empty or whitespace-only'),
     })
     .optional(),
 });

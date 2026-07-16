@@ -13,6 +13,11 @@ import type { Absence, ContentResolver } from '@/state/identity.js';
  *         recorded = ledger.artifacts[node].inputs[input]
  *         if current != recorded  -> stale
  *
+ *     # the mirror of the above: an input the ledger RECORDED but the manifest no longer
+ *     # declares is a change to the input SET, not a content change on a surviving input.
+ *     for each recorded input:
+ *         if input not in declared inputs -> stale (built from material no longer declared)
+ *
  *     # then, and only if no input moved (FR-017a):
  *     current  = hash(node.output.path)
  *     recorded = ledger.artifacts[node].output.hash
@@ -61,6 +66,15 @@ export type FreshnessAssessment =
       readonly recorded: Hash | null;
       readonly current: Hash;
     }
+  /**
+   * The node was RECORDED as built from an identity the manifest no longer declares as an input.
+   * Every surviving declared input still matches its recorded hash and the output bytes still
+   * match `output.hash`, so the content checks all pass — yet the recorded provenance names
+   * material the manifest no longer says the artifact is built from. A removed input is a change
+   * to the input SET, and it is the exact mirror of the added-input case (`input-changed` with
+   * `recorded: null`): both are set differences, and reporting only one would be a false-clean.
+   */
+  | { readonly kind: 'input-removed'; readonly identity: Identity; readonly recorded: Hash }
   /** The recorded output path holds nothing: the built bytes are not there to be checked. */
   | { readonly kind: 'output-absent'; readonly path: string }
   /**
@@ -148,7 +162,21 @@ async function findAbsentInput(
   return null;
 }
 
-/** Step 3 — the comparison. Every input resolved in step 1, so each one has content here. */
+/**
+ * Step 3 — the comparison, in BOTH directions. Every input resolved in step 1, so each declared
+ * one has content here.
+ *
+ *   - Declared against recorded: a surviving input whose content moved is `input-changed`, and a
+ *     newly declared input (recorded as `null`) is `input-changed` too — this node was never
+ *     built from it.
+ *   - Recorded against declared: an identity the ledger recorded that the manifest no longer
+ *     declares is `input-removed`. Without this second pass a producer whose input list shrank
+ *     hashes clean on every input that remains and reports `fresh`, even though the bytes on disk
+ *     were built from material the manifest no longer declares (AUDIT-20260716-03).
+ *
+ * The declared pass runs first, so a content change on a surviving input (or a freshly added one)
+ * is named ahead of a removal when both are true — either way the node is `stale`.
+ */
 async function findMovedInput(
   resolver: ContentResolver,
   recorded: Readonly<Record<Identity, Hash>>,
@@ -166,6 +194,12 @@ async function findMovedInput(
     const recordedHash = recorded[identity] ?? null;
     if (recordedHash !== resolution.hash) {
       return { kind: 'input-changed', identity, recorded: recordedHash, current: resolution.hash };
+    }
+  }
+
+  for (const [recordedId, recordedHash] of Object.entries(recorded)) {
+    if (!inputs.includes(recordedId)) {
+      return { kind: 'input-removed', identity: recordedId, recorded: recordedHash };
     }
   }
   return null;

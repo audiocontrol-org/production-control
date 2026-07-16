@@ -58,6 +58,14 @@ export const message = {
     );
   },
 
+  inputRemoved(id: Identity, input: Identity, recorded: Hash): string {
+    return (
+      `"${id}" was built from input "${input}" (recorded as ${abbreviate(recorded)}), but "${input}" ` +
+      `is no longer among its declared inputs. The output on disk was built from material the ` +
+      `manifest no longer declares, so "${id}" is stale — rebuild it from its current inputs.`
+    );
+  },
+
   inputAbsent(id: Identity, input: Identity, absence: string): string {
     return (
       `Input "${input}" of "${id}" is absent (${absence}), so whether "${id}" is stale cannot ` +
@@ -104,9 +112,10 @@ export const message = {
 
   followedAbsent(id: Identity, followed: Identity, absence: string): string {
     return (
-      `Authored node "${id}" follows "${followed}", which does not resolve (${absence}). Drift ` +
-      `cannot be claimed against content that cannot be read, so the absence is reported ` +
-      `instead of a review (FR-022c).`
+      `Authored node "${id}" follows "${followed}", which does not resolve (${absence}). "${id}" ` +
+      `itself is present, so it is not absent — but whether it still answers "${followed}" cannot ` +
+      `be reviewed until "${followed}" is restored. A human must supply it before the question ` +
+      `can be resolved (FR-022c).`
     );
   },
 

@@ -4,6 +4,7 @@ import * as path from 'node:path';
 import type { EpisodeManifest, Profile } from '@/manifest/schema.js';
 import type { Ledger } from '@/ledger/schema.js';
 import { resolveStatus, type AuthoredState, type EpisodeStatus } from '@/state/resolve.js';
+import { assessRelease } from '@/state/release.js';
 import {
   makeTempEpisodeDir,
   cleanupTempDirs,
@@ -156,6 +157,101 @@ describe('state/resolve — state model (T023 + T024)', () => {
       expect(node.state).toBe('absent');
       expect(node.cause.code).toBe('path-absent');
       expect(node.state).not.toBe('needs-review');
+    }
+  );
+
+  it(
+    'Case 8b (AUDIT-20260716-30): an authored node whose OWN path is present but whose FOLLOWED ' +
+      'node is missing reports needs-review about ITSELF, not absent about the followed file',
+    async () => {
+      const episodeDir = await makeTempEpisodeDir();
+      // `tracker`'s own declared file IS present and readable...
+      await writeAndHash(episodeDir, 'tracker.md', 'the tracking part, present and readable');
+      // ...but the node it follows, `spoken`, has NO file on disk (`script.md` never written).
+
+      const manifest: EpisodeManifest = {
+        version: 1,
+        id: 'followed-absent-is-not-my-absence',
+        title: 'followed absent is not my absence',
+        profile: 'test-profile',
+        authored: {
+          spoken: { path: 'script.md' },
+          tracker: { path: 'tracker.md', follows: 'spoken' },
+        },
+        targets: [],
+      };
+      const profile: Profile = { version: 1, targets: {} };
+      const ledger = emptyLedger();
+
+      const status = await resolveStatus({ episodeDir, manifest, profile, ledger });
+      const tracker = getNode(status, 'tracker');
+
+      // The followed node itself is genuinely absent (its own file is missing) — that is correct
+      // and separate.
+      expect(getNode(status, 'spoken').state).toBe('absent');
+
+      // Before the fix `tracker` reported `absent`/`path-absent` — a claim about `spoken`'s file
+      // carried on `tracker`, whose own bytes are present and readable. The truthful state
+      // describes `tracker`'s situation: it cannot be reviewed until the followed node returns.
+      expect(tracker.state).toBe('needs-review');
+      expect(tracker.state).not.toBe('absent');
+      expect(tracker.cause.code).toBe('followed-absent');
+      expect(tracker.cause.code).not.toBe('path-absent');
+      expect(tracker.cause.identity).toBe('spoken');
+    }
+  );
+
+  it(
+    'Case 8c (AUDIT-20260716-29): deleting the FOLLOWED node must NOT turn a blocked release ' +
+      'green — an unresolved human question survives the deletion',
+    async () => {
+      const episodeDir = await makeTempEpisodeDir();
+      // A human accepted `narration` against `spoken` at v1; `spoken` has since moved to v2, so
+      // `narration` is needs-review and the release is blocked.
+      const baselineHash = await writeAndHash(episodeDir, 'script.md', 'script v1');
+      await writeAndHash(episodeDir, 'narration.wav', 'narration audio bytes');
+      await overwrite(episodeDir, 'script.md', 'script v2 — revised');
+
+      const manifest: EpisodeManifest = {
+        version: 1,
+        id: 'release-false-clean-on-delete',
+        title: 'release false clean on delete',
+        profile: 'test-profile',
+        authored: {
+          spoken: { path: 'script.md' },
+          narration: { path: 'narration.wav', follows: 'spoken' },
+        },
+        targets: [],
+      };
+      const profile: Profile = { version: 1, targets: {} };
+      const ledger: Ledger = {
+        version: 1,
+        artifacts: {},
+        reviews: {
+          narration: {
+            waived_hash: baselineHash,
+            reason: 'initial baseline: recorded against script v1',
+            at: FIXED_TIMESTAMP,
+          },
+        },
+      };
+
+      // Non-vacuity: with `spoken` present-but-changed, the release IS blocked on narration.
+      const before = await resolveStatus({ episodeDir, manifest, profile, ledger });
+      expect(getNode(before, 'narration').state).toBe('needs-review');
+      expect(assessRelease(before, []).releasable).toBe(false);
+
+      // The mechanical way to "turn the light green" without a human: delete the followed file.
+      await fs.rm(path.join(episodeDir, 'script.md'));
+
+      const after = await resolveStatus({ episodeDir, manifest, profile, ledger });
+      const verdict = assessRelease(after, []);
+
+      // Before the fix, narration went `absent` here and dropped out of the blocker set, so the
+      // release reported clean. The human question has not been answered — it must still block.
+      expect(getNode(after, 'narration').state).toBe('needs-review');
+      expect(verdict.releasable).toBe(false);
+      expect(verdict.blockers.map((b) => b.id)).toContain('narration');
     }
   );
 

@@ -345,6 +345,65 @@ describe('graph/validate', () => {
       expect(() => validateGraph(manifest, profile)).toThrow(/nonexistent/);
     });
 
+    it('Case 7b (AUDIT-20260716-05/-31): follows naming an UNREACHABLE profile target is refused — it is not a node in this episode graph', () => {
+      // `website` is in the profile catalogue, but this episode asks for `epub` and nothing it
+      // asks for is built from `website`, so `website` is NOT a node in `buildGraph`'s output.
+      // A `follows` pointing at it passes the old "known identity" check but makes
+      // `resolveStatus`/`pc explain` throw at runtime ("not a node in this episode's graph").
+      const manifest: EpisodeManifest = {
+        version: 1,
+        id: 'test',
+        title: 'Test',
+        profile: 'test-profile',
+        authored: {
+          longform: { path: 'article.mdx' },
+          tracker: { path: 'tracker.md', follows: 'website' },
+        },
+        targets: ['epub'],
+      };
+
+      const profile: Profile = {
+        version: 1,
+        targets: {
+          epub: { inputs: ['longform'], provider: provider(['npx', 'epub-tooling', 'build']) },
+          // Exists in the catalogue, but unreachable from `epub`.
+          website: { inputs: ['longform'], provider: provider(['npx', 'web-tooling', 'build']) },
+        },
+      };
+
+      expect(() => validateGraph(manifest, profile)).toThrow();
+      // Names both the offending declaration and the dangling followed identity (FR-005).
+      expect(() => validateGraph(manifest, profile)).toThrow(/website/);
+      expect(() => validateGraph(manifest, profile)).toThrow(/tracker/);
+      // And `buildGraph` confirms the premise: `website` is genuinely not a node here.
+      expect(buildGraph(manifest, profile).nodes.has('website')).toBe(false);
+    });
+
+    it('Case 7c: follows naming a REACHABLE profile target is still allowed — only unreachable targets are refused', () => {
+      // The counterpart to 7b: an authored node may follow a target that IS a node of this
+      // episode's graph. This must NOT be over-refused by the 7b fix.
+      const manifest: EpisodeManifest = {
+        version: 1,
+        id: 'test',
+        title: 'Test',
+        profile: 'test-profile',
+        authored: {
+          longform: { path: 'article.mdx' },
+          tracker: { path: 'tracker.md', follows: 'epub' },
+        },
+        targets: ['epub'],
+      };
+
+      const profile: Profile = {
+        version: 1,
+        targets: {
+          epub: { inputs: ['longform'], provider: provider(['npx', 'epub-tooling', 'build']) },
+        },
+      };
+
+      expect(() => validateGraph(manifest, profile)).not.toThrow();
+    });
+
     it('Case 8: A target in the manifest that the profile does not produce is refused, naming the target', () => {
       const manifest: EpisodeManifest = {
         version: 1,

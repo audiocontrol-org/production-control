@@ -457,6 +457,30 @@ describe('contract: a declared output path cannot escape output_dir (BuildOutput
     expect(BuildOutputSchema.safeParse({ path: '/etc/cron.d/evil' }).success).toBe(false);
   });
 
+  it('refuses a whitespace-only `impure.reason`, exactly as a waiver reason is (AUDIT-20260716-17)', () => {
+    // `.min(1)` would let "   " through: three spaces state no more than the empty string does.
+    // FR-032 wants WHICH kind of impurity, and the ledger's waiver reason already refuses a
+    // whitespace-only decision by trimming — the two must behave identically, so this must refuse.
+    const whitespaceReason = {
+      version: 1,
+      outputs: [{ path: 'a.out' }],
+      tool: { name: 't', version: '1' },
+      impure: { reason: '   ' },
+    };
+    let message = '';
+    try {
+      parseBuildResponse(whitespaceReason);
+    } catch (error) {
+      message = error instanceof Error ? error.message : String(error);
+    }
+    // Names the offending field (FR-036), the same shape the empty-object case reports.
+    expect(message).toContain('impure.reason');
+
+    // Non-vacuity: a real reason still parses, so the refinement is not blanket-rejecting.
+    const realReason = { ...whitespaceReason, impure: { reason: 'model call; non-deterministic' } };
+    expect(() => parseBuildResponse(realReason)).not.toThrow();
+  });
+
   it('a whole BuildResponse carrying a traversing output is refused by parseBuildResponse', () => {
     // The runner parses the provider's stdout through this same function BEFORE it resolves any
     // output path against output_dir, so the escape is refused before it can be walked (finding 07).

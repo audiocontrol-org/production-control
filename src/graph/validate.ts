@@ -32,8 +32,15 @@ import type { EpisodeManifest, Profile, Identity } from '@/manifest/schema.js';
  *   - Rule 4 is what DEFINES the selection, so it is checked against the whole
  *     catalogue and runs first. A target the profile cannot produce is refused
  *     by name, never silently dropped as "unreachable".
- *   - Rule 3 is about authored nodes, which are all in the graph regardless of
- *     reachability, and `follows` may name any known identity.
+ *   - Rule 3 is about `follows`, which is drawn from authored nodes (all in the
+ *     graph regardless of reachability). Its target must itself be a NODE of
+ *     this episode's graph — an authored node, or a profile target reachable
+ *     from `manifest.targets`. It may NOT name a catalogue target that is
+ *     unreachable here: `buildGraph` never builds such a target into
+ *     `graph.nodes`, so `resolveStatus` and `pc explain` would later fail to
+ *     resolve it as an internal graph/status disagreement (AUDIT-20260716-05,
+ *     AUDIT-20260716-31). Refusing it here keeps the graph and the status model
+ *     in agreement by construction.
  *
  * `follows` is the advisory relationship ("is a response to"). It is drawn
  * only from authored nodes, never propagates, and never participates in
@@ -74,11 +81,21 @@ export function validateGraph(manifest: EpisodeManifest, profile: Profile): void
   // An identity is "known" if it is authored or a profile target.
   const knownIds = new Set<Identity>([...authoredIds, ...targetIds]);
 
-  // Rule 3: `follows` must name an existing identity.
+  // The identities that are actually NODES of this episode's graph: every authored node, plus
+  // every profile target reachable from `manifest.targets`. This is exactly what `buildGraph`
+  // constructs, so it is the set `follows` must be validated against.
+  const graphNodeIds = new Set<Identity>([...authoredIds, ...reached]);
+
+  // Rule 3: `follows` must name a NODE of this episode's graph — not merely a known identity. A
+  // catalogue target that is unreachable here is a known identity but not a graph node, and a
+  // `follows` pointing at it would make `resolveStatus`/`pc explain` throw at runtime
+  // (AUDIT-20260716-05, AUDIT-20260716-31).
   for (const [id, decl] of Object.entries(manifest.authored)) {
-    if (decl.follows !== undefined && !knownIds.has(decl.follows)) {
+    if (decl.follows !== undefined && !graphNodeIds.has(decl.follows)) {
       throw new Error(
-        `Authored node "${id}" declares follows: "${decl.follows}", which is not a known identity (not authored and not a profile target).`
+        `Authored node "${id}" declares follows: "${decl.follows}", which is not a node in this ` +
+          `episode's graph (not authored, and not a profile target reachable from this episode's ` +
+          `declared targets).`
       );
     }
   }

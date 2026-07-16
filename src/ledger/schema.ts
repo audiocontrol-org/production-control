@@ -33,7 +33,12 @@ export const ArtifactRecordSchema = z.object({
   }),
   producer_impure: z
     .object({
-      reason: z.string(),
+      // Non-empty and non-whitespace (FR-032), mirroring WaiverSchema above and
+      // ProviderDecl.impure — the recorded impurity reason must carry real content,
+      // not a bare flag.
+      reason: z
+        .string()
+        .refine((value) => value.trim().length > 0, 'reason must not be empty or whitespace-only'),
     })
     .optional(),
   inputs: z.record(IdentitySchema, HashSchema),
