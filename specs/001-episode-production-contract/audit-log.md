@@ -96,7 +96,7 @@ The fix is the standard split: keep `createProgram`/`run` in a pure module and m
 ### AUDIT-20260716-07 — Provider output paths can escape `output_dir`
 
 Finding-ID: AUDIT-20260716-07
-Status:     open
+Status:     fixed-3f07ca0
 Severity:   high
 Per-lane:   codex=high
 Decision:   single-model (gate-counted high)
@@ -109,7 +109,7 @@ The downstream blast radius is high because `invokeProvider` will then hash and 
 ### AUDIT-20260716-08 — `loadProfile` joins an unvalidated profile name into a path, so a profile name with separators escapes the search-dir contract
 
 Finding-ID: AUDIT-20260716-08 (claude-04 + codex-02; cross-model)
-Status:     open
+Status:     fixed-3f07ca0
 Severity:   high
 Per-lane:   claude=low, codex=high
 Decision:   adjudicated (gate-counted high) — blast-radius=unstated, reachability=unstated, fix-debt=no; no down-calibration signal — high retained.
@@ -124,7 +124,7 @@ The fix belongs in the schema, where the rest of this feature's refusals live: c
 ### AUDIT-20260716-09 — Manifest-authored paths can escape the episode directory
 
 Finding-ID: AUDIT-20260716-09
-Status:     open
+Status:     fixed-3f07ca0
 Severity:   high
 Per-lane:   codex=high
 Decision:   single-model (gate-counted high)
@@ -212,7 +212,7 @@ A reasonable fix is to make the visible state change last and atomic: copy to a 
 ### AUDIT-20260716-15 — `BuildOutputSchema.path` accepts any non-empty string, so a provider-declared `../` output escapes `dist/` at ingest
 
 Finding-ID: AUDIT-20260716-15
-Status:     open
+Status:     fixed-3f07ca0
 Severity:   high
 Per-lane:   claude=high
 Decision:   adjudicated (gate-counted high) — blast-radius=unstated, reachability=unstated, fix-debt=no; no down-calibration signal — high retained.
@@ -227,7 +227,7 @@ The fix is a refinement on `BuildOutputSchema.path` — reject absolute paths an
 ### AUDIT-20260716-16 — Provider outputs can escape `dist/` and be recorded as legitimate artifacts
 
 Finding-ID: AUDIT-20260716-16
-Status:     open
+Status:     fixed-3f07ca0
 Severity:   high
 Per-lane:   codex=high
 Decision:   adjudicated (gate-counted high) — blast-radius=unstated, reachability=unstated, fix-debt=no; no down-calibration signal — high retained.
@@ -270,7 +270,7 @@ Blast radius: an adopter running the test suite and seeing green would reasonabl
 ### AUDIT-20260716-19 — Fetched asset bytes are handed to the provider under a *claimed* hash, never an observed one — breaking the module's own stated invariant
 
 Finding-ID: AUDIT-20260716-19 (claude-01 + claude-02 + codex-02; cross-model)
-Status:     open
+Status:     fixed-3f07ca0
 Severity:   high
 Per-lane:   claude=high, codex=high
 Decision:   agreement (gate-counted high)
@@ -358,7 +358,7 @@ That matters because this command is the user-facing oracle for “why is this n
 ### AUDIT-20260716-25 — Content-addressed destination is written non-atomically, so a concurrent resolve can hand a provider a truncated file
 
 Finding-ID: AUDIT-20260716-25
-Status:     open
+Status:     fixed-3f07ca0
 Severity:   high
 Per-lane:   claude=high
 Decision:   single-model (gate-counted high)
@@ -386,7 +386,7 @@ That breaks the stated boundary: FR-026 targets authored paths that are both ove
 ### AUDIT-20260716-27 — Fetched asset inputs lose their declared file type at the provider boundary
 
 Finding-ID: AUDIT-20260716-27
-Status:     open
+Status:     fixed-3f07ca0
 Severity:   high
 Per-lane:   codex=high
 Decision:   single-model (gate-counted high)
