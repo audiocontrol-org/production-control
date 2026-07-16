@@ -40,7 +40,8 @@ const dockerAvailable = await isDockerAvailable();
 // makes the missing-Docker branch a FAILING test rather than a skip, so CI (which
 // sets it) cannot normalize the skip, while a developer laptop without it keeps the
 // skip ergonomics. A gate is not enforcement until absence can fail (AUDIT-20260716-18).
-const requireDocker = process.env.PC_REQUIRE_DOCKER !== undefined && process.env.PC_REQUIRE_DOCKER !== '';
+const requireDocker =
+  process.env.PC_REQUIRE_DOCKER !== undefined && process.env.PC_REQUIRE_DOCKER !== '';
 
 if (!dockerAvailable) {
   console.warn(
