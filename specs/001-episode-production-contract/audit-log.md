@@ -10,7 +10,8 @@ targetVersion: ""
 ### AUDIT-20260716-01 — examples/minimal-podcast is missing the authored files its own manifest and comments require
 
 Finding-ID: AUDIT-20260716-01
-Status:     open
+Status:     acknowledged-2026-07-16 (false-positive)
+Disposition: FALSE POSITIVE. Commit 9c0f853 adds outline.md (8 lines) and script.md (4 lines) together with take-01.wav — both ARE committed, non-empty, and `pc status --episode examples/minimal-podcast` reports outline/spoken `present` and narration `needs-review`, exactly as the manifest comment promises. The barrage chunks the feature diff; the single-model (claude=high, no cross-model confirmation) chunk that raised this did not contain those two files, and its "not a chunk-boundary artifact" reasoning was mistaken. Verified via `git show 9c0f853 --stat` and a live status run.
 Severity:   high
 Per-lane:   claude=high
 Decision:   single-model (gate-counted high)
