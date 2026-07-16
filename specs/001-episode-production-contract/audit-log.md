@@ -24,7 +24,7 @@ Blast radius: this is the shipped, README-referenced starter example. An adopter
 ### AUDIT-20260716-02 — The production resolver never wires the new git tracking check
 
 Finding-ID: AUDIT-20260716-02
-Status:     open
+Status:     fixed-bbc4c02
 Severity:   high
 Per-lane:   codex=high
 Decision:   single-model (gate-counted high)
@@ -52,7 +52,7 @@ Blast radius: this is a false-clean on the surface whose entire stated purpose i
 ### AUDIT-20260716-04 — Case 5 cannot discriminate record-based from disk-based input resolution — the property it claims to prove is untestable as written
 
 Finding-ID: AUDIT-20260716-04
-Status:     open
+Status:     fixed-bbc4c02
 Severity:   high
 Per-lane:   claude=high
 Decision:   adjudicated (gate-counted high) — blast-radius=unstated, reachability=unstated, fix-debt=no; no down-calibration signal — high retained.
@@ -80,7 +80,7 @@ This leaks into runtime: `resolveAuthoredNode` calls `resolver.resolve(followed)
 ### AUDIT-20260716-06 — `src/cli/index.ts` self-executes at import time while also exporting `createProgram`/`run`
 
 Finding-ID: AUDIT-20260716-06
-Status:     open
+Status:     fixed-bbc4c02
 Severity:   high
 Per-lane:   claude=high
 Decision:   adjudicated (gate-counted high) — blast-radius=unstated, reachability=unstated, fix-debt=no; no down-calibration signal — high retained.
@@ -138,7 +138,7 @@ A reasonable fix is to introduce a shared relative path schema for manifest-auth
 ### AUDIT-20260716-10 — Shipped `pc status` path is not checked because `src/cli/index.ts` is excluded
 
 Finding-ID: AUDIT-20260716-10
-Status:     open
+Status:     fixed-bbc4c02
 Severity:   high
 Per-lane:   codex=high
 Decision:   single-model (gate-counted high)
@@ -151,7 +151,7 @@ The blast radius is high because downstream consumers can rely on “reporting s
 ### AUDIT-20260716-11 — `assessRelease` is never tested against the `invalid` state its own sibling test proves is reachable
 
 Finding-ID: AUDIT-20260716-11
-Status:     open
+Status:     fixed-bbc4c02
 Severity:   high
 Per-lane:   claude=high
 Decision:   single-model (gate-counted high)
@@ -168,7 +168,7 @@ A fix: add `node('epub', 'derived', 'invalid', { validated: 'failed' })` as the 
 ### AUDIT-20260716-12 — No coverage for a `follows` node with no `reviews` entry — the fresh-install baseline
 
 Finding-ID: AUDIT-20260716-12
-Status:     open
+Status:     fixed-bbc4c02
 Severity:   high
 Per-lane:   claude=high
 Decision:   single-model (gate-counted high)
@@ -185,7 +185,7 @@ A fix: add a Case 11b — `follows` declared, both paths present on disk, `ledge
 ### AUDIT-20260716-13 — Importing every emitted `.js` includes the CLI entry point, whose top-level side effects run inside the vitest worker
 
 Finding-ID: AUDIT-20260716-13
-Status:     open
+Status:     fixed-bbc4c02
 Severity:   high
 Per-lane:   claude=high
 Decision:   single-model (gate-counted high)
@@ -303,7 +303,7 @@ Blast radius: this ledger is the evidence artifact downstream governance prices.
 ### AUDIT-20260716-21 — The cycle test's "names the offending declaration" assertions (`/a/`, `/b/`, `/c/`) match essentially any prose
 
 Finding-ID: AUDIT-20260716-21
-Status:     open
+Status:     fixed-bbc4c02
 Severity:   high
 Per-lane:   claude=high
 Decision:   adjudicated (gate-counted high) — blast-radius=unstated, reachability=unstated, fix-debt=no; no down-calibration signal — high retained.
@@ -374,7 +374,7 @@ A reasonable fix is write-to-temp-then-`rename` within `destDir` (rename is atom
 ### AUDIT-20260716-26 — Tracked large authored files are still refused in production paths
 
 Finding-ID: AUDIT-20260716-26
-Status:     open
+Status:     fixed-bbc4c02
 Severity:   high
 Per-lane:   codex=high
 Decision:   single-model (gate-counted high)
@@ -400,7 +400,7 @@ That makes provider behavior depend on whether the source bytes happened to be p
 ### AUDIT-20260716-28 — `cachedStore.has` is not covered by the cache-integrity contract
 
 Finding-ID: AUDIT-20260716-28
-Status:     open
+Status:     fixed-bbc4c02
 Severity:   high
 Per-lane:   codex=high
 Decision:   single-model (gate-counted high)
