@@ -36,7 +36,7 @@ The blast radius is high because a consumer running the feature as shipped will 
 ### AUDIT-20260716-03 — Freshness never notices an input REMOVED from the manifest, so a producer whose input list shrank reports `fresh`
 
 Finding-ID: AUDIT-20260716-03
-Status:     open
+Status:     fixed-168f94a
 Severity:   high
 Per-lane:   claude=high
 Decision:   adjudicated (gate-counted high) — blast-radius=high, reachability=unstated, fix-debt=no; no down-calibration signal — high retained.
@@ -66,7 +66,7 @@ The fix is to break the tie deliberately: write `dist/voiceover.wav` with bytes 
 ### AUDIT-20260716-05 — `follows` can point at an unreachable catalogue target that is not a graph node
 
 Finding-ID: AUDIT-20260716-05
-Status:     open
+Status:     fixed-168f94a
 Severity:   high
 Per-lane:   codex=high
 Decision:   single-model (gate-counted high)
@@ -197,7 +197,7 @@ Blast radius: the test is a gate, so the consequence lands on contributors, not 
 ### AUDIT-20260716-14 — An ingest that has already overwritten `dist/` is not rolled back when the record write fails, leaving the ledger's hash and the file on disk disagreeing
 
 Finding-ID: AUDIT-20260716-14
-Status:     open
+Status:     fixed-168f94a
 Severity:   high
 Per-lane:   claude=high
 Decision:   single-model (gate-counted high)
@@ -240,7 +240,7 @@ Blast radius is high because a provider contract consumer can ship an output pat
 ### AUDIT-20260716-17 — Impure declarations can still carry an empty reason
 
 Finding-ID: AUDIT-20260716-17
-Status:     open
+Status:     fixed-168f94a
 Severity:   high
 Per-lane:   codex=high
 Decision:   single-model (gate-counted high)
@@ -317,7 +317,7 @@ The fix is word-boundary-anchored assertions against the actual node identities 
 ### AUDIT-20260716-22 — `pc asset add` leaves the original bytes in place
 
 Finding-ID: AUDIT-20260716-22
-Status:     open
+Status:     fixed-168f94a
 Severity:   high
 Per-lane:   codex=high
 Decision:   single-model (gate-counted high)
@@ -330,7 +330,7 @@ The blast radius is high because this defeats the asset-store goal in the normal
 ### AUDIT-20260716-23 — `visit()` halts on any `needs-review` node, but its own contract says the rule is for AUTHORED nodes only
 
 Finding-ID: AUDIT-20260716-23
-Status:     open
+Status:     fixed-168f94a
 Severity:   high
 Per-lane:   claude=high
 Decision:   single-model (gate-counted high)
@@ -345,7 +345,7 @@ If derived nodes provably cannot reach `needs-review`, the guard is still worth 
 ### AUDIT-20260716-24 — Derived explanations report every input as causal, including unrelated fresh branches
 
 Finding-ID: AUDIT-20260716-24
-Status:     open
+Status:     fixed-168f94a
 Severity:   high
 Per-lane:   codex=high
 Decision:   single-model (gate-counted high)
@@ -412,7 +412,7 @@ This matters because downstream code can reasonably use `has(address)` as the av
 ### AUDIT-20260716-29 — Release becomes falsely clean when a followed node is deleted
 
 Finding-ID: AUDIT-20260716-29
-Status:     open
+Status:     fixed-168f94a
 Severity:   high
 Per-lane:   claude=high
 Decision:   single-model (gate-counted high)
@@ -427,7 +427,7 @@ A reasonable fix is for `assessRelease` to block on the absence too, since `path
 ### AUDIT-20260716-30 — An authored node whose followed node is missing is reported as `absent` — a claim about the wrong file
 
 Finding-ID: AUDIT-20260716-30
-Status:     open
+Status:     fixed-168f94a
 Severity:   high
 Per-lane:   claude=high
 Decision:   adjudicated (gate-counted high) — blast-radius=unstated, reachability=unstated, fix-debt=no; no down-calibration signal — high retained.
@@ -442,7 +442,7 @@ The fix is to give this case a state that describes the tracking node's actual s
 ### AUDIT-20260716-31 — `follows` can resolve a graph-valid identity that `resolveStatus` omitted
 
 Finding-ID: AUDIT-20260716-31
-Status:     open
+Status:     fixed-168f94a
 Severity:   high
 Per-lane:   codex=high
 Decision:   single-model (gate-counted high)
