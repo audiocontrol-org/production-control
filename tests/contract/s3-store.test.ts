@@ -34,6 +34,14 @@ async function isDockerAvailable(): Promise<boolean> {
 
 const dockerAvailable = await isDockerAvailable();
 
+// FR-027's only real proof (research R5). A loud skip is still exit 0, so on a
+// runner without Docker this suite is skipped forever and the board stays green —
+// the exact false-clean the file names as its motivation. `PC_REQUIRE_DOCKER`
+// makes the missing-Docker branch a FAILING test rather than a skip, so CI (which
+// sets it) cannot normalize the skip, while a developer laptop without it keeps the
+// skip ergonomics. A gate is not enforcement until absence can fail (AUDIT-20260716-18).
+const requireDocker = process.env.PC_REQUIRE_DOCKER !== undefined && process.env.PC_REQUIRE_DOCKER !== '';
+
 if (!dockerAvailable) {
   console.warn(
     '\n' +
@@ -43,9 +51,22 @@ if (!dockerAvailable) {
       'This suite proves s3AssetStore against a REAL S3-compatible server (MinIO via\n' +
       'testcontainers). Without Docker, that proof did not run this pass — the\n' +
       'in-memory-double tests are NOT a substitute for it (research R5).\n' +
+      'Set PC_REQUIRE_DOCKER=1 (CI does) to turn this skip into a hard failure.\n' +
       '=================================================================\n'
   );
 }
+
+// When the environment DEMANDS the proof, its absence must FAIL, not skip.
+describe.runIf(requireDocker && !dockerAvailable)('contract: s3AssetStore requires Docker', () => {
+  it('fails because PC_REQUIRE_DOCKER is set but Docker is unavailable', () => {
+    throw new Error(
+      'PC_REQUIRE_DOCKER is set, but Docker is not available, so the S3 adapter contract ' +
+        '(FR-027) went unproven. This is a hard failure by design: where the proof is ' +
+        'required, a skip is a false-clean. Install/start Docker, or unset PC_REQUIRE_DOCKER ' +
+        'if this environment genuinely cannot run it.'
+    );
+  });
+});
 
 const ROOT_USER = 'pc-contract-test-root';
 const ROOT_PASSWORD = 'pc-contract-test-password';
