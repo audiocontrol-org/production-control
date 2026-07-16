@@ -148,7 +148,26 @@ async function resolveAuthoredInput(
         declaredPath,
         resolution.pointer
       );
-      return { path: localPath, hash: address };
+
+      // The hash handed over is OBSERVED from the fetched bytes, never the address the stand-in
+      // merely CLAIMS — symmetry with the beside-the-stand-in branch below, which hashes the file
+      // on disk. `InputResolver` is an injected interface whose contract cannot compel every
+      // implementation to verify; a resolver that returned bytes not matching the address (a
+      // truncated download, a partial cache entry from an interrupted run, a store that indexes by
+      // key rather than content) would otherwise have `pc build` record an input hash nothing on
+      // disk matches — silent, and the exact corruption this boundary exists to refuse (FR-036,
+      // AUDIT-20260716-19).
+      const actual = await hashFile(localPath);
+      if (actual !== address) {
+        throw new Error(
+          `Cannot build "${targetId}": the asset store returned bytes that are not the asset for ` +
+            `its declared input "${node.id}". The stand-in addresses ${address}, but the bytes ` +
+            `fetched to "${localPath}" hash to ${actual}. The store returned bytes that are not ` +
+            `the asset; building would record provenance against content that does not exist ` +
+            `under that address.`
+        );
+      }
+      return { path: localPath, hash: actual };
     }
 
     // The bytes ARE here beside the stand-in. They are only this input if they hash to the
@@ -209,7 +228,12 @@ async function fetchAsset(
   pointer: AssetPointer
 ): Promise<string> {
   try {
-    return await context.assets.resolveToLocalPath(pointer, assetDir(context.episodeDir));
+    // The materialized file must keep a meaningful extension: a provider gets only `{path, hash}`,
+    // and multimedia tools detect format from the extension. The basename of the authored
+    // declaration carries that type; `path.basename` strips any directory, so it cannot smuggle a
+    // traversal into the destination (AUDIT-20260716-27).
+    const filename = path.basename(declaredPath);
+    return await context.assets.resolveToLocalPath(pointer, assetDir(context.episodeDir), filename);
   } catch (error) {
     const cause = error instanceof Error ? error.message : String(error);
     throw new Error(

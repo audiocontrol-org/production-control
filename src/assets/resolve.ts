@@ -1,7 +1,9 @@
+import * as crypto from 'node:crypto';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { cachedStore } from '@/assets/cache.js';
 import type { AssetPointer } from '@/assets/pointer.js';
+import { hashBytes } from '@/hash/content.js';
 import { addressLayout, assertAddressMatches, type AssetStore } from '@/assets/store.js';
 
 /**
@@ -24,8 +26,15 @@ export interface InputResolver {
    * cannot be reached, does not hold the address, or hands back bytes that are not the ones asked
    * for. The caller names the input and the address in its refusal (FR-036); this layer names the
    * address and the integrity failure.
+   *
+   * `filename` is the type-bearing basename the materialized file must carry (the basename of the
+   * authored declaration, e.g. `take-01.wav`). A fetched asset would otherwise reach the provider
+   * as an extensionless content digest, and multimedia tools read the extension for format
+   * detection — so a fresh clone (which fetches) would behave differently from a machine where the
+   * bytes happen to sit beside the stand-in (which hands over the declared path). The provider must
+   * receive the same type information either way (FR-027, AUDIT-20260716-27).
    */
-  resolveToLocalPath(pointer: AssetPointer, destDir: string): Promise<string>;
+  resolveToLocalPath(pointer: AssetPointer, destDir: string, filename: string): Promise<string>;
 }
 
 /**
@@ -45,12 +54,36 @@ export interface InputResolver {
  * that is exactly why a disagreement is worth refusing over: it means the stand-in is internally
  * inconsistent, so one of the two things it asserts is false, and a reader has no way to tell
  * which. That is a fabricated record of the kind this system exists to catch.
+ *
+ * **Materialization is content-addressed AND type-bearing.** The file lands at
+ * `<destDir>/<digest>/<filename>`: the digest directory is the dedup key (two inputs that ARE the
+ * same asset land under one directory and can never collide with a different asset), and
+ * `filename` gives the provider the declared extension it needs (AUDIT-20260716-27).
+ *
+ * **The write is atomic.** The digest directory is a collision-on-purpose case — two inputs
+ * referencing the same asset, resolved concurrently, target the same path. A bare `writeFile`
+ * opens with `O_TRUNC` and streams in chunks, so a concurrent reader (or the other writer's
+ * consumer) can observe zero or partial length. Instead the bytes are written to a per-call unique
+ * temp file and `rename`d into place: rename is atomic within one filesystem, so a reader sees the
+ * old complete file or the new complete file, never a partial one (AUDIT-20260716-25). The temp
+ * name uses `crypto.randomUUID()` — unique PER CALL, not per address, so two concurrent resolves
+ * for the same address do not race on the temp file either; `randomUUID` is used because
+ * `Math.random`/`Date.now` are unavailable in this environment. A failed write removes its own
+ * temp file, so a crash mid-write leaves no orphan.
+ *
+ * **A pre-existing destination is trusted only after its CONTENT is verified**, never on presence
+ * alone: a file that exists but hashes to something else (a truncated write from an interrupted
+ * earlier run) is re-materialized, not served (AUDIT-20260716-28's neighbor).
  */
 export function storeBackedResolver(store: AssetStore, cacheDir: string): InputResolver {
   const local = cachedStore(store, cacheDir);
 
   return {
-    async resolveToLocalPath(pointer: AssetPointer, destDir: string): Promise<string> {
+    async resolveToLocalPath(
+      pointer: AssetPointer,
+      destDir: string,
+      filename: string
+    ): Promise<string> {
       const address = pointer.asset;
       const bytes = await local.get(address);
 
@@ -63,13 +96,72 @@ export function storeBackedResolver(store: AssetStore, cacheDir: string): InputR
         );
       }
 
-      // Named for the digest: the destination is content-addressed for the same reason the store
-      // is, so two inputs that ARE the same asset land on one file and can never collide with a
-      // different one. The provider is handed this path; it is an ordinary local file by then.
-      const destination = path.join(destDir, addressLayout(address).digest);
-      await fs.mkdir(destDir, { recursive: true });
-      await fs.writeFile(destination, bytes);
+      // Content-addressed directory (dedup, no cross-asset collision) + the declared type-bearing
+      // basename (so the provider reads the right extension). See the module doc above.
+      const digestDir = path.join(destDir, addressLayout(address).digest);
+      const destination = path.join(digestDir, filename);
+      await fs.mkdir(digestDir, { recursive: true });
+
+      // Short-circuit on CONTENT, not presence: only skip the write when the file already there is
+      // genuinely this asset. A truncated leftover from an interrupted run must be re-materialized.
+      if (await fileMatchesAddress(destination, address)) {
+        return destination;
+      }
+
+      await writeAtomically(digestDir, destination, bytes);
       return destination;
     },
   };
+}
+
+/**
+ * Writes `bytes` to `destination` atomically: to a per-call unique temp file within `digestDir`,
+ * then `rename` into place. Rename is atomic within one filesystem, so no reader ever observes a
+ * partial `destination`. On any failure the temp file is removed, so a crash leaves no orphan.
+ */
+async function writeAtomically(
+  digestDir: string,
+  destination: string,
+  bytes: Buffer
+): Promise<void> {
+  const tempPath = path.join(digestDir, `.tmp-${crypto.randomUUID()}`);
+  try {
+    await fs.writeFile(tempPath, bytes);
+    await fs.rename(tempPath, destination);
+  } catch (error) {
+    await removeIfPresent(tempPath);
+    throw error;
+  }
+}
+
+/**
+ * Whether `filePath` exists AND its bytes hash to `address`. A missing file is `false`; a present
+ * file whose content does not match its claimed address is also `false` — presence is never
+ * treated as proof of content.
+ */
+async function fileMatchesAddress(filePath: string, address: string): Promise<boolean> {
+  let bytes: Buffer;
+  try {
+    bytes = await fs.readFile(filePath);
+  } catch (error) {
+    if (isEnoent(error)) {
+      return false;
+    }
+    throw error;
+  }
+  return hashBytes(bytes) === address;
+}
+
+async function removeIfPresent(filePath: string): Promise<void> {
+  try {
+    await fs.rm(filePath, { force: true });
+  } catch (error) {
+    if (!isEnoent(error)) {
+      throw error;
+    }
+  }
+}
+
+function isEnoent(error: unknown): boolean {
+  return error instanceof Error && 'code' in error && error.code === 'ENOENT';
 }

@@ -5,7 +5,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { hashFile } from '@/hash/content.js';
 import type { ProviderDecl } from '@/manifest/schema.js';
-import type { BuildRequest } from '@/providers/contract.js';
+import { BuildOutputSchema, parseBuildResponse, type BuildRequest } from '@/providers/contract.js';
 import { subprocessRunner } from '@/providers/run.js';
 
 /**
@@ -426,5 +426,52 @@ describe('contract: the producing tool (provider)', () => {
       expect(code).toBe(1);
       expect(Buffer.concat(stderr).toString('utf8')).toContain('BuildRequest.version must be 1');
     });
+  });
+});
+
+/**
+ * AUDIT-20260716-07 / -15 / -16 — a provider-declared output path is RELATIVE to `output_dir`,
+ * and the schema now ENFORCES that rather than only asserting it in a message.
+ *
+ * This is the wire boundary both the runner (which resolves `path.resolve(output_dir, path)`) and
+ * `ingest` (which composes `path.join(episodeDir, 'dist', path)`) trust. Refusing a traversing
+ * path HERE — where `parseBuildResponse` runs before either resolves anything — means an absolute
+ * or `..`-escaping output can never reach the filesystem composition in the first place. The
+ * refusal names the offending field (FR-036).
+ */
+describe('contract: a declared output path cannot escape output_dir (BuildOutputSchema)', () => {
+  it('accepts an ordinary relative output path', () => {
+    expect(BuildOutputSchema.safeParse({ path: 'podcast.out' }).success).toBe(true);
+    expect(BuildOutputSchema.safeParse({ path: 'sub/dir/podcast.out' }).success).toBe(true);
+  });
+
+  it('refuses a "../"-escaping output path, naming `path`', () => {
+    const result = BuildOutputSchema.safeParse({ path: '../../../.ssh/authorized_keys' });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues.some((issue) => issue.path.includes('path'))).toBe(true);
+    }
+  });
+
+  it('refuses an absolute output path', () => {
+    expect(BuildOutputSchema.safeParse({ path: '/etc/cron.d/evil' }).success).toBe(false);
+  });
+
+  it('a whole BuildResponse carrying a traversing output is refused by parseBuildResponse', () => {
+    // The runner parses the provider's stdout through this same function BEFORE it resolves any
+    // output path against output_dir, so the escape is refused before it can be walked (finding 07).
+    const escaping = {
+      version: 1,
+      outputs: [{ path: '../escaped.txt' }],
+      tool: { name: 'evil', version: '1.0.0' },
+    };
+    let message = '';
+    try {
+      parseBuildResponse(escaping);
+    } catch (error) {
+      message = error instanceof Error ? error.message : String(error);
+    }
+    expect(message).toContain('outputs');
+    expect(message).toContain('path');
   });
 });

@@ -109,9 +109,13 @@ export function envStoreProvider(env: NodeJS.ProcessEnv): StoreProvider {
  */
 export function envInputResolver(env: NodeJS.ProcessEnv, cacheDir: string): InputResolver {
   return {
-    async resolveToLocalPath(pointer: AssetPointer, destDir: string): Promise<string> {
+    async resolveToLocalPath(
+      pointer: AssetPointer,
+      destDir: string,
+      filename: string
+    ): Promise<string> {
       const store = await envStoreProvider(env).store();
-      return storeBackedResolver(store, cacheDir).resolveToLocalPath(pointer, destDir);
+      return storeBackedResolver(store, cacheDir).resolveToLocalPath(pointer, destDir, filename);
     },
   };
 }

@@ -203,8 +203,18 @@ describe('an operation that NEEDS the bytes fails loud, naming the asset and its
     expect(message).not.toContain(pointer.asset);
 
     // And the bytes landed locally, verified, under their own content address (FR-030): the
-    // provider would have been handed an ordinary local path and never a credential.
-    const fetched = path.join(episodeDir, '.production', 'assets', pointer.asset.split(':')[1]!);
+    // provider would have been handed an ordinary local path and never a credential. The file
+    // keeps the declared basename (a TYPE-BEARING name) under the content-addressed digest
+    // directory, so a fresh clone's fetch hands the provider the same `.wav` a local machine would
+    // (AUDIT-20260716-27).
+    const digest = pointer.asset.split(':')[1]!;
+    const fetched = path.join(
+      episodeDir,
+      '.production',
+      'assets',
+      digest,
+      path.basename(NARRATION_PATH)
+    );
     expect(await exists(fetched)).toBe(true);
     expect(await fs.readFile(fetched)).toEqual(Buffer.from(ASSET_SEED, 'utf8'));
     expect(hashBytes(await fs.readFile(fetched))).toBe(pointer.asset);

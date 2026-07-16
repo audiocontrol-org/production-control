@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { HashSchema, IdentitySchema } from '@/manifest/schema.js';
+import { HashSchema, IdentitySchema, RelativePathSchema } from '@/manifest/schema.js';
 
 /**
  * The provider contract's wire types (contracts/provider.md).
@@ -36,9 +36,14 @@ export const BuildRequestSchema = z.object({
   output_dir: z.string().min(1, 'must be a non-empty local path'),
 });
 
-/** A single declared output. `path` is relative to the request's `output_dir`. */
+/**
+ * A single declared output. `path` is relative to the request's `output_dir`, and the schema
+ * ENFORCES that relativity rather than merely asserting it in a message: `RelativePathSchema`
+ * refuses an absolute path or one that traverses out with `..`, so a provider cannot declare an
+ * output that escapes `output_dir` and later escapes `dist/` at ingest (FR-036).
+ */
 export const BuildOutputSchema = z.object({
-  path: z.string().min(1, 'must be a non-empty path relative to output_dir'),
+  path: RelativePathSchema,
 });
 
 /**

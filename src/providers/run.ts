@@ -227,6 +227,21 @@ async function assertOutputsAgreeWithDisk(
   const missing: string[] = [];
   for (const output of response.outputs) {
     const absolute = path.resolve(request.output_dir, output.path);
+    // Defense in depth. `BuildOutputSchema.path` already refuses a traversing declaration, but
+    // the undeclared-file walk below only covers `output_dir`, so an escaped file would pass the
+    // existence check unseen. Assert the declared output resolves inside `output_dir` before
+    // hashing or comparing it (FR-036).
+    const relFromDir = path.relative(request.output_dir, absolute);
+    if (
+      relFromDir === '..' ||
+      relFromDir.startsWith(`..${path.sep}`) ||
+      path.isAbsolute(relFromDir)
+    ) {
+      throw new Error(
+        `provider "${command}" declared output.path "${output.path}" that resolves outside ` +
+          `output_dir (${request.output_dir}). A declared output must be contained within it (FR-036).`
+      );
+    }
     if (!(await isFile(absolute))) {
       missing.push(output.path);
     }

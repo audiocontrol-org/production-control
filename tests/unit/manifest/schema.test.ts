@@ -6,6 +6,8 @@ import {
   TargetDeclSchema,
   EpisodeManifestSchema,
   ProfileSchema,
+  RelativePathSchema,
+  ProfileNameSchema,
 } from '@/manifest/schema.js';
 import { WaiverSchema, ArtifactRecordSchema, LedgerSchema } from '@/ledger/schema.js';
 import { AssetPointerSchema } from '@/assets/pointer.js';
@@ -107,6 +109,47 @@ describe('schema validation (RED tests)', () => {
     });
   });
 
+  // AUDIT-20260716-08: the manifest's `profile` is a BARE NAME, not a path. `loadProfile` joins
+  // it into `<name>.yaml` and searches `searchDirs`, so a name carrying separators or ".." would
+  // escape those dirs and make the "Searched: <dirs>" message a lie. The constraint refuses that
+  // at manifest-load time, naming `profile` (FR-036).
+  describe('profile name (ProfileNameSchema)', () => {
+    function manifestWithProfile(profile: string): unknown {
+      return { version: 1, id: 'ep-001', title: 'Episode One', profile, authored: {}, targets: [] };
+    }
+
+    it('accepts the shipped bare-name convention', () => {
+      expect(EpisodeManifestSchema.safeParse(manifestWithProfile('editorial-audio')).success).toBe(
+        true
+      );
+      expect(ProfileNameSchema.safeParse('editorial-audio').success).toBe(true);
+    });
+
+    it('refuses a profile name with path separators (would read from a subdirectory)', () => {
+      const result = EpisodeManifestSchema.safeParse(manifestWithProfile('shared/editorial-audio'));
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.issues.some((issue) => issue.path.includes('profile'))).toBe(true);
+      }
+    });
+
+    it('refuses a traversing profile name (escapes every search dir)', () => {
+      const result = EpisodeManifestSchema.safeParse(
+        manifestWithProfile('../../../other-repo/secret')
+      );
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.issues.some((issue) => issue.path.includes('profile'))).toBe(true);
+      }
+    });
+
+    it('refuses an uppercase or empty profile name', () => {
+      expect(EpisodeManifestSchema.safeParse(manifestWithProfile('Editorial')).success).toBe(false);
+      expect(EpisodeManifestSchema.safeParse(manifestWithProfile('')).success).toBe(false);
+      expect(ProfileNameSchema.safeParse('-leading-dash').success).toBe(false);
+    });
+  });
+
   describe('AuthoredDecl', () => {
     // Case 4: AuthoredDecl without follows parses; with follows parses
     it('Case 4a: parses without follows', () => {
@@ -129,6 +172,87 @@ describe('schema validation (RED tests)', () => {
       if (result.success) {
         expect(result.data.follows).toBe('spoken');
       }
+    });
+
+    // Case 4c (AUDIT-20260716-09): an authored path that traverses out of the episode dir is
+    // REFUSED at parse — before any consumer joins it against episodeDir and hashes or passes a
+    // file outside the boundary — and the refusal names `path` (FR-036).
+    it('Case 4c: refuses an authored path that escapes with ".."', () => {
+      const result = AuthoredDeclSchema.safeParse({ path: '../outside.md' });
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.issues.some((issue) => issue.path.includes('path'))).toBe(true);
+      }
+    });
+
+    it('Case 4d: refuses an absolute authored path', () => {
+      const result = AuthoredDeclSchema.safeParse({ path: '/etc/passwd' });
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.issues.some((issue) => issue.path.includes('path'))).toBe(true);
+      }
+    });
+
+    it('Case 4e: refuses an empty authored path', () => {
+      const result = AuthoredDeclSchema.safeParse({ path: '' });
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.issues.some((issue) => issue.path.includes('path'))).toBe(true);
+      }
+    });
+  });
+
+  // AUDIT-20260716-09 / -15 / -16: the ONE shared refinement that closes directory traversal at
+  // every schema boundary that stores a filesystem path. Each channel it governs is tested by the
+  // schema that uses it (AuthoredDecl above, BuildOutput in the provider-contract suite); these
+  // cases pin the refinement itself, including the normalization quirks that could become escapes.
+  describe('RelativePathSchema (directory-traversal refusal)', () => {
+    it('accepts an ordinary nested relative path', () => {
+      expect(RelativePathSchema.safeParse('assets/narration/take-01.wav').success).toBe(true);
+      expect(RelativePathSchema.safeParse('script.md').success).toBe(true);
+    });
+
+    it('accepts a leading "./" — it normalizes plainly inside', () => {
+      const result = RelativePathSchema.safeParse('./content/spoken.md');
+      expect(result.success).toBe(true);
+    });
+
+    it('accepts an interior ".." that normalizes back inside ("a/../b" -> "b")', () => {
+      // Deliberate: only a value whose NORMAL FORM leaves the root is an escape. "a/../b"
+      // resolves to "b", which is contained, so joining it against a root stays inside.
+      const result = RelativePathSchema.safeParse('a/../b');
+      expect(result.success).toBe(true);
+    });
+
+    it('refuses an empty string', () => {
+      expect(RelativePathSchema.safeParse('').success).toBe(false);
+    });
+
+    it('refuses an absolute path', () => {
+      expect(RelativePathSchema.safeParse('/etc/passwd').success).toBe(false);
+    });
+
+    it('refuses a path that traverses up with ".."', () => {
+      expect(RelativePathSchema.safeParse('../outside.md').success).toBe(false);
+      expect(RelativePathSchema.safeParse('../../secret').success).toBe(false);
+    });
+
+    it('refuses a path that normalizes to escape ("a/../../b")', () => {
+      // Self-red-team: a normalization quirk must not become a new escape. "a/../../b" normalizes
+      // to "../b", which leaves the root — so it is refused, unlike the contained "a/../b" above.
+      expect(RelativePathSchema.safeParse('a/../../b').success).toBe(false);
+    });
+
+    it('refuses a bare ".."', () => {
+      expect(RelativePathSchema.safeParse('..').success).toBe(false);
+    });
+
+    it('refuses a backslash-bearing path (not a portable posix path)', () => {
+      // On a posix host `path.normalize` treats "\\" as a literal char, so "..\\..\\secret"
+      // would slip past a naive ".."-prefix check and then traverse on a host that DOES treat
+      // "\\" as a separator. Refuse it outright rather than let portability decide security.
+      expect(RelativePathSchema.safeParse('..\\..\\secret').success).toBe(false);
+      expect(RelativePathSchema.safeParse('a\\b').success).toBe(false);
     });
   });
 

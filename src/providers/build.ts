@@ -128,6 +128,19 @@ async function ingest(episodeDir: string, output: ProducedOutput): Promise<strin
   const recordedPath = path.posix.join('dist', output.relPath);
   const destination = path.join(episodeDir, recordedPath);
 
+  // Defense in depth. `BuildOutputSchema.path` (RelativePathSchema) already refuses a traversing
+  // output on the wire, but this composition trusts `output.relPath`, and a future caller that
+  // builds a ProducedOutput another way must still not be able to write outside `<episodeDir>/dist`.
+  // The schema guards the wire; this guards the composition (FR-036).
+  const distRoot = path.join(episodeDir, 'dist');
+  const relToDist = path.relative(distRoot, destination);
+  if (relToDist === '..' || relToDist.startsWith(`..${path.sep}`) || path.isAbsolute(relToDist)) {
+    throw new Error(
+      `output.path "${output.relPath}" escapes the episode's dist/ directory — a build output ` +
+        `must resolve within ${distRoot} (FR-036).`
+    );
+  }
+
   await fs.mkdir(path.dirname(destination), { recursive: true });
   await fs.copyFile(output.fullPath, destination);
 
