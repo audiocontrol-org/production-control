@@ -9,6 +9,7 @@ import { buildGraph } from '@/graph/build.js';
 import { hashBytes } from '@/hash/content.js';
 import { readLedger } from '@/ledger/store.js';
 import { loadEpisode, loadProfile } from '@/manifest/load.js';
+import { untrackedCheck } from '@/assets/git-tracked.js';
 import { buildTarget, type BuildContext } from '@/providers/build.js';
 import type { ProviderRunner } from '@/providers/run.js';
 import { MemoryAssetStore } from '../fixtures/memory-store.js';
@@ -100,6 +101,7 @@ async function contextOver(episodeDir: string, store: MemoryAssetStore): Promise
     ledger,
     runner: neverRuns(),
     assets: storeBackedResolver(store, await tempDir('asset-cache')),
+    tracked: untrackedCheck(),
     at: new Date().toISOString(),
   };
 }

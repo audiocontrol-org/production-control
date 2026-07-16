@@ -1,5 +1,6 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
+import type { TrackedCheck } from '@/assets/git-tracked.js';
 import { resolveAuthored, type AssetPointer } from '@/assets/pointer.js';
 import type { InputResolver } from '@/assets/resolve.js';
 import type { Graph, Node } from '@/graph/build.js';
@@ -46,6 +47,19 @@ export interface InputContext {
    * here, where it would read as "no resolver, no bytes, carry on" — a fallback, not a refusal.
    */
   readonly assets: InputResolver;
+  /**
+   * Whether an authored path is tracked by version control (FR-026, AUDIT-20260716-02/26). The
+   * build path IS where the FR-026 refusal belongs — it is about to build FROM these bytes, and
+   * git is available here — so a real `gitTrackedCheck()` is injected at the CLI boundary
+   * (`src/cli/build.ts`, `src/cli/validate.ts`). A git-tracked oversized authored file resolves;
+   * an untracked one with no stand-in is refused, naming the path.
+   *
+   * Injected rather than called directly so `src/providers/` never reaches `child_process` on its
+   * own account (that stays isolated in `src/assets/git-tracked.ts`), and so a test can pass a stub
+   * or `untrackedCheck()` for a no-repo caller. The type-only import is erased at compile time and
+   * carries no runtime edge.
+   */
+  readonly tracked: TrackedCheck;
 }
 
 /**
@@ -127,7 +141,10 @@ async function resolveAuthoredInput(
   }
 
   const fullPath = path.join(context.episodeDir, declaredPath);
-  const resolution = await resolveAuthored(fullPath);
+  // FR-026 is enforced HERE (the build path), with a real tracked check: a git-tracked oversized
+  // authored file resolves; an untracked one with no stand-in is refused, naming the path
+  // (AUDIT-20260716-02, AUDIT-20260716-26).
+  const resolution = await resolveAuthored(fullPath, { tracked: context.tracked });
 
   if (resolution.kind === 'absent') {
     throw new Error(

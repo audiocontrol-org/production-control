@@ -3,6 +3,7 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import type { EpisodeManifest, Profile } from '@/manifest/schema.js';
 import type { Ledger } from '@/ledger/schema.js';
+import type { Hash } from '@/hash/content.js';
 import { resolveStatus } from '@/state/resolve.js';
 import {
   makeTempEpisodeDir,
@@ -208,79 +209,168 @@ describe('state/resolve — freshness (T022)', () => {
     }
   );
 
-  it(
-    "Case 5: an input that is another target — when the upstream's recorded output hash " +
-      'no longer matches, the downstream is stale, naming the upstream',
-    async () => {
-      const episodeDir = await makeTempEpisodeDir();
-      const narrationHash = await writeAndHash(
-        episodeDir,
-        'assets/narration.wav',
-        'narration take one'
-      );
-      // voiceover's ACTUAL current output — what resolving the identity `voiceover` means for
-      // a downstream consumer: the bytes voiceover's own ledger record currently points at.
-      const currentVoiceoverOutputHash = await writeAndHash(
-        episodeDir,
-        'dist/voiceover.wav',
-        'mastered take two'
-      );
-      // podcast's ledger recorded a DIFFERENT (older) hash for voiceover, from before voiceover
-      // was rebuilt. Real bytes, real hash — just not the CURRENT ones.
-      const stalePodcastInputHash = await writeAndHash(
-        episodeDir,
-        'dist/voiceover-OLD.wav',
-        'mastered take one'
-      );
-      const podcastOutputHash = await writeAndHash(episodeDir, 'dist/podcast.mp3', 'podcast bytes');
+  /**
+   * Case 5 (AUDIT-20260716-04) — the load-bearing invariant SC-004 / commit ff0d45e settles:
+   * a derived input resolves to the hash the upstream's own ledger record CLAIMS
+   * (`artifacts[voiceover].output.hash`), NOT to a re-hash of the bytes sitting at `output.path`
+   * on disk. `dist/` is not committed, so the two readings genuinely diverge on a fresh clone /
+   * after `rm -rf dist` / after a hand-edit, and only one of them is correct.
+   *
+   * To make this testable at all, the fixture must BREAK THE TIE the old Case 5 accidentally
+   * hid: it writes voiceover's on-disk `dist/voiceover.wav` with bytes that hash to
+   * `voiceoverDiskHash`, while voiceover's ledger records a DIFFERENT `voiceoverRecordHash` as
+   * its `output.hash`. Every scenario below asserts podcast's state follows the RECORD, so a
+   * refactor that re-hashed the file on disk (the naive, arguably more obvious implementation)
+   * would flip the answer and fail here — which is exactly what the old fixture (disk hash ==
+   * recorded hash) could not detect.
+   */
+  async function buildTiebreakerFixture(): Promise<{
+    episodeDir: string;
+    narrationHash: Hash;
+    voiceoverRecordHash: Hash;
+    voiceoverDiskHash: Hash;
+    podcastOutputHash: Hash;
+  }> {
+    const episodeDir = await makeTempEpisodeDir();
+    const narrationHash = await writeAndHash(
+      episodeDir,
+      'assets/narration.wav',
+      'narration take one'
+    );
+    // The hash voiceover's ledger record claims for its output. Written to an AUXILIARY path
+    // (never the manifest's `output.path`) purely to obtain a real, non-fabricated hash — the
+    // bytes at this path are otherwise unused.
+    const voiceoverRecordHash = await writeAndHash(
+      episodeDir,
+      'aux/voiceover-as-recorded.wav',
+      'voiceover output — the bytes voiceover LEDGER RECORD claims it produced'
+    );
+    // The bytes ACTUALLY on disk at voiceover's `output.path` — deliberately DIFFERENT, so
+    // record-resolution and disk-resolution cannot agree by accident.
+    const voiceoverDiskHash = await writeAndHash(
+      episodeDir,
+      'dist/voiceover.wav',
+      'voiceover output — the DIFFERENT bytes now sitting on disk'
+    );
+    const podcastOutputHash = await writeAndHash(episodeDir, 'dist/podcast.mp3', 'podcast bytes');
 
-      const manifest: EpisodeManifest = {
-        version: 1,
-        id: 'freshness-chain',
-        title: 'Freshness: transitive via recorded output hash',
-        profile: 'test-profile',
-        authored: { narration: { path: 'assets/narration.wav' } },
-        targets: ['voiceover', 'podcast'],
-      };
-      const profile: Profile = {
-        version: 1,
-        targets: {
-          voiceover: {
-            inputs: ['narration'],
-            provider: provider(['npx', 'audio-tooling', 'master']),
-          },
-          podcast: {
-            inputs: ['voiceover'],
-            provider: provider(['npx', 'audio-tooling', 'publish']),
-          },
+    // The whole test is only meaningful if the two candidate resolutions really differ.
+    expect(voiceoverRecordHash).not.toBe(voiceoverDiskHash);
+
+    return { episodeDir, narrationHash, voiceoverRecordHash, voiceoverDiskHash, podcastOutputHash };
+  }
+
+  function chainManifest(): EpisodeManifest {
+    return {
+      version: 1,
+      id: 'freshness-chain',
+      title: 'Freshness: transitive via recorded output hash',
+      profile: 'test-profile',
+      authored: { narration: { path: 'assets/narration.wav' } },
+      targets: ['voiceover', 'podcast'],
+    };
+  }
+
+  function chainProfile(): Profile {
+    return {
+      version: 1,
+      targets: {
+        voiceover: {
+          inputs: ['narration'],
+          provider: provider(['npx', 'audio-tooling', 'master']),
         },
-      };
+        podcast: {
+          inputs: ['voiceover'],
+          provider: provider(['npx', 'audio-tooling', 'publish']),
+        },
+      },
+    };
+  }
+
+  it(
+    'Case 5 (AUDIT-20260716-04): record-resolution says STALE while disk-resolution would say ' +
+      "FRESH — podcast follows voiceover's RECORDED output hash, so it is stale, naming voiceover",
+    async () => {
+      const f = await buildTiebreakerFixture();
+
+      // podcast was built from the bytes that now sit on DISK (`voiceoverDiskHash`). Voiceover's
+      // RECORD, however, claims `voiceoverRecordHash`. Record-resolution: podcast's input
+      // (diskHash) != resolve(voiceover) (recordHash) -> STALE. Disk-resolution would re-hash
+      // dist/voiceover.wav to diskHash, which EQUALS podcast's input -> a false `fresh`.
       const ledger: Ledger = {
         version: 1,
         artifacts: {
           voiceover: {
             producer: { tool: 'audio-tooling', version: '1.0.0' },
-            inputs: { narration: narrationHash },
-            output: { path: 'dist/voiceover.wav', hash: currentVoiceoverOutputHash },
+            inputs: { narration: f.narrationHash },
+            output: { path: 'dist/voiceover.wav', hash: f.voiceoverRecordHash },
             built_at: FIXED_TIMESTAMP,
           },
           podcast: {
             producer: { tool: 'audio-tooling', version: '1.0.0' },
-            // Recorded BEFORE voiceover was rebuilt — this is now stale relative to reality.
-            inputs: { voiceover: stalePodcastInputHash },
-            output: { path: 'dist/podcast.mp3', hash: podcastOutputHash },
+            inputs: { voiceover: f.voiceoverDiskHash },
+            output: { path: 'dist/podcast.mp3', hash: f.podcastOutputHash },
             built_at: FIXED_TIMESTAMP,
           },
         },
         reviews: {},
       };
 
-      const status = await resolveStatus({ episodeDir, manifest, profile, ledger });
+      const status = await resolveStatus({
+        episodeDir: f.episodeDir,
+        manifest: chainManifest(),
+        profile: chainProfile(),
+        ledger,
+      });
       const podcastNode = getNode(status, 'podcast');
 
+      // Passes ONLY under record-based resolution. A disk-based resolver reports `fresh` here.
       expect(podcastNode.state).toBe('stale');
       expect(podcastNode.cause.code).toBe('input-changed');
       expect(podcastNode.cause.identity).toBe('voiceover');
+    }
+  );
+
+  it(
+    'Case 5b (AUDIT-20260716-04, mirror): record-resolution says FRESH while disk-resolution ' +
+      "would say STALE — podcast follows voiceover's RECORDED output hash, so it is fresh",
+    async () => {
+      const f = await buildTiebreakerFixture();
+
+      // podcast was built from what voiceover's RECORD claims (`voiceoverRecordHash`). The bytes
+      // on disk have since drifted to `voiceoverDiskHash`. Record-resolution: podcast's input
+      // (recordHash) == resolve(voiceover) (recordHash) -> FRESH. Disk-resolution would re-hash
+      // dist/voiceover.wav to diskHash != podcast's input -> a false `stale`.
+      const ledger: Ledger = {
+        version: 1,
+        artifacts: {
+          voiceover: {
+            producer: { tool: 'audio-tooling', version: '1.0.0' },
+            inputs: { narration: f.narrationHash },
+            output: { path: 'dist/voiceover.wav', hash: f.voiceoverRecordHash },
+            built_at: FIXED_TIMESTAMP,
+          },
+          podcast: {
+            producer: { tool: 'audio-tooling', version: '1.0.0' },
+            inputs: { voiceover: f.voiceoverRecordHash },
+            output: { path: 'dist/podcast.mp3', hash: f.podcastOutputHash },
+            built_at: FIXED_TIMESTAMP,
+          },
+        },
+        reviews: {},
+      };
+
+      const status = await resolveStatus({
+        episodeDir: f.episodeDir,
+        manifest: chainManifest(),
+        profile: chainProfile(),
+        ledger,
+      });
+      const podcastNode = getNode(status, 'podcast');
+
+      // Passes ONLY under record-based resolution. A disk-based resolver reports `stale` here.
+      expect(podcastNode.state).toBe('fresh');
+      expect(podcastNode.cause.code).toBe('ok');
     }
   );
 

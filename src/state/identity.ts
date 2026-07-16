@@ -141,7 +141,15 @@ async function resolveAuthoredNode(
     );
   }
 
-  const resolution = await resolveAuthored(path.join(context.episodeDir, declaredPath));
+  // `enforceInlineLimit: false`: this is the READ/oracle path (FR-010, FR-025). A read verb must
+  // always answer and cannot spawn git to learn tracked-ness offline, so it cannot enforce the
+  // FR-026 hard refusal (which hinges on tracked-ness). It hashes the authored file regardless —
+  // which works whether or not the file is tracked — and reports the node. The FR-026 guard keeps
+  // its teeth at build and asset-add, where git is available and an untracked large file is about
+  // to be built from or committed (AUDIT-20260716-02, AUDIT-20260716-26).
+  const resolution = await resolveAuthored(path.join(context.episodeDir, declaredPath), {
+    enforceInlineLimit: false,
+  });
 
   if (resolution.kind === 'absent') {
     return { kind: 'absent', absence: { kind: 'path-absent', path: declaredPath } };

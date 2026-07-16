@@ -8,6 +8,7 @@ import { buildGraph } from '@/graph/build.js';
 import { hashBytes } from '@/hash/content.js';
 import { readLedger } from '@/ledger/store.js';
 import { loadEpisode, loadProfile } from '@/manifest/load.js';
+import { untrackedCheck } from '@/assets/git-tracked.js';
 import { buildTarget, type BuildContext } from '@/providers/build.js';
 import type { ProviderRunner } from '@/providers/run.js';
 import { copyFixture, REPO_ROOT } from './support.js';
@@ -71,6 +72,7 @@ async function contextOver(episodeDir: string, assets: InputResolver): Promise<B
     ledger: await readLedger(episodeDir),
     runner: neverRuns(),
     assets,
+    tracked: untrackedCheck(),
     at: '2026-07-16T00:00:00.000Z',
   };
 }

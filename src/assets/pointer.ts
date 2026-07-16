@@ -58,10 +58,20 @@ export type AuthoredResolution =
  * `tracked` defaults to treating every file as UNTRACKED when omitted — the
  * conservative reading, since it makes the FR-026 guard MORE likely to fire rather
  * than silently disabling it for callers that forget to wire a check.
+ *
+ * `enforceInlineLimit` defaults to `true`. Setting it to `false` makes this function
+ * REPORT the resolution (file / pointer / absent) without ever throwing the FR-026
+ * refusal — the mode the STATUS/oracle path needs. A read verb must always answer
+ * (FR-010) and cannot spawn git to learn tracked-ness offline, so it cannot enforce a
+ * refusal that hinges on tracked-ness; it hashes the authored file regardless (which
+ * works whether or not the file is tracked) and reports the node. The FR-026 footgun
+ * guard keeps its teeth at build and asset-add — where git IS available and an untracked
+ * large file is about to be built from or committed — never in the read path.
  */
 export interface GuardOptions {
   readonly maxInlineBytes?: number;
   readonly tracked?: TrackedCheck;
+  readonly enforceInlineLimit?: boolean;
 }
 
 /**
@@ -90,6 +100,11 @@ export interface GuardOptions {
  * `opts.tracked` is omitted, every file is treated as untracked — the conservative
  * default. The trigger is purely the size threshold — never a guess about whether the
  * content "looks binary" — so an author can predict the refusal in advance.
+ *
+ * When `opts.enforceInlineLimit` is `false` the guard is not applied at all: the plain
+ * file resolves to `{ kind: 'file', path }` regardless of size or tracked-ness. That is
+ * the read/oracle path's mode (see `GuardOptions`), where a refusal that depends on
+ * running git offline is impossible and reporting must proceed anyway (FR-010, FR-025).
  */
 export async function resolveAuthored(
   declaredPath: string,
@@ -106,9 +121,10 @@ export async function resolveAuthored(
   }
 
   const maxInlineBytes = opts?.maxInlineBytes ?? DEFAULT_MAX_INLINE_BYTES;
+  const enforceInlineLimit = opts?.enforceInlineLimit ?? true;
   const tracked = opts?.tracked;
   const isTracked = tracked !== undefined ? await tracked.isTracked(declaredPath) : false;
-  if (stat.size > maxInlineBytes && !isTracked) {
+  if (enforceInlineLimit && stat.size > maxInlineBytes && !isTracked) {
     throw new Error(
       `Authored path "${declaredPath}" is ${String(stat.size)} bytes, over the ` +
         `${String(maxInlineBytes)}-byte inline limit, has no "${declaredPath}${POINTER_SUFFIX}" ` +

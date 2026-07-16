@@ -163,6 +163,20 @@ describe('assets/pointer', () => {
       );
     });
 
+    it('does not throw for a large UNTRACKED file when enforceInlineLimit is false (the read/oracle mode)', async () => {
+      // The status/oracle path (`src/state/identity.ts`) resolves in this mode: it cannot spawn git
+      // to learn tracked-ness offline, so it never enforces the FR-026 refusal and always answers
+      // (FR-010). The large untracked file resolves to `kind: 'file'` so status can hash it and
+      // report the node (AUDIT-20260716-02, AUDIT-20260716-26).
+      const dir = await makeTempDir();
+      const declaredPath = path.join(dir, 'large-report-only.bin');
+      await fs.writeFile(declaredPath, Buffer.alloc(50, 1));
+
+      await expect(
+        resolveAuthored(declaredPath, { maxInlineBytes: 10, enforceInlineLimit: false })
+      ).resolves.toEqual({ kind: 'file', path: declaredPath });
+    });
+
     it('does not throw for a large file when an injected TrackedCheck reports it tracked', async () => {
       const dir = await makeTempDir();
       const declaredPath = path.join(dir, 'large-tracked.bin');

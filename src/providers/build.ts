@@ -1,6 +1,7 @@
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
+import type { TrackedCheck } from '@/assets/git-tracked.js';
 import type { InputResolver } from '@/assets/resolve.js';
 import type { Graph, Node } from '@/graph/build.js';
 import type { ArtifactRecord, Ledger } from '@/ledger/schema.js';
@@ -63,6 +64,13 @@ export interface BuildContext {
    * `InputContext.assets` — this is the same seam, and step 1 below is where it is used.
    */
   readonly assets: InputResolver;
+  /**
+   * Whether an authored input path is tracked by version control (FR-026). Passed straight to
+   * `resolveInputs` (`InputContext.tracked`) — the build path is where the FR-026 refusal belongs,
+   * and where git is available. Injected at the CLI boundary as `gitTrackedCheck()`; a test passes
+   * a stub or `untrackedCheck()`.
+   */
+  readonly tracked: TrackedCheck;
   /**
    * `built_at`, ISO-8601 UTC. Injected because a clock is a seam — and because reading one in
    * here would put a timestamp inside the module that must never decide on one (research R7).

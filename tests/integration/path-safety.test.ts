@@ -7,6 +7,7 @@ import { buildGraph } from '@/graph/build.js';
 import { readLedger } from '@/ledger/store.js';
 import { loadEpisode, loadProfile } from '@/manifest/load.js';
 import type { BuildResponse } from '@/providers/contract.js';
+import { untrackedCheck } from '@/assets/git-tracked.js';
 import { buildTarget, type BuildContext } from '@/providers/build.js';
 import type { ProviderRunner } from '@/providers/run.js';
 import type { BuildRequest } from '@/providers/contract.js';
@@ -90,6 +91,7 @@ async function contextOver(
       ledger,
       runner,
       assets: noAssets(),
+      tracked: untrackedCheck(),
       at: new Date().toISOString(),
     },
   };

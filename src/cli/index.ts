@@ -1,8 +1,7 @@
 #!/usr/bin/env node
 import * as process from 'node:process';
+import * as url from 'node:url';
 import { Command, CommanderError } from 'commander';
-import { assetAddCommand, createAssetDeps, readAssetAddOptions } from '@/cli/asset.js';
-import { buildCommand } from '@/cli/build.js';
 import { explainCommand } from '@/cli/explain.js';
 import { nextCommand } from '@/cli/next.js';
 import { releaseCheckCommand } from '@/cli/release-check.js';
@@ -17,7 +16,6 @@ import {
   type CliDeps,
 } from '@/cli/runtime.js';
 import { statusCommand } from '@/cli/status.js';
-import { validateCommand } from '@/cli/validate.js';
 import { z } from 'zod';
 
 /**
@@ -31,6 +29,25 @@ import { z } from 'zod';
  * unknown command, missing argument, stray positional — are all the CALLER's mistake, and they
  * exit 2. Commander would exit 1 for those by default, which would make "you typed it wrong"
  * indistinguishable from "the gate says no". `exitOverride` is what takes that decision back.
+ *
+ * **Two structural properties make this module safe to import and cheap to run — read them
+ * together, because each depends on the other (AUDIT-20260716-06, -10, -13):**
+ *
+ * 1. **It does NOT self-execute on import.** The single `await run(...)` at the bottom is behind
+ *    an entry-point guard, so `import('@/cli/index.js')` defines the exports and does nothing
+ *    else. Before the guard, importing this module ran the CLI against the HOST process's argv as
+ *    a side effect — commander rejected vitest's argv, mapped it to `EXIT_USAGE`, and turned a
+ *    green suite into a red exit (AUDIT-20260716-06); and `build-emit.test.ts`, which imports
+ *    every emitted `.js`, tore its worker down on this file (AUDIT-20260716-13).
+ *
+ * 2. **The read verbs are imported EAGERLY; `build`, `validate`, and `asset` are LAZY.** The four
+ *    read verbs (`status`, `next`, `explain`, `release-check`) plus `review` are static imports and
+ *    reach nothing but the oracle. `build`/`validate`/`asset` reach `child_process` (a craft tool,
+ *    FR-029) and the AWS SDK (the store), so their handler modules are pulled in with `await
+ *    import(...)` only when that command actually runs. Dispatching `pc status` through this file
+ *    therefore never loads execution or network code — the read path is offline BY CONSTRUCTION
+ *    (FR-010, FR-025), not by discipline, and `tests/unit/architecture.test.ts` proves it by
+ *    rooting its offline walk at this module's EAGER import graph (AUDIT-20260716-10).
  */
 
 /**
@@ -123,6 +140,9 @@ export function createProgram(deps: CliDeps): Command {
     .option(JSON_FLAG, JSON_HELP)
     .action(async (...args: unknown[]): Promise<void> => {
       const target = z.string().parse(args[0]);
+      // LAZY (see the header, property 2): `build.ts` reaches `child_process` and the AWS SDK, so
+      // it is pulled in only when `pc build` actually runs — never on the read path.
+      const { buildCommand } = await import('@/cli/build.js');
       setExitCode(await buildCommand(deps, target, readOptions(args[1])));
     });
 
@@ -136,6 +156,9 @@ export function createProgram(deps: CliDeps): Command {
     .option(JSON_FLAG, JSON_HELP)
     .action(async (...args: unknown[]): Promise<void> => {
       const target = z.string().optional().parse(args[0]);
+      // LAZY (see the header, property 2): `validate.ts` reaches `child_process` (it re-invokes the
+      // provider) and the AWS SDK, so it is pulled in only when `pc validate` actually runs.
+      const { validateCommand } = await import('@/cli/validate.js');
       setExitCode(await validateCommand(deps, target, readOptions(args[1])));
     });
 
@@ -165,6 +188,11 @@ export function createProgram(deps: CliDeps): Command {
     .option(JSON_FLAG, JSON_HELP)
     .action(async (...args: unknown[]): Promise<void> => {
       const file = z.string().parse(args[0]);
+      // LAZY (see the header, property 2): `asset.ts` reaches the AWS SDK through its store
+      // provider, so it is pulled in only when `pc asset add` actually runs — keeping the SDK off
+      // `pc status`'s import path (FR-010, FR-025).
+      const { assetAddCommand, createAssetDeps, readAssetAddOptions } =
+        await import('@/cli/asset.js');
       setExitCode(await assetAddCommand(createAssetDeps(), file, readAssetAddOptions(args[1])));
     });
 
@@ -216,4 +244,23 @@ export async function run(argv: readonly string[], deps: CliDeps): Promise<void>
   }
 }
 
-await run(process.argv, createDefaultDeps());
+/**
+ * True only when this module is the process ENTRY POINT — i.e. `node dist/cli/index.js ...`, which
+ * is what `package.json`'s `bin` ships. When the module is merely IMPORTED (by a test, a tool, or
+ * `build-emit.test.ts` walking `dist/`), `process.argv[1]` is some other file and this is false, so
+ * `run` never fires against a host process's argv (AUDIT-20260716-06, -13).
+ *
+ * `import.meta.url` is a `file://` URL; `process.argv[1]` is a filesystem path. `pathToFileURL`
+ * puts them in the same space so the comparison is exact rather than a fragile string match.
+ */
+function isInvokedAsEntryPoint(): boolean {
+  const entry = process.argv[1];
+  if (entry === undefined) {
+    return false;
+  }
+  return import.meta.url === url.pathToFileURL(entry).href;
+}
+
+if (isInvokedAsEntryPoint()) {
+  await run(process.argv, createDefaultDeps());
+}

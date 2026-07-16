@@ -1,5 +1,6 @@
 import * as process from 'node:process';
 import { envInputResolver } from '@/assets/config.js';
+import { gitTrackedCheck } from '@/assets/git-tracked.js';
 import {
   EXIT_OK,
   EXIT_USAGE,
@@ -140,6 +141,11 @@ export async function buildCommand(
         ledger,
         runner: subprocessRunner(),
         assets: envInputResolver(process.env, assetCacheDir(episodeDir)),
+        // The real git-backed tracked check: `pc build` runs where git is available, so FR-026's
+        // exception for a git-tracked oversized authored file is active here (AUDIT-20260716-26).
+        // `gitTrackedCheck` is the one module that touches `child_process`, kept off `pc status`'s
+        // import path — `pc build` reaches it by design (FR-029), the read verbs never do.
+        tracked: gitTrackedCheck(),
         at: new Date().toISOString(),
       },
       id

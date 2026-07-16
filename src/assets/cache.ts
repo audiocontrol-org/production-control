@@ -74,8 +74,19 @@ export function cachedStore(inner: AssetStore, cacheDir: string): AssetStore {
   }
 
   async function has(address: Hash): Promise<boolean> {
-    if ((await readCacheFile(address)) !== null) {
-      return true;
+    // Mirror get()'s integrity boundary (AUDIT-20260716-28): a cache FILE existing is
+    // not proof the store has the asset — the file may be corrupt or truncated. Verify
+    // its content address; a mismatch is a cache miss, so fall through to the inner
+    // store, which is the source of truth. Reporting `true` on a corrupt entry would let
+    // a caller skip a fetch it actually needs, the same false-clean get() already avoids.
+    const cached = await readCacheFile(address);
+    if (cached !== null) {
+      try {
+        assertAddressMatches(address, cached);
+        return true;
+      } catch {
+        // corrupt entry — not a real hit; ask the source of truth.
+      }
     }
     return inner.has(address);
   }

@@ -2,6 +2,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { stringify } from 'yaml';
+import { untrackedCheck } from '@/assets/git-tracked.js';
 import type { InputResolver } from '@/assets/resolve.js';
 import { buildGraph } from '@/graph/build.js';
 import { readLedger } from '@/ledger/store.js';
@@ -71,6 +72,7 @@ async function contextOver(dir: string, runner: ProviderRunner): Promise<BuildCo
     ledger,
     runner,
     assets: noAssets(),
+    tracked: untrackedCheck(),
     at: new Date().toISOString(),
   };
 }

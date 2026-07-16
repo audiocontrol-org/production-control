@@ -67,6 +67,16 @@ const READ_VERB_FILES = [
   'src/cli/release-check.ts',
 ];
 
+/**
+ * The shipped dispatch entry — the file `package.json`'s `bin` runs (`dist/cli/index.js`). Every
+ * `pc` invocation, read or write, is dispatched through it. SC-001's claim ("an agent can
+ * determine the complete state of a production with no network and no craft tools") is a claim
+ * about running `pc status`, which means running THIS file. It is rooted separately, and walked
+ * EAGERLY, because its only path to execution/network is the deliberate lazy-load of the write
+ * verbs — loaded only when those commands run, never on the read path (AUDIT-20260716-10).
+ */
+const SHIPPED_ENTRY = 'src/cli/index.ts';
+
 const ROOT_DIRS = [...ORACLE_ROOT_DIRS];
 
 /** Milestone 2 — the execution layer. Any internal module under here is off limits. */
@@ -134,10 +144,27 @@ const SPECIFIER_PATTERNS = [
   /\bimport\s*\(\s*['"]([^'"]+)['"]\s*\)/g,
 ];
 
-/** Runs the specifier patterns over already-cleaned code. */
-function matchSpecifiers(code: string): readonly string[] {
+/**
+ * The EAGER specifiers only — static `import ... from`/`export ... from` and bare `import 'x'`,
+ * but NOT dynamic `import('x')`.
+ *
+ * The distinction is load-bearing for the SHIPPED-DISPATCH check (AUDIT-20260716-10). A dynamic
+ * `import('x')` is a LAZY boundary: the module is loaded only when that line executes, not when the
+ * importer is loaded. `src/cli/index.ts` wires `pc build`/`pc validate`/`pc asset` behind `await
+ * import(...)` precisely so that dispatching a READ verb through it loads none of them. Walking
+ * only the eager edges from `index.ts` therefore models exactly what `pc status` loads at startup.
+ *
+ * This does NOT create a laundering hole. The per-read-verb roots (`status`, `next`, …) are still
+ * walked with the FULL graph below — dynamic imports included — so a read verb that reached a
+ * forbidden module through `import('...')` is still caught there. Eager-only is used for ONE root,
+ * `index.ts`, whose only path to forbidden code is the intentional lazy-load of the write verbs.
+ */
+const EAGER_SPECIFIER_PATTERNS = SPECIFIER_PATTERNS.slice(0, 2);
+
+/** Runs a set of specifier patterns over already-cleaned code. */
+function matchWith(patterns: readonly RegExp[], code: string): readonly string[] {
   const specifiers: string[] = [];
-  for (const pattern of SPECIFIER_PATTERNS) {
+  for (const pattern of patterns) {
     for (const match of code.matchAll(pattern)) {
       const specifier = match[1];
       if (specifier !== undefined) {
@@ -146,6 +173,11 @@ function matchSpecifiers(code: string): readonly string[] {
     }
   }
   return specifiers;
+}
+
+/** Runs every specifier pattern (static + dynamic) over already-cleaned code. */
+function matchSpecifiers(code: string): readonly string[] {
+  return matchWith(SPECIFIER_PATTERNS, code);
 }
 
 /**
@@ -159,6 +191,14 @@ function matchSpecifiers(code: string): readonly string[] {
  */
 function extractSpecifiers(source: string): readonly string[] {
   return matchSpecifiers(stripTypeOnlyImports(stripComments(source)));
+}
+
+/**
+ * The EAGER specifier list — the runtime import graph a module pulls in the moment IT is loaded,
+ * excluding dynamic `import('x')` (loaded on demand). See `EAGER_SPECIFIER_PATTERNS`.
+ */
+function extractEagerSpecifiers(source: string): readonly string[] {
+  return matchWith(EAGER_SPECIFIER_PATTERNS, stripTypeOnlyImports(stripComments(source)));
 }
 
 /**
@@ -274,8 +314,16 @@ const IMPORTS_BY_FILE = new Map<string, readonly string[]>(
   ALL_SRC_FILES.map((file) => [file, extractSpecifiers(fs.readFileSync(file, 'utf8'))])
 );
 
-function importsOf(file: string): readonly string[] {
-  const specifiers = IMPORTS_BY_FILE.get(file);
+/** The EAGER-only graph: same files, but dynamic `import('x')` edges excluded (see the walk). */
+const EAGER_IMPORTS_BY_FILE = new Map<string, readonly string[]>(
+  ALL_SRC_FILES.map((file) => [file, extractEagerSpecifiers(fs.readFileSync(file, 'utf8'))])
+);
+
+function importsOf(
+  file: string,
+  importsByFile: ReadonlyMap<string, readonly string[]> = IMPORTS_BY_FILE
+): readonly string[] {
+  const specifiers = importsByFile.get(file);
   if (specifiers === undefined) {
     throw new Error(`No parsed imports for ${rel(file)} — the import graph is incomplete.`);
   }
@@ -340,7 +388,10 @@ interface WalkResult {
  * Breadth-first walk from a root module. BFS (rather than DFS) means the reported chain is
  * the SHORTEST path to the violation — the least confusing one to read and fix.
  */
-function walk(root: string): WalkResult {
+function walk(
+  root: string,
+  importsByFile: ReadonlyMap<string, readonly string[]> = IMPORTS_BY_FILE
+): WalkResult {
   const parent = new Map<string, string>();
   const reached = new Set<string>();
   const externals = new Set<string>();
@@ -369,7 +420,7 @@ function walk(root: string): WalkResult {
       break;
     }
 
-    for (const specifier of importsOf(current)) {
+    for (const specifier of importsOf(current, importsByFile)) {
       const resolution = resolveSpecifier(specifier, current);
 
       if (resolution.kind === 'unresolved') {
@@ -537,6 +588,63 @@ describe('architecture: the Milestone 1 / Milestone 2 boundary', () => {
           : `Reporting state must require no network and no craft tool (FR-010). ` +
               `Forbidden import chains from a read verb:\n${failures.join('\n')}`
       ).toEqual([]);
+    });
+
+    it('the SHIPPED dispatch path (`pc status` through src/cli/index.ts) is offline BY CONSTRUCTION (SC-001, FR-010, AUDIT-20260716-10)', () => {
+      // The gap AUDIT-20260716-10 named: the command a user runs is dispatched through
+      // `src/cli/index.ts`, but that module used to STATICALLY import `pc build` (which reaches
+      // `child_process`), so the test excluded it and proved only that the verb IMPLEMENTATION
+      // files were clean — never that dispatching a read verb through the shipped entry avoids
+      // loading execution/network code.
+      //
+      // Now `index.ts` lazy-loads the write verbs, so its EAGER import graph — everything a read
+      // dispatch actually loads — reaches nothing forbidden. Rooting the offline walk here closes
+      // the gap: dispatching `pc status`/`next`/`explain`/`release-check` loads no craft tool and
+      // no network client.
+      const entry = path.join(REPO_ROOT, SHIPPED_ENTRY);
+      expect(fs.existsSync(entry), `${SHIPPED_ENTRY} is missing`).toBe(true);
+
+      const eager = walk(entry, EAGER_IMPORTS_BY_FILE);
+
+      // Non-vacuous: the eager walk really does reach the read verbs and the oracle behind them, so
+      // a forbidden STATIC import planted anywhere under that reachable set would surface here.
+      const reachedRel = [...eager.reached].map(rel);
+      expect(
+        reachedRel,
+        'the eager walk does not even reach `pc status` — it is vacuous'
+      ).toContain('src/cli/status.ts');
+      expect(reachedRel, 'the eager walk does not reach the oracle — it is vacuous').toContain(
+        'src/state/resolve.ts'
+      );
+
+      const failures = eager.violations.map((violation) => formatViolation(entry, violation));
+      expect(
+        failures,
+        failures.length === 0
+          ? ''
+          : `Dispatching a read verb through the shipped entry must load no execution or network ` +
+              `code (FR-010, SC-001). Forbidden EAGER import chains from src/cli/index.ts:\n${failures.join('\n')}`
+      ).toEqual([]);
+    });
+
+    it('the write verbs really are behind the lazy boundary — following index.ts DYNAMIC imports DOES reach the execution layer', () => {
+      // The complement, and what makes the eager-clean result above mean something. If
+      // `src/cli/index.ts` reached `child_process` by NO path, the eager walk would pass for the
+      // wrong reason — the builder deleted rather than the builder isolated. Following the FULL
+      // graph (dynamic imports included) must still reach the execution layer through the lazy
+      // `import('@/cli/build.js')`, and must reach `build.ts` itself.
+      const entry = path.join(REPO_ROOT, SHIPPED_ENTRY);
+      const full = walk(entry, IMPORTS_BY_FILE);
+
+      expect(
+        [...full.reached].map(rel),
+        'index.ts no longer even lazy-imports the builder'
+      ).toContain('src/cli/build.ts');
+      expect(
+        full.violations.length,
+        'following index.ts through its dynamic imports reaches no execution layer — the lazy ' +
+          'boundary is hiding nothing, so the eager-clean proof is empty'
+      ).toBeGreaterThan(0);
     });
 
     it('the read verbs are rooted for real — a violation planted behind one is CAUGHT', () => {

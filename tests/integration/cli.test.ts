@@ -110,10 +110,15 @@ describe('pc status', () => {
     expect(result.code).toBe(1);
     expect(result.stdout).toBe('');
     expect(result.stderr).toMatch(/cycle/i);
-    // The offending declaration is NAMED (FR-036) — not merely "a cycle exists".
-    expect(result.stderr).toMatch(/a/);
-    expect(result.stderr).toMatch(/b/);
-    expect(result.stderr).toMatch(/c/);
+    // The offending declaration is NAMED (FR-036) — the actual cycle CHAIN, in cycle order, not
+    // merely "a cycle exists". Asserted as a unit (`a -> b -> c -> a`, arrow spelled `->` or `→`)
+    // so a regression to a bare "cycle detected" — which mentions none of the members in order —
+    // fails here. `\b` anchors each single-letter member so it cannot be matched incidentally
+    // inside a word like "graph" or "build" (AUDIT-20260716-21).
+    const arrow = String.raw`\s*(?:->|→)\s*`;
+    expect(result.stderr).toMatch(
+      new RegExp(String.raw`\ba\b${arrow}\bb\b${arrow}\bc\b${arrow}\ba\b`)
+    );
     // A named cause, never a stack trace as the primary message.
     expect(result.stderr).not.toContain('at Object.');
   });

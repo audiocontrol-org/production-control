@@ -459,6 +459,50 @@ describe('state/resolve — state model (T023 + T024)', () => {
     }
   );
 
+  it(
+    'Case 11b (AUDIT-20260716-12): the FRESH-INSTALL baseline — `follows` declared, both paths ' +
+      'present on disk, `ledger.reviews` EMPTY (a human has NEVER run `pc review`) -> ' +
+      'needs-review, cause followed-changed, naming the followed identity',
+    async () => {
+      const episodeDir = await makeTempEpisodeDir();
+      // Both files are present and readable; nothing has drifted since authoring, because there
+      // is no recorded baseline to have drifted FROM. `reviews` is `{}` — the day-one state.
+      await writeAndHash(episodeDir, 'script.md', 'script v1, freshly authored');
+      await writeAndHash(episodeDir, 'narration.wav', 'narration audio bytes');
+
+      const manifest: EpisodeManifest = {
+        version: 1,
+        id: 'fresh-install-follows',
+        title: 'fresh install follows',
+        profile: 'test-profile',
+        authored: {
+          spoken: { path: 'script.md' },
+          narration: { path: 'narration.wav', follows: 'spoken' },
+        },
+        targets: [],
+      };
+      const profile: Profile = { version: 1, targets: {} };
+      const ledger = emptyLedger();
+
+      const status = await resolveStatus({ episodeDir, manifest, profile, ledger });
+      const node = getNode(status, 'narration');
+
+      // The intended state, pinned explicitly. `reviewStatus` (src/state/resolve.ts) documents it:
+      // "With no waiver recorded at all there is NO accepted baseline... That is `needs-review`,
+      // not `present`" (data-model.md § Waiver; the only stored anchor for "a human has looked at
+      // this" is `Ledger.reviews[id].waived_hash`, absent here). Reporting `present` on a fresh
+      // install would be the exact false-clean the advisory `follows` edge exists to refuse:
+      // declare `follows`, never review, and the system reports green while nobody ever confirmed
+      // the tracker against the node it follows.
+      expect(
+        node.state,
+        'a `follows` node with no recorded review must ask for one (data-model.md § Waiver)'
+      ).toBe('needs-review');
+      expect(node.cause.code).toBe('followed-changed');
+      expect(node.cause.identity).toBe('spoken');
+    }
+  );
+
   it('Case 12: an authored node present, nothing tracked -> present', async () => {
     const episodeDir = await makeTempEpisodeDir();
     await writeAndHash(episodeDir, 'article.mdx', 'hello world, nothing tracked');
