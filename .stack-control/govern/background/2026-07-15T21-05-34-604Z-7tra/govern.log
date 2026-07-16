@@ -79,3 +79,12 @@ govern:   claude: completed [enforced, monitored]
 govern:   codex: completed [enforced, monitored]
 govern:   sonnet: timed-out [enforced, monitored]
 govern: NOTE — any 0-HIGH verdict this round is computed over a DEGRADED fleet (FR-007).
+govern: chunk 47b3bc88d9de3ca5 barrage run-dir = /Users/orion/work/production-control-work/production-control/.stack-control/audit-runs/20260715T220534793Z-001-episode-production-contract-after_implement
+govern: fleet — configured 3, produced 2  ⚠ DEGRADED
+govern:   claude: completed [enforced, monitored]
+govern:   codex: completed [enforced, monitored]
+govern:   sonnet: timed-out [enforced, monitored]
+govern: NOTE — any 0-HIGH verdict this round is computed over a DEGRADED fleet (FR-007).
+govern: FATAL — audit-barrage OUTAGE on chunk 577a70d18651f6fd (exit 2). The work is NOT recorded as governed (FR-005). Check that the configured model-family CLIs are installed and reachable.
+audit-barrage: unknown model 'sonnet' — available: claude, codex
+govern: terminal-outcome=barrage-outage

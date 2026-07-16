@@ -189,7 +189,16 @@ models:
     readonly_enforcement: "--sandbox read-only"
     output_mode: text
     liveness_signal: stderr
-    liveness_window_seconds: 60
+    # Widened 60 -> 150 on field evidence (govern run 2026-07-15T22-06-47):
+    # codex completed 37 of 38 chunk-rounds, then went >60s silent on ONE chunk
+    # and the watchdog fired killed-no-liveness, dropping a 2-lane fleet below the
+    # floor and refusing the whole pass. Same failure class the claude lane was
+    # widened 60->300 for (bursty pulses exceeding a tight window). 150s still
+    # catches a true hang well under the 300s timeout floor; it just stops
+    # false-killing codex's occasional long silent reasoning stretch. Kept tighter
+    # than claude's 300 because codex's stderr pulse is normally reliable — this is
+    # headroom for the tail, not a blind widening.
+    liveness_window_seconds: 150
     timeout_floor_seconds: 300
     timeout_secs_per_kb: 7
   # gemini — DISABLED (commented out). gemini-cli was failing 94.1% of runs
