@@ -195,10 +195,18 @@ models:
     # floor and refusing the whole pass. Same failure class the claude lane was
     # widened 60->300 for (bursty pulses exceeding a tight window). 150s still
     # catches a true hang well under the 300s timeout floor; it just stops
-    # false-killing codex's occasional long silent reasoning stretch. Kept tighter
-    # than claude's 300 because codex's stderr pulse is normally reliable — this is
-    # headroom for the tail, not a blind widening.
-    liveness_window_seconds: 150
+    # false-killing codex's occasional long silent reasoning stretch.
+    #
+    # WIDENED AGAIN 150 -> 280 (govern run 2026-07-17T00-30-55): at 150s codex was
+    # still false-killed on exactly 1 of 43 chunks (claude 43/43 clean), and one
+    # false-kill FATALs the whole 2-lane floor-of-2 pass. killed-no-liveness is a
+    # WATCHDOG kill for silence, not a codex crash — and codex's real budget is the
+    # 300s timeout. 280 gives it nearly the full budget before a liveness kill,
+    # mirroring the claude lane (300s window under a 420s timeout) which never
+    # false-kills. Only a near-total hang dies here now; the 300s timeout is the
+    # real backstop. A true hang costs ~280s to catch instead of 150 — acceptable,
+    # since a single false-kill was FATAL-ing an entire ~40-chunk run.
+    liveness_window_seconds: 280
     timeout_floor_seconds: 300
     timeout_secs_per_kb: 7
   # gemini — DISABLED (commented out). gemini-cli was failing 94.1% of runs
