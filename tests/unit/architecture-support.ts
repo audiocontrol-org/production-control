@@ -1,10 +1,9 @@
-import { describe, it, expect } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 /**
- * Makes the Milestone 1 / Milestone 2 boundary real (research R6).
+ * Shared machinery for the architecture-boundary suites (research R6).
  *
  * The design's central bet is that the artifact graph is the novel part and execution is
  * commodity, sequenced so the novel part lands and proves itself first. That sequencing is
@@ -19,11 +18,15 @@ import { fileURLToPath } from 'node:url';
  * defeated: `src/state/resolve.ts` imports `src/assets/pointer.ts`, which imports
  * `src/assets/s3.ts`, and the oracle pulls in the AWS SDK while a direct-import test stays
  * green. This builds the real import graph and walks it.
+ *
+ * This module is NOT a `.test.ts`, so vitest does not collect it as an (empty) suite; the
+ * `architecture-*.test.ts` siblings import the single walker defined here so there is exactly
+ * ONE copy of it. A second copy would drift, and a drifted boundary check is worse than none.
  */
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const REPO_ROOT = path.resolve(HERE, '..', '..');
-const SRC_DIR = path.join(REPO_ROOT, 'src');
+export const REPO_ROOT = path.resolve(HERE, '..', '..');
+export const SRC_DIR = path.join(REPO_ROOT, 'src');
 
 /** Milestone 1 — the oracle. Every `.ts` file under these is a root of the walk. */
 const ORACLE_ROOT_DIRS = ['src/state', 'src/graph', 'src/manifest', 'src/hash', 'src/ledger'];
@@ -75,7 +78,7 @@ const READ_VERB_FILES = [
  * EAGERLY, because its only path to execution/network is the deliberate lazy-load of the write
  * verbs — loaded only when those commands run, never on the read path (AUDIT-20260716-10).
  */
-const SHIPPED_ENTRY = 'src/cli/index.ts';
+export const SHIPPED_ENTRY = 'src/cli/index.ts';
 
 const ROOT_DIRS = [...ORACLE_ROOT_DIRS];
 
@@ -104,7 +107,7 @@ const FORBIDDEN_BUILTINS = new Set([
   'tls',
 ]);
 
-const MAX_FILE_LINES = 500;
+export const MAX_FILE_LINES = 500;
 
 // ---------------------------------------------------------------------------
 // Import extraction
@@ -206,7 +209,7 @@ function extractEagerSpecifiers(source: string): readonly string[] {
  * fires on a file at all — a file whose only import is type-only legitimately has zero
  * runtime specifiers, which must not be confused with "the extraction is broken."
  */
-function rawSpecifierCount(source: string): number {
+export function rawSpecifierCount(source: string): number {
   return matchSpecifiers(stripComments(source)).length;
 }
 
@@ -249,7 +252,7 @@ function candidatePaths(base: string): readonly string[] {
   return candidates;
 }
 
-function resolveSpecifier(specifier: string, importer: string): Resolution {
+export function resolveSpecifier(specifier: string, importer: string): Resolution {
   let base: string;
   if (isAliased(specifier)) {
     base = path.join(SRC_DIR, specifier.slice('@/'.length));
@@ -275,7 +278,7 @@ function resolveSpecifier(specifier: string, importer: string): Resolution {
 // ---------------------------------------------------------------------------
 
 /** Absent directories are normal here: Milestone 2 has not been built yet. */
-function listTsFiles(dir: string): readonly string[] {
+export function listTsFiles(dir: string): readonly string[] {
   if (!fs.existsSync(dir)) {
     return [];
   }
@@ -291,12 +294,12 @@ function listTsFiles(dir: string): readonly string[] {
   return found.sort();
 }
 
-function rel(file: string): string {
+export function rel(file: string): string {
   return path.relative(REPO_ROOT, file).split(path.sep).join('/');
 }
 
 /** Matches `wc -l`: a trailing newline terminates the last line, it does not start a new one. */
-function countLines(source: string): number {
+export function countLines(source: string): number {
   const lines = source.split('\n');
   if (lines.length > 0 && lines[lines.length - 1] === '') {
     return lines.length - 1;
@@ -308,18 +311,18 @@ function countLines(source: string): number {
 // The import graph
 // ---------------------------------------------------------------------------
 
-const ALL_SRC_FILES = listTsFiles(SRC_DIR);
+export const ALL_SRC_FILES = listTsFiles(SRC_DIR);
 
-const IMPORTS_BY_FILE = new Map<string, readonly string[]>(
+export const IMPORTS_BY_FILE = new Map<string, readonly string[]>(
   ALL_SRC_FILES.map((file) => [file, extractSpecifiers(fs.readFileSync(file, 'utf8'))])
 );
 
 /** The EAGER-only graph: same files, but dynamic `import('x')` edges excluded (see the walk). */
-const EAGER_IMPORTS_BY_FILE = new Map<string, readonly string[]>(
+export const EAGER_IMPORTS_BY_FILE = new Map<string, readonly string[]>(
   ALL_SRC_FILES.map((file) => [file, extractEagerSpecifiers(fs.readFileSync(file, 'utf8'))])
 );
 
-function importsOf(
+export function importsOf(
   file: string,
   importsByFile: ReadonlyMap<string, readonly string[]> = IMPORTS_BY_FILE
 ): readonly string[] {
@@ -350,8 +353,8 @@ function readVerbFiles(): readonly string[] {
   });
 }
 
-const CLI_ROOT_FILES = readVerbFiles();
-const ROOT_FILES = [
+export const CLI_ROOT_FILES = readVerbFiles();
+export const ROOT_FILES = [
   ...ROOT_DIRS.flatMap((dir) => listTsFiles(path.join(REPO_ROOT, dir))),
   ...CLI_ROOT_FILES,
 ];
@@ -388,7 +391,7 @@ interface WalkResult {
  * Breadth-first walk from a root module. BFS (rather than DFS) means the reported chain is
  * the SHORTEST path to the violation — the least confusing one to read and fix.
  */
-function walk(
+export function walk(
   root: string,
   importsByFile: ReadonlyMap<string, readonly string[]> = IMPORTS_BY_FILE
 ): WalkResult {
@@ -465,240 +468,6 @@ function walk(
   return { reached, externals, violations, unresolved };
 }
 
-function formatViolation(root: string, violation: Violation): string {
+export function formatViolation(root: string, violation: Violation): string {
   return `[${rel(root)}] ${violation.chain.join(' -> ')}  (${violation.reason})`;
 }
-
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
-
-describe('architecture: the Milestone 1 / Milestone 2 boundary', () => {
-  describe('the walk itself is not vacuous', () => {
-    it('finds source files under src/', () => {
-      expect(ALL_SRC_FILES.length).toBeGreaterThan(0);
-    });
-
-    it('finds at least one root module in Milestone 1', () => {
-      expect(ROOT_FILES.length).toBeGreaterThan(0);
-    });
-
-    it('extracts module specifiers (the regex actually matches)', () => {
-      const allSpecifiers = [...IMPORTS_BY_FILE.values()].flat();
-      expect(allSpecifiers.length).toBeGreaterThan(0);
-      expect(allSpecifiers).toContain('zod');
-    });
-
-    it('resolves NodeNext .js specifiers to .ts sources on disk', () => {
-      const resolution = resolveSpecifier(
-        '@/manifest/schema.js',
-        path.join(SRC_DIR, 'graph/build.ts')
-      );
-      expect(resolution.kind).toBe('internal');
-    });
-
-    it('reaches a non-zero number of modules from every root', () => {
-      for (const root of ROOT_FILES) {
-        const { reached, unresolved } = walk(root);
-        expect(unresolved, `unresolved internal imports from ${rel(root)}`).toEqual([]);
-        // A leaf module legitimately reaches nothing internal; it must at least parse —
-        // counting type-only specifiers here too, since a file whose only import is
-        // type-only (erased at compile time) still proves the regex fired.
-        const rawCount = rawSpecifierCount(fs.readFileSync(root, 'utf8'));
-        expect(reached.size + rawCount, `${rel(root)} reached nothing at all`).toBeGreaterThan(0);
-      }
-    });
-
-    it('walks TRANSITIVELY, not just direct imports', () => {
-      // src/ledger/store.ts -> src/ledger/schema.js -> src/manifest/schema.js
-      // store.ts does NOT import manifest/schema directly, so reaching it proves the walk
-      // crosses more than one hop. If this ever stops holding, pick another 2-hop chain —
-      // do not delete the assertion.
-      const store = path.join(SRC_DIR, 'ledger/store.ts');
-      if (!fs.existsSync(store)) {
-        throw new Error(
-          'src/ledger/store.ts is missing — the transitivity proof needs a new anchor.'
-        );
-      }
-
-      const direct = importsOf(store)
-        .map((specifier) => resolveSpecifier(specifier, store))
-        .filter((resolution) => resolution.kind === 'internal')
-        .map((resolution) => resolution.file);
-      const target = path.join(SRC_DIR, 'manifest/schema.ts');
-
-      expect(direct, 'anchor is no longer a 2-hop chain').not.toContain(target);
-      expect([...walk(store).reached]).toContain(target);
-    });
-
-    it('collects external specifiers along the way', () => {
-      const externals = new Set<string>();
-      for (const root of ROOT_FILES) {
-        for (const specifier of walk(root).externals) {
-          externals.add(specifier);
-        }
-      }
-      expect(externals.size).toBeGreaterThan(0);
-    });
-  });
-
-  describe('Milestone 1 does not transitively import Milestone 2 (research R6, FR-010)', () => {
-    it('no oracle module reaches the execution layer, the network store, or the AWS SDK', () => {
-      const failures: string[] = [];
-      for (const root of ROOT_FILES) {
-        for (const violation of walk(root).violations) {
-          failures.push(formatViolation(root, violation));
-        }
-      }
-
-      expect(
-        failures,
-        failures.length === 0
-          ? ''
-          : `Milestone 1 must stand alone. Forbidden import chains:\n${failures.join('\n')}`
-      ).toEqual([]);
-    });
-
-    it('no READ verb reaches the network or an executable — reporting state is offline BY CONSTRUCTION (T027, SC-001, FR-010)', () => {
-      // The mechanical half of T027. The runtime half lives in
-      // `tests/integration/offline.test.ts`, which proves `pc status` answers with a hostile
-      // asset store standing by and with PATH emptied. Neither is sufficient alone: a runtime
-      // test only proves the paths it happens to walk never dialled out, and this only proves
-      // the code CANNOT. Together they are the whole claim.
-      //
-      // `pc build` and `pc validate` are deliberately absent from these roots: they exist to run
-      // a craft tool (FR-029). FR-010 is about REPORTING state, and these four are the verbs
-      // that report it.
-      expect(
-        CLI_ROOT_FILES.length,
-        'no read verbs are rooted — this test is vacuous'
-      ).toBeGreaterThan(0);
-
-      const failures: string[] = [];
-      for (const root of CLI_ROOT_FILES) {
-        for (const violation of walk(root).violations) {
-          failures.push(formatViolation(root, violation));
-        }
-      }
-
-      expect(
-        failures,
-        failures.length === 0
-          ? ''
-          : `Reporting state must require no network and no craft tool (FR-010). ` +
-              `Forbidden import chains from a read verb:\n${failures.join('\n')}`
-      ).toEqual([]);
-    });
-
-    it('the SHIPPED dispatch path (`pc status` through src/cli/index.ts) is offline BY CONSTRUCTION (SC-001, FR-010, AUDIT-20260716-10)', () => {
-      // The gap AUDIT-20260716-10 named: the command a user runs is dispatched through
-      // `src/cli/index.ts`, but that module used to STATICALLY import `pc build` (which reaches
-      // `child_process`), so the test excluded it and proved only that the verb IMPLEMENTATION
-      // files were clean — never that dispatching a read verb through the shipped entry avoids
-      // loading execution/network code.
-      //
-      // Now `index.ts` lazy-loads the write verbs, so its EAGER import graph — everything a read
-      // dispatch actually loads — reaches nothing forbidden. Rooting the offline walk here closes
-      // the gap: dispatching `pc status`/`next`/`explain`/`release-check` loads no craft tool and
-      // no network client.
-      const entry = path.join(REPO_ROOT, SHIPPED_ENTRY);
-      expect(fs.existsSync(entry), `${SHIPPED_ENTRY} is missing`).toBe(true);
-
-      const eager = walk(entry, EAGER_IMPORTS_BY_FILE);
-
-      // Non-vacuous: the eager walk really does reach the read verbs and the oracle behind them, so
-      // a forbidden STATIC import planted anywhere under that reachable set would surface here.
-      const reachedRel = [...eager.reached].map(rel);
-      expect(
-        reachedRel,
-        'the eager walk does not even reach `pc status` — it is vacuous'
-      ).toContain('src/cli/status.ts');
-      expect(reachedRel, 'the eager walk does not reach the oracle — it is vacuous').toContain(
-        'src/state/resolve.ts'
-      );
-
-      const failures = eager.violations.map((violation) => formatViolation(entry, violation));
-      expect(
-        failures,
-        failures.length === 0
-          ? ''
-          : `Dispatching a read verb through the shipped entry must load no execution or network ` +
-              `code (FR-010, SC-001). Forbidden EAGER import chains from src/cli/index.ts:\n${failures.join('\n')}`
-      ).toEqual([]);
-    });
-
-    it('the write verbs really are behind the lazy boundary — following index.ts DYNAMIC imports DOES reach the execution layer', () => {
-      // The complement, and what makes the eager-clean result above mean something. If
-      // `src/cli/index.ts` reached `child_process` by NO path, the eager walk would pass for the
-      // wrong reason — the builder deleted rather than the builder isolated. Following the FULL
-      // graph (dynamic imports included) must still reach the execution layer through the lazy
-      // `import('@/cli/build.js')`, and must reach `build.ts` itself.
-      const entry = path.join(REPO_ROOT, SHIPPED_ENTRY);
-      const full = walk(entry, IMPORTS_BY_FILE);
-
-      expect(
-        [...full.reached].map(rel),
-        'index.ts no longer even lazy-imports the builder'
-      ).toContain('src/cli/build.ts');
-      expect(
-        full.violations.length,
-        'following index.ts through its dynamic imports reaches no execution layer — the lazy ' +
-          'boundary is hiding nothing, so the eager-clean proof is empty'
-      ).toBeGreaterThan(0);
-    });
-
-    it('the read verbs are rooted for real — a violation planted behind one is CAUGHT', () => {
-      // Non-vacuity of the check above, in the only way that means anything: prove the walk
-      // reaches through a read verb's transitive imports and would fail if something forbidden
-      // were there. `src/cli/status.ts` reaches `src/state/resolve.ts` via `src/cli/episode.ts`
-      // — three hops — so a forbidden import ANYWHERE under the oracle is visible from the verb.
-      const status = path.join(SRC_DIR, 'cli/status.ts');
-      const reached = walk(status).reached;
-
-      expect([...reached]).toContain(path.join(SRC_DIR, 'cli/episode.ts'));
-      expect([...reached].map(rel)).toContain('src/state/resolve.ts');
-    });
-
-    it('`pc build` DOES reach the execution layer — the boundary moved, it did not dissolve', () => {
-      // The complement, and the reason this file is not merely passing by omission. If
-      // `src/cli/build.ts` did not reach `child_process`, then either the builder is not
-      // building or these roots were narrowed to dodge a failure rather than to state a
-      // boundary — and the read-verb guarantee above would be worth nothing.
-      const build = path.join(SRC_DIR, 'cli/build.ts');
-      expect(fs.existsSync(build), 'src/cli/build.ts is missing').toBe(true);
-
-      const violations = walk(build).violations;
-      expect(
-        violations.length,
-        '`pc build` reaches no execution layer at all — it is supposed to exec a craft tool'
-      ).toBeGreaterThan(0);
-    });
-
-    it('every internal import resolves to a real file (the walk is complete)', () => {
-      const unresolved: string[] = [];
-      for (const root of ROOT_FILES) {
-        unresolved.push(...walk(root).unresolved);
-      }
-      expect(
-        unresolved,
-        `Unresolvable internal imports — the import graph has holes, so this test cannot be trusted:\n${unresolved.join('\n')}`
-      ).toEqual([]);
-    });
-  });
-
-  describe('constitution § Technology: file size', () => {
-    it(`every file under src/ is under ${MAX_FILE_LINES} lines`, () => {
-      const oversized = ALL_SRC_FILES.map((file) => ({
-        file: rel(file),
-        lines: countLines(fs.readFileSync(file, 'utf8')),
-      }))
-        .filter((entry) => entry.lines >= MAX_FILE_LINES)
-        .map((entry) => `${entry.file}: ${entry.lines} lines`);
-
-      expect(
-        oversized,
-        `Files at or over ${MAX_FILE_LINES} lines:\n${oversized.join('\n')}`
-      ).toEqual([]);
-    });
-  });
-});
