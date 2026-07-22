@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import * as fs from 'node:fs';
 import * as process from 'node:process';
 import * as url from 'node:url';
 import { Command, CommanderError } from 'commander';
@@ -250,15 +251,26 @@ export async function run(argv: readonly string[], deps: CliDeps): Promise<void>
  * `build-emit.test.ts` walking `dist/`), `process.argv[1]` is some other file and this is false, so
  * `run` never fires against a host process's argv (AUDIT-20260716-06, -13).
  *
- * `import.meta.url` is a `file://` URL; `process.argv[1]` is a filesystem path. `pathToFileURL`
- * puts them in the same space so the comparison is exact rather than a fragile string match.
+ * Both sides are resolved to a REAL path before comparing. This is not pedantry: npm installs
+ * a CLI's `bin` as a SYMLINK (`node_modules/.bin/pc` → `dist/cli/index.js`), so when a consumer
+ * runs `npx pc` / `node_modules/.bin/pc` — the primary way this tool is used — `process.argv[1]`
+ * is the LINK path while Node resolves the symlink for `import.meta.url` (the real file). A bare
+ * URL comparison then reports "imported, not run" and the CLI silently does nothing (exit 0, no
+ * output). `realpath` on both sides collapses the symlink so the comparison holds however the
+ * bin was invoked, and under `--preserve-symlinks` too. Discovered wiring the tool into a real
+ * consumer repo as a `file:` dependency; the earlier tests only ever invoked the real path.
  */
 function isInvokedAsEntryPoint(): boolean {
   const entry = process.argv[1];
   if (entry === undefined) {
     return false;
   }
-  return import.meta.url === url.pathToFileURL(entry).href;
+  try {
+    return fs.realpathSync(entry) === fs.realpathSync(url.fileURLToPath(import.meta.url));
+  } catch {
+    // A path that cannot be realpath'd is not this running entry point.
+    return false;
+  }
 }
 
 if (isInvokedAsEntryPoint()) {
