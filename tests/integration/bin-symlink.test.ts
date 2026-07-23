@@ -39,6 +39,14 @@ describe('shipped bin invoked through a symlink (the npm install shape)', () => 
     expect(stdout).toContain('build');
   });
 
+  it('is directly executable through the symlink (the executable bit survives a build)', async () => {
+    // npm installs the bin as a symlink and executes the TARGET directly — so dist/cli/index.js
+    // must carry the executable bit. tsc emits 0644; the build's postbuild step restores it. Run
+    // the link with no `node` prefix: an EACCES here means a rebuild shipped a non-runnable CLI.
+    const { stdout } = await exec(linkedBin, ['--help'], { cwd: linkDir });
+    expect(stdout).toContain('status');
+  });
+
   it('answers a read verb through the symlink with real output', async () => {
     const episode = path.join(REPO_ROOT, 'examples', 'minimal-podcast');
     const { stdout } = await exec('node', [linkedBin, 'status', '--episode', episode, '--json'], {
