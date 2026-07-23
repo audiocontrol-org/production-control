@@ -38,3 +38,7 @@ Ingest directory-valued outputs, not just single files. Ingest currently require
 ## design:feature/episode-scaffolding
 - status: planned
 An episode-scaffolding verb (`pc init` or equivalent): generate an episode's manifest and a profile skeleton so a consumer does not hand-author episode.yaml. Surfaced by having to hand-write every episode manifest in the nouvelle-france trial.
+
+## design:feature/quote-bank
+- status: planned
+A reproducible capability to build a quote bank — verbatim, source-cited, fabrication-checked passages — from a project's primary sources, for any subject. Shape: a quote-mining provider produces the bank as a derived target from the sources; a deterministic quote-fidelity validator gates it (verbatim match against the source, disclosed OCR/cleanup, marked non-adjacent joins, zero fabrication). Grounds downstream drafts (e.g. the script provider) in real period voice rather than paraphrase. Adapts the content team's "build the quote bank first" process; uses none of their outputs. Design must settle what is generic vs per-project (source reading varies by corpus; the mining/validation discipline does not).
