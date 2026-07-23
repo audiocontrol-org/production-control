@@ -217,3 +217,10 @@ called out here only so the resemblance is on record. The pattern is **not**
 abstracted in this design: extracting it into its own design belongs with the
 *second* capability that adopts it, not the first — generalizing from a single
 instance would be guessing at the seam.
+
+That generalization is tracked as its own roadmap item, `design:feature/asset-bank`
+(depends on this one): a metadata-rich, queryable **asset bank** of which this
+quote bank is asset-type #1 and the fully-deterministic corner. The asset bank adds
+a second, impure layer — editorial metadata (significance, themes) for **retrieval**
+("give me assets for this beat") — deliberately kept *out* of this design so the
+quote bank's pure deterministic fidelity stays crisp.
