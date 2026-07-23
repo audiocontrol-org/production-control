@@ -144,7 +144,9 @@ describe('pc validate records the verdict and gates on it (T062)', () => {
     const dir = await episode();
     expect((await pc(['build', 'voiceover', '--episode', dir], withMode('impure'))).code).toBe(0);
 
-    const before = await fs.readFile(path.join(dir, 'dist/voiceover.out'), 'utf8');
+    // Impure output is committed under ai-generated/ (not gitignored dist/): its irreproducible
+    // bytes are the durable record.
+    const before = await fs.readFile(path.join(dir, 'ai-generated/voiceover.out'), 'utf8');
 
     // The provider re-runs and produces DIFFERENT bytes (it declares itself impure and means it).
     // Recording that verdict against this record would attach a judgement about one artifact to
@@ -161,7 +163,7 @@ describe('pc validate records the verdict and gates on it (T062)', () => {
     expect(answer.targets[0]?.detail).toMatch(/pc build/);
 
     // The artifact on disk is untouched. A gate must never destroy what it was asked to judge.
-    expect(await fs.readFile(path.join(dir, 'dist/voiceover.out'), 'utf8')).toBe(before);
+    expect(await fs.readFile(path.join(dir, 'ai-generated/voiceover.out'), 'utf8')).toBe(before);
   });
 
   it('leaves no scratch directory behind, on either path', async () => {

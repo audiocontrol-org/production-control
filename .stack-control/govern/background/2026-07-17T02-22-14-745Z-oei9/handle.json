@@ -1,0 +1,13 @@
+{
+  "handle": "2026-07-17T02-22-14-745Z-oei9",
+  "governArgs": [
+    "--mode",
+    "implement",
+    "--item",
+    "design:feature/episode-production-contract"
+  ],
+  "cwd": "/Users/orion/work/production-control-work/production-control",
+  "startedAt": "2026-07-17T02:22:14.745Z",
+  "pid": 36368,
+  "logPath": "/Users/orion/work/production-control-work/production-control/.stack-control/govern/background/2026-07-17T02-22-14-745Z-oei9/govern.log"
+}

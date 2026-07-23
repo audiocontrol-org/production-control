@@ -104,8 +104,15 @@ export async function buildTarget(context: BuildContext, id: Identity): Promise<
       outputDir,
     });
 
+    // An IMPURE output is not reproducible: regenerating it yields different bytes, so it IS the
+    // durable record and must be COMMITTED — in a directory whose name makes plain it was not
+    // human-crafted, so nobody mistakes it for authored content. A PURE output is reproducible and
+    // stays in gitignored `dist/`. production-control already knows which this is (the same
+    // impurity it records), so the routing is principled, not a per-target flag.
+    const outputRoot = impurityOf(decl, response) !== undefined ? 'ai-generated' : 'dist';
+
     // Step 4: stage the produced bytes to a temp sibling — NOT their final path yet.
-    const staged = await stage(context.episodeDir, output);
+    const staged = await stage(context.episodeDir, outputRoot, output);
     try {
       // Step 5: write the record. If this throws, nothing visible has changed — the staged bytes
       // are off to the side and the `finally` below removes them, leaving the prior artifact intact.
@@ -185,27 +192,32 @@ interface StagedOutput {
  * `onlyOutput` admits exactly one, so a directory-valued output would already have thrown upstream.
  * The file-to-file copy-then-rename here is the only shape ingest is ever handed.
  */
-async function stage(episodeDir: string, output: ProducedOutput): Promise<StagedOutput> {
-  const recordedPath = path.posix.join('dist', output.relPath);
+async function stage(
+  episodeDir: string,
+  root: string,
+  output: ProducedOutput
+): Promise<StagedOutput> {
+  const recordedPath = path.posix.join(root, output.relPath);
   const destination = path.join(episodeDir, recordedPath);
 
   // Defense in depth. `BuildOutputSchema.path` (RelativePathSchema) already refuses a traversing
   // output on the wire, but this composition trusts `output.relPath`, and a future caller that
-  // builds a ProducedOutput another way must still not be able to write outside `<episodeDir>/dist`.
-  // The schema guards the wire; this guards the composition (FR-036).
-  const distRoot = path.join(episodeDir, 'dist');
-  const relToDist = path.relative(distRoot, destination);
-  if (relToDist === '..' || relToDist.startsWith(`..${path.sep}`) || path.isAbsolute(relToDist)) {
+  // builds a ProducedOutput another way must still not be able to write outside the output root
+  // (`dist/` for pure, `ai-generated/` for impure). The schema guards the wire; this guards the
+  // composition (FR-036).
+  const outputRoot = path.join(episodeDir, root);
+  const relToRoot = path.relative(outputRoot, destination);
+  if (relToRoot === '..' || relToRoot.startsWith(`..${path.sep}`) || path.isAbsolute(relToRoot)) {
     throw new Error(
-      `output.path "${output.relPath}" escapes the episode's dist/ directory — a build output ` +
-        `must resolve within ${distRoot} (FR-036).`
+      `output.path "${output.relPath}" escapes the episode's ${root}/ directory — a build output ` +
+        `must resolve within ${outputRoot} (FR-036).`
     );
   }
 
-  // `dirname(destination)` is at or under `distRoot`, so this also creates `distRoot`, where the
+  // `dirname(destination)` is at or under `outputRoot`, so this also creates `outputRoot`, where the
   // temp sibling lands. Both the temp and its eventual destination are then within one filesystem.
   await fs.mkdir(path.dirname(destination), { recursive: true });
-  const tempPath = path.join(distRoot, `.pc-ingest-${crypto.randomUUID()}`);
+  const tempPath = path.join(outputRoot, `.pc-ingest-${crypto.randomUUID()}`);
   await fs.copyFile(output.fullPath, tempPath);
 
   return { recordedPath, destination, tempPath };

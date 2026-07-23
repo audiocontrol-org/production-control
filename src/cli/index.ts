@@ -6,6 +6,7 @@ import { Command, CommanderError } from 'commander';
 import { explainCommand } from '@/cli/explain.js';
 import { nextCommand } from '@/cli/next.js';
 import { releaseCheckCommand } from '@/cli/release-check.js';
+import { readmeCommand } from '@/cli/readme.js';
 import { readReviewOptions, reviewCommand } from '@/cli/review.js';
 import {
   createDefaultDeps,
@@ -124,6 +125,17 @@ export function createProgram(deps: CliDeps): Command {
     .option(JSON_FLAG, JSON_HELP)
     .action(async (...args: unknown[]): Promise<void> => {
       setExitCode(await releaseCheckCommand(deps, readOptions(args[0])));
+    });
+
+  // `pc readme` — regenerate the per-episode README from the manifest + committed ledger. It only
+  // reads (no provider, no network), so it is eager like the read verbs; it writes exactly one file.
+  program
+    .command('readme')
+    .description('Write README.md describing every object and its provenance. Exits 0.')
+    .option(EPISODE_FLAG, EPISODE_HELP)
+    .option(JSON_FLAG, JSON_HELP)
+    .action(async (...args: unknown[]): Promise<void> => {
+      setExitCode(await readmeCommand(deps, readOptions(args[0])));
     });
 
   // `pc build` — and there is no `--no-record` flag here, and no `record` verb anywhere in this
