@@ -91,21 +91,30 @@ A quote bank is a structured file in **YAML**, matching the manifest / profile /
 ledger convention already used across production-control. Each quote:
 
 - `source` — the source id; must resolve to a source document.
-- `spans` — one or more **exact source substrings** (raw text, OCR warts and all).
-  The fidelity anchor. Each span records the exact substring **text**, and the
-  validator confirms it appears verbatim in the source. A character offset MAY be
-  recorded to disambiguate a passage that occurs more than once in a source; it is
-  not required for v1 (a quote whose span is ambiguous is still faithful — the
-  offset only makes the citation more precise).
+- `spans` — one or more source excerpts, the fidelity anchor. Each span has a
+  `raw` field — the excerpt as an **exact, byte-for-byte substring** of the source
+  (OCR warts and all; no Unicode normalization). `raw` is named distinctly from the
+  quote's `text` below so it is always obvious which value came straight from the
+  source. The validator confirms each span's `raw` appears verbatim in the source.
+  A span MAY also record an `offset` to disambiguate a passage that occurs more
+  than once; not required for v1 (an ambiguous span is still faithful — the offset
+  only sharpens the citation).
 - `text` — the readable presentation a draft would quote.
-- `edits` — the **disclosed** transformations from `spans` to `text`, each an
-  explicit, mechanically-applicable operation drawn from a **closed** set:
-  - `ocr-fix` — replace a specific substring within a span with a correction.
+- `edits` — the **disclosed** transformations from the spans' `raw` bytes to
+  `text`, each an explicit, mechanically-applicable operation drawn from a
+  **closed** set:
+  - `ocr-fix` — replace a specific byte substring within a span's `raw` with a
+    correction.
   - `ellipsis-join` — join spans with a marked `…`.
   No operation may rewrite, paraphrase, or insert unsourced text. The closed set
   is the guarantee that "cleanup" cannot become "authoring."
 - optional `note` (human-readable disclosure), `location` (page/line if known),
   and a stable `id`.
+
+The schema is a flat list of independent quotes in v1, and is intended to stay
+**extensible**: future editorial organization (themes, chronology, speaker,
+collection) can be added as optional fields without touching the fidelity model.
+None of that is in v1.
 
 ## The miner (impure)
 
@@ -127,10 +136,10 @@ as the `script-provider` was reworked to do.
 Run via `pc validate quote-bank`. For **every** quote:
 
 1. `source` resolves to a source document supplied in `sources`.
-2. Each `span` is an **exact substring** of that source. (Else: fabrication or
-   miscopy — fail, naming the quote and span.)
-3. Re-applying the `edits` to the spans reproduces `text` **byte-for-byte**.
-   (Else: undisclosed alteration — fail.)
+2. Each span's `raw` is an **exact, byte-for-byte substring** of that source.
+   (Else: fabrication or miscopy — fail, naming the quote and span.)
+3. Re-applying the `edits` to the spans' `raw` bytes reproduces `text`
+   **byte-for-byte**. (Else: undisclosed alteration — fail.)
 4. Every edit is within the **closed op set**. (Else: an illegal transformation —
    fail.)
 
@@ -138,11 +147,35 @@ Passes only if all quotes pass; otherwise fails, naming each violation. No LLM,
 no threshold, no network. This is what makes an impure miner safe: fidelity is
 guaranteed independent of the miner's reliability.
 
+## Regeneration is editorial, not freshness
+
+The bank is impure — a newer or better model may select a *different* set of
+equally faithful quotes. That is an **editorial** change, not a correctness
+regression, so production-control must not treat it as staleness to chase:
+
+- If the **sources change**, the bank goes stale like any derived artifact and
+  re-mining is the right response — there is new material to draw from.
+- If only the **miner's (model) version changes**, that is producer drift.
+  production-control already *reports* producer drift without restaling or
+  rebuilding, which is exactly the behavior wanted here: the existing bank is
+  still faithful, and regenerating it for a newer selection is a deliberate human
+  decision, never automatic.
+
+So regenerating the quote bank is an editorial action a person takes, not a
+freshness signal the system raises — consistent with production-control's existing
+treatment of provider-version drift.
+
 ## Testing strategy
 
 - **Validator first (TDD).** It is deterministic and the trust anchor, so it is
   built and tested before the miner, against fixtures: valid quotes; a fabricated
   span; an undisclosed edit; an out-of-set edit; a multi-span ellipsis join.
+- **The fabricated-quote failure mode, explicitly.** The scenario a reader worries
+  about most — an LLM inventing a quotation — is covered at both levels and named
+  as such: at the **miner**, a selected passage whose text is not actually in the
+  source fails to ground (no exact span can be extracted) and is **omitted**; at
+  the **validator**, a quote carrying a fabricated span is **rejected**. A fixture
+  demonstrates each, so the system's answer to fabrication is a test, not a claim.
 - **Miner.** Unit-test its deterministic parts (span-locating, schema emission)
   with an injected fake model; one live by-hand run mines a tiny fixture corpus
   and its output is fed to the real validator.
@@ -171,3 +204,16 @@ guaranteed independent of the miner's reliability.
 - The miner may be wrong about *what* to include; it can never be wrong about
   *fidelity*, because the deterministic gate re-checks every quote against its
   source.
+
+## A reusable pattern (noted here, not extracted)
+
+This capability is a concrete instance of a more general shape:
+
+> impure discovery → deterministic grounding → independent deterministic validation
+
+The same shape plausibly fits later selection-from-sources capabilities — image,
+map-excerpt, archival-document, audio-excerpt, or timeline-event selection. It is
+called out here only so the resemblance is on record. The pattern is **not**
+abstracted in this design: extracting it into its own design belongs with the
+*second* capability that adopts it, not the first — generalizing from a single
+instance would be guessing at the seam.
