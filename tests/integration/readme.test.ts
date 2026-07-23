@@ -49,14 +49,16 @@ describe('pc readme writes provenance that matches how builds route their bytes'
     const readme = await fs.readFile(path.join(dir, 'README.md'), 'utf8');
 
     // Three provenance classes, each present.
-    expect(readme).toContain('## Human-authored');
-    expect(readme).toContain('## AI-generated — machine-derived, NOT human-crafted');
+    expect(readme).toContain('## Authored inputs');
+    expect(readme).toContain('## AI-generated — produced here by an impure tool');
     expect(readme).toContain('## Reproducible build outputs — gitignored');
 
-    // narration is authored.
-    const authoredBlock = section(readme, '## Human-authored', '## AI-generated');
+    // narration is an authored input — production-control claims no provenance for it (it does not
+    // know, and must not assert, whether a human or anything else made it).
+    const authoredBlock = section(readme, '## Authored inputs', '## AI-generated');
     expect(authoredBlock).toContain('### narration');
-    expect(authoredBlock).toContain('human-authored');
+    expect(authoredBlock).toContain('authored input');
+    expect(authoredBlock).not.toContain('human-authored');
 
     // voiceover is AI-generated: impure output committed under ai-generated/, with its recorded
     // impurity reason and producer — even though the impurity came from the response, not the decl.

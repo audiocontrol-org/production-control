@@ -46,11 +46,12 @@ export function generateReadme(ctx: EpisodeContext): string {
   lines.push(`**Episode:** \`${ctx.manifest.id}\`  ·  **Profile:** \`${ctx.manifest.profile}\``);
   lines.push('');
 
-  lines.push('## Human-authored');
+  lines.push('## Authored inputs');
   lines.push('');
   lines.push(
-    'The source of truth. Written and owned by a human; production-control never generates or',
-    'alters these.'
+    'Declared inputs with no recorded producer. production-control does not generate or alter',
+    'these, and it makes NO claim about how they were created — a human, an AI, some other tool:',
+    'their provenance is outside what production-control tracks. Whoever supplies them owns that.'
   );
   lines.push('');
   for (const node of authored) {
@@ -60,12 +61,13 @@ export function generateReadme(ctx: EpisodeContext): string {
     lines.push('_None declared._', '');
   }
 
-  lines.push('## AI-generated — machine-derived, NOT human-crafted');
+  lines.push('## AI-generated — produced here by an impure tool');
   lines.push('');
   lines.push(
-    'Produced by an impure tool: not reproducible, so the exact bytes are COMMITTED here as the',
-    'durable record (under `ai-generated/`). Do not mistake these for authored content — a human',
-    'rewrites them into the authored objects above, which merely `follows` them.'
+    'production-control produced these by running an impure tool, so it KNOWS they are',
+    'machine-derived and not reproducible — the exact bytes are COMMITTED (under `ai-generated/`)',
+    'as the durable record. Do not mistake them for authored content: the authored inputs above',
+    'are written from them (an authored input that `follows` one is written against it).'
   );
   lines.push('');
   for (const node of aiGenerated) {
@@ -94,9 +96,13 @@ export function generateReadme(ctx: EpisodeContext): string {
 
 function authoredEntry(node: Node, status: NodeStatus | undefined): string[] {
   const out = [`### ${node.id}`, `- **Path:** \`${node.path ?? '(none)'}\``];
-  out.push('- **Provenance:** human-authored.');
+  out.push(
+    '- **Provenance:** authored input — production-control records no producer and does not track how it was created.'
+  );
   if (node.follows !== undefined) {
-    out.push(`- **Follows (advisory):** \`${node.follows}\` — reviewed by a human, never rebuilt.`);
+    out.push(
+      `- **Follows (advisory):** \`${node.follows}\` — resolved by a recorded review, never rebuilt.`
+    );
   }
   out.push(`- **State:** ${stateLine(status)}`);
   out.push('');
