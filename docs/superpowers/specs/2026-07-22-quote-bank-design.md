@@ -4,7 +4,7 @@
 - Roadmap item: `design:feature/quote-bank`
 - Status: approved (feeds the stack-control define → specify → … → govern chain)
 
-## Problem
+## Problem domain
 
 Downstream drafts (a podcast script, an article) are stronger when they quote
 primary sources in the sources' own words rather than paraphrasing them. Doing
@@ -38,7 +38,45 @@ passages are worth including), which is editorial, not authorial, and where an
 impure selector costs nothing on the thing that matters because the gate is
 deterministic.
 
-## Decisions settled in design
+## Solution space
+
+Four forks were explored in design; the chosen path and the rejected alternatives:
+
+### Nature of the artifact
+- **Chosen — derived, no human ownership.** A quote is literal source text; its
+  integrity is verbatim fidelity, which is mechanically checkable, so there is
+  nothing to author.
+- Rejected — an authored input a human mines: discards the automation, and there is
+  no creative authoring of literal quotes to justify human ownership.
+- Rejected — a hybrid prototype→human-final (as with a script draft): a quote bank
+  is mechanical, not creative, so the "human owns the result" half adds nothing.
+
+### Selection mechanism
+- **Chosen — impure LLM selection.** Choosing quotable passages across a corpus is
+  where judgment helps and is costly by hand; because fidelity is gated
+  deterministically, an impure selector is safe.
+- Rejected — a human marks passages: deterministic but manual across dozens of
+  sources.
+- Rejected — rule / query extraction: "quotable" does not reduce to a rule.
+
+### Fidelity model
+- **Chosen — raw spans + disclosed, closed-set edits.** The gate re-derives the
+  presentation from the exact source bytes and the recorded edits and compares
+  byte-for-byte — readable quotes, fully deterministic.
+- Rejected — raw-only exact substrings: a bank of OCR-garbled fragments is
+  unusable, defeating the purpose.
+- Rejected — fuzzy edit-distance threshold: a threshold is exactly the
+  non-deterministic gate this design exists to avoid.
+
+### Placement
+- **Chosen — a separate reusable package (`editorial-tooling`).** Honors both "for
+  any project" and "craft tools live outside the orchestrator."
+- Rejected — a reference-tools area inside production-control: blurs the
+  tools-are-separate boundary.
+- Rejected — inside the proving ground: makes a "for any project" capability a
+  one-subject one-off.
+
+## Decisions
 
 1. **Selection is impure (an LLM).** Choosing quotable passages across a whole
    corpus is expensive by hand and is exactly where judgment helps. Because the
@@ -224,3 +262,34 @@ quote bank is asset-type #1 and the fully-deterministic corner. The asset bank a
 a second, impure layer — editorial metadata (significance, themes) for **retrieval**
 ("give me assets for this beat") — deliberately kept *out* of this design so the
 quote bank's pure deterministic fidelity stays crisp.
+
+## Open questions
+
+Settled at design level; these are implementation details for the spec/plan to
+resolve, not open architecture:
+
+- The exact YAML shape of a quote / span / edit (field names and nesting).
+- How the miner locates an LLM-selected passage in the source and snaps it to the
+  exact byte span (the grounding mechanism).
+- How a source's stable id is carried (filename-as-id vs a small manifest).
+- Package structure: whether the miner and validator are separate executables
+  sharing the schema, or one package with two entry points.
+- The `editorial-tooling` package name is provisional.
+
+## Provenance
+
+- **Process lesson, not outputs.** Adapts a "build the quote bank first" discipline
+  observed in a content project (`nouvelle-france`) by merging its `main` and
+  reviewing its `PROCESS.md`. It uses **none** of that project's outputs (not its
+  quote bank, scripts, or validators) — only the process.
+- **Brainstormed in-session** (the `superpowers:brainstorming` backend under this
+  workflow) with operator decisions recorded at each fork: derived not authored;
+  impure LLM selection; raw-spans-plus-disclosed-edits fidelity; a separate
+  reusable package.
+- **Third-party reviewed** ("approve with minor revisions"); the applied revisions:
+  consistent byte-for-byte terminology, `span.raw` vs `quote.text` naming, schema
+  extensibility note, the explicit fabricated-quote test, the
+  regeneration-is-editorial semantics, and recording the reusable pattern without
+  abstracting it.
+- Roadmap item `design:feature/quote-bank`; the broader generalization is tracked
+  as `design:feature/asset-bank` (depends on this).
