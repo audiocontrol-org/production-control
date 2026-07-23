@@ -11,7 +11,7 @@
     "pc": "dist/cli/index.js"
   },
   "scripts": {
-    "build": "tsc && tsc-alias && node scripts/postbuild.mjs",
+    "build": "tsc && tsc-alias && node -e \"require('fs').chmodSync('dist/cli/index.js', 0o755)\"",
     "lint": "eslint .",
     "test": "vitest run",
     "test:offline": "vitest run --project integration tests/integration/offline.test.ts",
