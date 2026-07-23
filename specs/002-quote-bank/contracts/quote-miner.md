@@ -54,6 +54,35 @@ echo '<BuildRequest>' | editorial-tooling/bin/quote-miner.mjs
 - **No `validation`** is reported — the miner never certifies its own output;
   acceptance is decided solely by the independent validator (see
   `quote-validator.md`).
-- `outputs` is non-empty (the bank file, even if it holds zero quotes). Fail loud
-  (non-zero exit, stderr naming the cause) on: a malformed request, an unreadable
-  source, or the model being unavailable — never a partial or fabricated bank.
+- `outputs` is exactly one (the bank file, even if it holds zero quotes) —
+  production-control's ingest admits a single output. The `tool.version` encodes the
+  model identity used, so a model change surfaces through the existing producer-drift
+  reporting (FR-020), no core change.
+
+## Mining report (FR-017) — stderr
+
+The miner writes a machine-readable **mining report** to **stderr** (diagnostics — not
+a declared output, since ingest admits exactly one; visible by hand and in logs). It
+records per-source and totals, e.g.:
+
+```
+selected: 30
+grounded: 18
+omitted_ungrounded: 12
+sources_processed: 5
+sources_skipped: 0
+sources_failed: 0
+```
+
+A bank may pass fidelity while the report reveals weak selection — the two are separate.
+
+## Failure levels (FR-015/FR-016)
+
+- **Candidate** cannot be grounded → omitted, counted in the report. Not a failure.
+- **Source** cannot be processed (unreadable, not UTF-8) → the run **fails**; no bank is
+  emitted.
+- **Provider** failure or interruption → the run fails **atomically**: the miner writes
+  a complete bank only on success, and production-control's staged, atomic ingest never
+  replaces a previously committed bank on a failed build. A malformed request, an
+  unreadable source, or an unavailable model each fail loud (non-zero exit, stderr) —
+  never a partial or fabricated bank.
