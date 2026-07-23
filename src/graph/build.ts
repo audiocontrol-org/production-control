@@ -1,5 +1,11 @@
 import { reachableTargets } from '@/graph/reachable.js';
-import type { EpisodeManifest, Profile, Identity, ProviderDecl } from '@/manifest/schema.js';
+import type {
+  EpisodeManifest,
+  Profile,
+  Identity,
+  ProviderDecl,
+  ValidatorDecl,
+} from '@/manifest/schema.js';
 
 export { validateGraph } from '@/graph/validate.js';
 
@@ -23,6 +29,7 @@ export interface Node {
   readonly follows?: Identity;
   readonly inputs?: readonly Identity[];
   readonly provider?: ProviderDecl;
+  readonly validator?: ValidatorDecl;
 }
 
 export interface Graph {
@@ -81,6 +88,7 @@ export function buildGraph(manifest: EpisodeManifest, profile: Profile): Graph {
       kind: 'derived',
       inputs: decl.inputs,
       provider: decl.provider,
+      ...(decl.validator !== undefined ? { validator: decl.validator } : {}),
     };
     nodes.set(id, node);
   }

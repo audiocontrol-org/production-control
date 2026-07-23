@@ -98,9 +98,21 @@ export const ProviderDeclSchema = z.object({
     .optional(),
 });
 
+/**
+ * A validator is a command, like a provider, but it JUDGES rather than produces. Declaring it is
+ * what makes a target's acceptance gate INDEPENDENT of its generator: `pc validate` runs this,
+ * not the producer's self-report, so an impure tool cannot certify its own output (see
+ * `src/providers/validate.ts`). Optional — a target with no validator falls back to the
+ * producer's own `validation` verdict.
+ */
+export const ValidatorDeclSchema = z.object({
+  cmd: z.array(z.string()),
+});
+
 export const TargetDeclSchema = z.object({
   inputs: z.array(IdentitySchema),
   provider: ProviderDeclSchema,
+  validator: ValidatorDeclSchema.optional(),
 });
 
 /**
@@ -126,3 +138,4 @@ export type Profile = z.infer<typeof ProfileSchema>;
 export type AuthoredDecl = z.infer<typeof AuthoredDeclSchema>;
 export type TargetDecl = z.infer<typeof TargetDeclSchema>;
 export type ProviderDecl = z.infer<typeof ProviderDeclSchema>;
+export type ValidatorDecl = z.infer<typeof ValidatorDeclSchema>;

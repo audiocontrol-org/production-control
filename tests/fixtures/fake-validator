@@ -1,0 +1,67 @@
+#!/usr/bin/env node
+//
+// The reference implementation of the VALIDATOR contract's test double
+// (contract in src/providers/contract.ts § ValidateRequest/Response).
+//
+// It reads a ValidateRequest on stdin, judges the already-built artifact, and writes a
+// well-formed ValidateResponse on stdout. Like the fake-provider it is plain ESM so it runs
+// by hand with no production-control and no build step. It never writes anything — a validator
+// judges, it does not produce.
+//
+// Failure/verdict modes are selected via FAKE_VALIDATOR_MODE so the runner's refusals are all
+// exercised:
+//   fail     -> a well-formed FAILED verdict, with errors
+//   crash    -> diagnostic on stderr, exit non-zero (no verdict)
+//   silent   -> exit 0, nothing on stdout ("no verdict" is not "failed")
+//   garbage  -> exit 0, stdout that is not a ValidateResponse
+//   (unset)  -> reads the artifact to prove it was handed a real path, returns PASSED
+
+import { readFileSync } from 'node:fs';
+
+function readStdin() {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    process.stdin.on('data', (chunk) => chunks.push(chunk));
+    process.stdin.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+    process.stdin.on('error', reject);
+  });
+}
+
+async function main() {
+  const raw = await readStdin();
+  const request = JSON.parse(raw);
+  if (request.version !== 1 || typeof request.artifact?.path !== 'string') {
+    process.stderr.write('fake-validator: malformed ValidateRequest\n');
+    process.exit(1);
+  }
+
+  const mode = process.env.FAKE_VALIDATOR_MODE;
+
+  if (mode === 'crash') {
+    process.stderr.write('fake-validator: FAKE_VALIDATOR_MODE=crash\n');
+    process.exit(1);
+  }
+  if (mode === 'silent') {
+    process.exit(0);
+  }
+  if (mode === 'garbage') {
+    process.stdout.write('this is not a ValidateResponse\n');
+    process.exit(0);
+  }
+  if (mode === 'fail') {
+    process.stdout.write(
+      JSON.stringify({ version: 1, state: 'failed', errors: ['fake-validator: FAKE_VALIDATOR_MODE=fail'] })
+    );
+    process.exit(0);
+  }
+
+  // Default: prove we were handed a readable artifact path, then pass.
+  readFileSync(request.artifact.path);
+  process.stdout.write(JSON.stringify({ version: 1, state: 'passed' }));
+  process.exit(0);
+}
+
+main().catch((error) => {
+  process.stderr.write(`fake-validator: ${error.message}\n`);
+  process.exit(1);
+});

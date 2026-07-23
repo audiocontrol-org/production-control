@@ -152,3 +152,47 @@ export function parseBuildRequest(value: unknown): BuildRequest {
   }
   return result.data;
 }
+
+/**
+ * The VALIDATOR contract — a distinct channel from the producer's build contract.
+ *
+ * A validator does not produce; it JUDGES an artifact that already exists. This is what lets an
+ * acceptance gate be INDEPENDENT of the generator: an impure tool (a language model) can build
+ * the artifact, and a separate deterministic validator decides whether it passes — the generator
+ * never gets to certify itself. The validator receives the artifact's local path and hash and the
+ * same resolved inputs the build saw, and it reads them read-only; it writes nothing.
+ */
+export const ValidateRequestSchema = z.object({
+  version: z.literal(1),
+  target: IdentitySchema,
+  /** The already-built artifact to judge — a local path and the hash production-control recorded. */
+  artifact: z.object({
+    path: z.string().min(1, 'must be a non-empty local path'),
+    hash: HashSchema,
+  }),
+  /** The target's inputs, resolved to local paths, exactly as the build saw them. */
+  inputs: z.record(IdentitySchema, BuildInputSchema),
+});
+
+/**
+ * A validator's verdict. `state` is binary — `passed` or `failed` — mirroring BuildValidation:
+ * "not yet validated" is the ABSENCE of a verdict (a validator that cannot decide fails loudly
+ * with a non-zero exit), never a third enum value. `errors` carries what failed, for the operator.
+ */
+export const ValidateResponseSchema = z.object({
+  version: z.literal(1),
+  state: z.enum(['passed', 'failed']),
+  errors: z.array(z.string()).optional(),
+});
+
+export type ValidateRequest = z.infer<typeof ValidateRequestSchema>;
+export type ValidateResponse = z.infer<typeof ValidateResponseSchema>;
+
+/** Parses a value as a ValidateResponse, throwing with the offending field named. */
+export function parseValidateResponse(value: unknown): ValidateResponse {
+  const result = ValidateResponseSchema.safeParse(value);
+  if (!result.success) {
+    throw new Error(`malformed ValidateResponse — ${formatSchemaIssues(result.error)}`);
+  }
+  return result.data;
+}
