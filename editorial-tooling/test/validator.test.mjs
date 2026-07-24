@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 import { parseBank } from '../src/schema.mjs';
 import { buildSourceMap, validateBank } from '../src/validator.mjs';
 
@@ -27,7 +27,7 @@ function loadExpected() {
   return JSON.parse(content);
 }
 
-test('buildSourceMap: loads all fixtures and reports no errors', async t => {
+test('buildSourceMap: loads all fixtures and reports no errors', async () => {
   const files = loadSources();
   const { sources, errors } = buildSourceMap(files);
 
@@ -75,7 +75,7 @@ test('table-driven bank validation tests', async t => {
   }
 });
 
-test('structural errors occur BEFORE fidelity checks', async t => {
+test('structural errors occur BEFORE fidelity checks', async () => {
   const files = loadSources();
   const { sources } = buildSourceMap(files);
 
@@ -91,7 +91,7 @@ test('structural errors occur BEFORE fidelity checks', async t => {
     'Should NOT mention reconstruction when structural error occurs');
 });
 
-test('reconstruction mismatch reports first differing byte', async t => {
+test('reconstruction mismatch reports first differing byte', async () => {
   const files = loadSources();
   const { sources } = buildSourceMap(files);
 
@@ -111,7 +111,7 @@ test('reconstruction mismatch reports first differing byte', async t => {
     'Should NOT claim to infer an undisclosed operation');
 });
 
-test('fabricated span fails with substring error', async t => {
+test('fabricated span fails with substring error', async () => {
   const files = loadSources();
   const { sources } = buildSourceMap(files);
 
@@ -127,7 +127,7 @@ test('fabricated span fails with substring error', async t => {
     'Expected error mentioning substring or source');
 });
 
-test('out-of-set edit fails with op error', async t => {
+test('out-of-set edit fails with op error', async () => {
   const files = loadSources();
   const { sources } = buildSourceMap(files);
 
@@ -141,7 +141,7 @@ test('out-of-set edit fails with op error', async t => {
     'Expected error mentioning illegal op or closed set');
 });
 
-test('location-ambiguous passes with advisory', async t => {
+test('location-ambiguous passes with advisory', async () => {
   const files = loadSources();
   const { sources } = buildSourceMap(files);
 
@@ -156,7 +156,7 @@ test('location-ambiguous passes with advisory', async t => {
     'Expected ambiguous advisory');
 });
 
-test('determinism: validateBank produces consistent results', async t => {
+test('determinism: validateBank produces consistent results', async () => {
   const files = loadSources();
   const { sources } = buildSourceMap(files);
 
@@ -170,7 +170,7 @@ test('determinism: validateBank produces consistent results', async t => {
   assert.deepEqual(verdict1, verdict2, 'validateBank should produce identical results on repeated calls');
 });
 
-test('byte comparison catches an ASCII punctuation difference (reconstruction-mismatch)', async t => {
+test('byte comparison catches an ASCII punctuation difference (reconstruction-mismatch)', async () => {
   const files = loadSources();
   const { sources } = buildSourceMap(files);
 
@@ -192,7 +192,7 @@ test('byte comparison catches an ASCII punctuation difference (reconstruction-mi
 // U+0301). Byte-exact reconstruction (NFC) differs from the NFD `text`, so a correct
 // validator FAILS with a reconstruction/byte mismatch — a normalize-then-compare
 // validator would wrongly pass. A '.'-vs-'!' fixture could never distinguish the two.
-test('AUDIT-09: NFC-vs-NFD text fails (no Unicode normalization)', async t => {
+test('AUDIT-09: NFC-vs-NFD text fails (no Unicode normalization)', async () => {
   const files = loadSources();
   const { sources } = buildSourceMap(files);
 
@@ -212,7 +212,7 @@ test('AUDIT-09: NFC-vs-NFD text fails (no Unicode normalization)', async t => {
 // AUDIT-32: a recorded span `offset` is a claim about WHERE `raw` sits and MUST be
 // verified against the source bytes; an offset pointing at the wrong location is an
 // ERROR, not a silently-accepted field.
-test('AUDIT-32: a wrong span offset is rejected (offset verified against source)', async t => {
+test('AUDIT-32: a wrong span offset is rejected (offset verified against source)', async () => {
   const files = loadSources();
   const { sources } = buildSourceMap(files);
 
@@ -232,7 +232,7 @@ test('AUDIT-32: a wrong span offset is rejected (offset verified against source)
 // strictly-increasing source positions. Here span 0 is the LATER passage and span 1
 // the EARLIER — a reversed stitch that reconstructs byte-exactly yet violates source
 // order, so it must be rejected.
-test('AUDIT-31: out-of-source-order spans are rejected', async t => {
+test('AUDIT-31: out-of-source-order spans are rejected', async () => {
   const files = loadSources();
   const { sources } = buildSourceMap(files);
 
@@ -251,7 +251,7 @@ test('AUDIT-31: out-of-source-order spans are rejected', async t => {
 // AUDIT-19: an ocr-fix with a missing/non-string before is unanchored and MUST be
 // rejected structurally — never silently accepted, which would let fabricated
 // presentation bytes be spliced in at offset 0.
-test('AUDIT-19: ocr-fix with missing before is rejected structurally', async t => {
+test('AUDIT-19: ocr-fix with missing before is rejected structurally', async () => {
   const files = loadSources();
   const { sources } = buildSourceMap(files);
 
@@ -268,7 +268,7 @@ test('AUDIT-19: ocr-fix with missing before is rejected structurally', async t =
 });
 
 // AUDIT-19: an empty-string before is an insertion (neither closed-set op permits it).
-test('AUDIT-19: ocr-fix with empty before is rejected structurally', async t => {
+test('AUDIT-19: ocr-fix with empty before is rejected structurally', async () => {
   const files = loadSources();
   const { sources } = buildSourceMap(files);
 
@@ -283,7 +283,7 @@ test('AUDIT-19: ocr-fix with empty before is rejected structurally', async t => 
 });
 
 // AUDIT-20: an `at` far past the span length must be bounds-checked structurally.
-test('AUDIT-20: ocr-fix with out-of-bounds at is rejected structurally', async t => {
+test('AUDIT-20: ocr-fix with out-of-bounds at is rejected structurally', async () => {
   const files = loadSources();
   const { sources } = buildSourceMap(files);
 
@@ -301,7 +301,7 @@ test('AUDIT-20: ocr-fix with out-of-bounds at is rejected structurally', async t
 // replacements differ in byte length from their `before`. Because the first splice
 // shifts every subsequent byte, resolving the second edit against the mutated buffer
 // (the old bug) FALSE-REJECTS; resolving against pristine bytes reproduces `text`.
-test('AUDIT-20: two length-changing ocr-fixes reconstruct in pristine coordinates', async t => {
+test('AUDIT-20: two length-changing ocr-fixes reconstruct in pristine coordinates', async () => {
   const files = loadSources();
   const { sources } = buildSourceMap(files);
 

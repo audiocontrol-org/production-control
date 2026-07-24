@@ -12,7 +12,7 @@ const fixtureDir = path.join(__dirname, 'fixtures', 'sources');
 // Test fake model that returns both real and invented candidates
 const fakeModel = {
   id: 'fake-model-v1',
-  async select(sourceId, sourceText) {
+  async select() {
     return [
       'We shall be as a city upon a hill.',
       'The eyes of all people are upon us.',
@@ -105,7 +105,7 @@ test('miner: grounding and omission (US2 RED)', async (t) => {
   });
 
   await t.test('rejects duplicate source ids (FR-018)', async () => {
-    const { sources, errors } = buildSourceMap([
+    const { errors } = buildSourceMap([
       { id: 'dup', bytes: Buffer.from('a') },
       { id: 'dup', bytes: Buffer.from('b') }
     ]);

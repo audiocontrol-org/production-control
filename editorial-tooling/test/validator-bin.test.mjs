@@ -20,7 +20,7 @@ function runValidator(request) {
 }
 
 test('validator-bin contract', async (t) => {
-  await t.test('VALID: clean bank passes validation', (t) => {
+  await t.test('VALID: clean bank passes validation', () => {
     const request = {
       version: 1,
       target: 'quote-bank',
@@ -43,15 +43,15 @@ test('validator-bin contract', async (t) => {
     let response;
     try {
       response = JSON.parse(result.stdout);
-    } catch (e) {
-      throw new Error(`Failed to parse stdout as JSON: ${result.stdout}`);
+    } catch (err) {
+      throw new Error(`Failed to parse stdout as JSON: ${result.stdout}`, { cause: err });
     }
 
     assert.equal(response.version, 1);
     assert.equal(response.state, 'passed');
   });
 
-  await t.test('FAILED verdict: fabricated span triggers errors with quote id', (t) => {
+  await t.test('FAILED verdict: fabricated span triggers errors with quote id', () => {
     const request = {
       version: 1,
       target: 'quote-bank',
@@ -75,8 +75,8 @@ test('validator-bin contract', async (t) => {
     let response;
     try {
       response = JSON.parse(result.stdout);
-    } catch (e) {
-      throw new Error(`Failed to parse stdout as JSON: ${result.stdout}`);
+    } catch (err) {
+      throw new Error(`Failed to parse stdout as JSON: ${result.stdout}`, { cause: err });
     }
 
     assert.equal(response.version, 1);
@@ -88,7 +88,7 @@ test('validator-bin contract', async (t) => {
     assert(hasQuoteFab, `Expected at least one error to mention 'q-fab', got: ${response.errors.join('; ')}`);
   });
 
-  await t.test('MALFORMED REQUEST: non-JSON input exits non-zero with no passed verdict', (t) => {
+  await t.test('MALFORMED REQUEST: non-JSON input exits non-zero with no passed verdict', () => {
     const result = spawnSync(process.execPath, [binPath], {
       input: 'this is not json',
       encoding: 'utf8',
@@ -102,7 +102,7 @@ test('validator-bin contract', async (t) => {
     assert(!result.stdout.includes('passed'), `Expected stdout to NOT contain 'passed', got: ${result.stdout}`);
   });
 
-  await t.test('UNREADABLE SOURCE: non-existent sources dir exits non-zero with no passed verdict', (t) => {
+  await t.test('UNREADABLE SOURCE: non-existent sources dir exits non-zero with no passed verdict', () => {
     const request = {
       version: 1,
       target: 'quote-bank',

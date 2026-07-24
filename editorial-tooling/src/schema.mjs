@@ -19,7 +19,7 @@ export function parseBank(yamlText) {
   try {
     parsed = parseYaml(yamlText);
   } catch (err) {
-    throw new Error(`quote bank is not a YAML mapping: ${err.message}`);
+    throw new Error(`quote bank is not a YAML mapping: ${err.message}`, { cause: err });
   }
 
   if (!isPlainObject(parsed)) {

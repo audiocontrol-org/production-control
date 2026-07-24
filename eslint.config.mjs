@@ -33,7 +33,15 @@ const baseRules = {
 
 export default [
   {
-    ignores: ['dist/', 'node_modules/', 'coverage/', '**/*.config.ts', '**/*.config.js', '**/*.config.mjs'],
+    ignores: [
+      'dist/',
+      'node_modules/',
+      '**/node_modules/',
+      'coverage/',
+      '**/*.config.ts',
+      '**/*.config.js',
+      '**/*.config.mjs',
+    ],
   },
   js.configs.recommended,
   ...tseslint.configs.recommendedTypeChecked,
@@ -112,6 +120,27 @@ export default [
       '@typescript-eslint/no-unused-vars': 'off',
       '@typescript-eslint/no-unused-expressions': 'off',
     },
+  },
+  // editorial-tooling is a separate, plain-ESM package (no tsconfig project covers its
+  // .mjs files). Without this block, the global `recommendedTypeChecked` spread above
+  // (which registers the TS parser and type-aware rules for every file, unscoped) would
+  // apply to these files too and either crash for lack of parser services or silently
+  // fail to lint. Disable the type-checked rules here while leaving `js.configs.recommended`
+  // (e.g. `no-unused-vars`), which is also applied unscoped above, in force.
+  {
+    files: ['editorial-tooling/**/*.mjs'],
+    languageOptions: {
+      ...tseslint.configs.disableTypeChecked.languageOptions,
+      // Plain Node ESM, not covered by any tsconfig `types`/`lib` — declare the handful
+      // of Node globals this package actually references so `no-undef` (from
+      // `js.configs.recommended`, applied unscoped above) doesn't misfire on them.
+      globals: {
+        process: 'readonly',
+        Buffer: 'readonly',
+        TextDecoder: 'readonly',
+      },
+    },
+    rules: tseslint.configs.disableTypeChecked.rules,
   },
   prettierConfig,
 ];

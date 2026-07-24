@@ -5,6 +5,24 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { parse as parseYaml } from 'yaml';
+
+/**
+ * Parse the `key: value` mining-report lines quote-miner.mjs writes to stderr
+ * (see writeMiningReport in bin/quote-miner.mjs) into a plain object of numbers.
+ */
+function parseMiningReport(stderr) {
+  const report = {};
+  for (const line of stderr.split('\n')) {
+    const match = /^(selected|grounded|omitted_ungrounded|sources_processed|sources_skipped|sources_failed):\s*(\d+)$/.exec(
+      line
+    );
+    if (match) {
+      report[match[1]] = Number(match[2]);
+    }
+  }
+  return report;
+}
 
 const thisDir = path.dirname(fileURLToPath(import.meta.url));
 const binPath = path.resolve(thisDir, '..', 'bin', 'quote-miner.mjs');
@@ -81,9 +99,39 @@ process.stdin.on('end', () => {
       const bankPath = path.join(outputDir, 'quote-bank.yaml');
       assert(fs.existsSync(bankPath), `quote-bank.yaml should exist at ${bankPath}`);
 
-      // Assert stderr is non-empty and looks like mining report
+      // Open the bank and assert the central grounding contract at the bin boundary
+      // (FR-014/SC-004): the grounded candidate is present, the fabricated one is not.
+      const bankText = fs.readFileSync(bankPath, 'utf8');
+      const bank = parseYaml(bankText);
+      assert(Array.isArray(bank.quotes), 'bank should have a quotes array');
+
+      const groundedText = "Duty is ours; results are God's.";
+      const invisibleFabricatedText = 'A wholly invented line.';
+
+      const quoteStrings = (quote) => [quote.text, ...(quote.spans ?? []).map((span) => span.raw)];
+
+      const hasGrounded = bank.quotes.some((quote) => quoteStrings(quote).includes(groundedText));
+      assert(hasGrounded, `expected a quote with text/raw '${groundedText}' to be present in the bank`);
+
+      const hasFabricated = bank.quotes.some((quote) =>
+        quoteStrings(quote).includes(invisibleFabricatedText)
+      );
+      assert(
+        !hasFabricated,
+        `expected the ungrounded candidate '${invisibleFabricatedText}' to be OMITTED from the bank`
+      );
+
+      // Assert stderr is non-empty, and parse the mining report counts rather than
+      // pattern-matching for the presence of keywords: one grounded, one omitted.
       assert(result.stderr.length > 0, 'stderr should be non-empty');
-      assert(/grounded|selected|omitted/.test(result.stderr), 'stderr should contain mining report indicators');
+      const report = parseMiningReport(result.stderr);
+      assert.equal(report.selected, 2, `expected 2 selected candidates, stderr: ${result.stderr}`);
+      assert.equal(report.grounded, 1, `expected 1 grounded quote, stderr: ${result.stderr}`);
+      assert.equal(
+        report.omitted_ungrounded,
+        1,
+        `expected 1 omitted ungrounded candidate, stderr: ${result.stderr}`
+      );
     } finally {
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }

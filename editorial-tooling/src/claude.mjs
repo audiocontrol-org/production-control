@@ -131,7 +131,8 @@ function parseCandidates(stdout, command) {
       parsed = JSON.parse(trimmed.slice(start, end + 1));
     } catch (err) {
       throw new Error(
-        `claude model adapter: could not parse a JSON array from '${command}' output: ${err.message}. output: ${trimmed}`
+        `claude model adapter: could not parse a JSON array from '${command}' output: ${err.message}. output: ${trimmed}`,
+        { cause: err }
       );
     }
   }
