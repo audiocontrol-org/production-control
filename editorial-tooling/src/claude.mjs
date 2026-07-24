@@ -9,8 +9,11 @@
 //
 // Injectable for testing (`options.command`/`options.args`/`options.spawnImpl`, or the
 // `QUOTE_MINER_MODEL_CMD` env seam) so callers can run against a fake instead of the
-// real `claude` CLI. This module performs no IO beyond the one subprocess call and
-// does not import production-control.
+// real `claude` CLI. An explicit identity override (`options.modelId` or the
+// `QUOTE_MINER_MODEL_ID` env seam) lets an operator record which underlying model
+// produced a bank (e.g. `claude-opus-4`) when the command name itself doesn't change.
+// This module performs no IO beyond the one subprocess call and does not import
+// production-control.
 
 import { spawnSync } from 'node:child_process';
 import { basename } from 'node:path';
@@ -18,7 +21,7 @@ import { basename } from 'node:path';
 /**
  * Build a model object bound to the `claude` CLI (or an injected override).
  *
- * @param {{ command?: string, args?: string[], spawnImpl?: typeof spawnSync }} [options]
+ * @param {{ command?: string, args?: string[], spawnImpl?: typeof spawnSync, modelId?: string }} [options]
  * @returns {{ id: string, select(sourceId: string, sourceText: string): Promise<string[]> }}
  */
 export function claudeModel(options = {}) {
@@ -32,7 +35,19 @@ export function claudeModel(options = {}) {
 
   // Stable model-identity string that flows into the miner's `tool.version`
   // (FR-020): a model change must surface as producer drift.
-  const id = modelCmdOverride ? basename(command) : 'claude';
+  //
+  // AUDIT-21: `id` reflects the ACTUAL resolved command that will be spawned —
+  // its basename — in every case, including when `command` was injected via
+  // `options.command` without the `QUOTE_MINER_MODEL_CMD` env var set. This
+  // is truthful (a bank mined by an alternate/injected binary must not be
+  // stamped as the real `claude` CLI) but limited: a real model swap behind
+  // a fixed `claude` command name (e.g. Opus vs Sonnet vs Haiku) does not
+  // change the command's basename, so it is invisible unless the operator
+  // supplies an explicit identity override. `QUOTE_MINER_MODEL_ID` (or
+  // `options.modelId`) is that override and takes precedence over the
+  // basename when set to a non-empty value.
+  const modelIdOverride = process.env.QUOTE_MINER_MODEL_ID ?? options.modelId;
+  const id = modelIdOverride ? modelIdOverride : basename(command);
 
   return {
     id,
