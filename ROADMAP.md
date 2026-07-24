@@ -40,7 +40,7 @@ Ingest directory-valued outputs, not just single files. Ingest currently require
 An episode-scaffolding verb (`pc init` or equivalent): generate an episode's manifest and a profile skeleton so a consumer does not hand-author episode.yaml. Surfaced by having to hand-write every episode manifest in the nouvelle-france trial.
 
 ## design:feature/quote-bank
-- status: in-flight
+- status: shipped
 - analyze-clean: yes
 - spec: specs/002-quote-bank
 - design-approved: yes
