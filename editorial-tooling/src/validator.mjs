@@ -83,19 +83,71 @@ function checkFidelity(quote, sources, errors, advisories) {
   const src = sources.get(quote.source);
   const spans = quote.spans;
 
+  // Resolve every span to a concrete source byte position, then require those
+  // positions to be strictly increasing and non-overlapping across the quote
+  // (AUDIT-31), verifying any recorded offset against the source bytes (AUDIT-32).
+  // `prevEnd` is the exclusive end byte of the previous span whose position was
+  // determinate; `prevIndex` names that span for ordering diagnostics. A span with
+  // an indeterminate position (unverifiable offset, or raw absent from source) is
+  // reported and skipped for ordering rather than pinned to a guessed location.
+  let prevEnd = -1;
+  let prevIndex = -1;
+
   for (let j = 0; j < spans.length; j++) {
     const span = spans[j];
     const spanBuf = Buffer.from(String(span.raw), 'utf8');
+    const len = spanBuf.length;
+    let pos = null; // resolved source byte position, or null if indeterminate
 
-    if (src.indexOf(spanBuf) < 0) {
-      errors.push(`quote '${id}': span ${j} raw is not a substring of the source`);
+    if (span.offset !== undefined) {
+      // AUDIT-32: an offset is a claim about WHERE in the source `raw` sits. Verify the
+      // source bytes at [offset, offset+len) equal `raw`; a bare `indexOf` (occurs
+      // anywhere) would certify a fabricated location. Only a verified offset earns
+      // suppression of the location-ambiguity advisory.
+      if (src.indexOf(spanBuf, span.offset) === span.offset) {
+        pos = span.offset;
+      } else {
+        errors.push(
+          `quote '${id}': span ${j} offset ${span.offset} does not match raw in source`
+        );
+      }
+    } else {
+      const occ = countOccurrences(src, spanBuf);
+      if (occ === 0) {
+        errors.push(`quote '${id}': span ${j} raw is not a substring of the source`);
+      } else if (occ === 1) {
+        pos = src.indexOf(spanBuf);
+      } else {
+        // Location-ambiguous: raw occurs more than once and carries no offset. Keep the
+        // advisory, and resolve greedily to the first occurrence at or after the prior
+        // span's end so an in-order stitch is honored; if none exists it cannot sit in
+        // source order after the previous span.
+        advisories.push(
+          `quote '${id}': span ${j} is location-ambiguous (occurs multiple times in source, no offset)`
+        );
+        const searchFrom = prevEnd < 0 ? 0 : prevEnd;
+        const idx = src.indexOf(spanBuf, searchFrom);
+        if (idx < 0) {
+          errors.push(
+            `quote '${id}': span ${j} starts at/before span ${prevIndex} ends (spans must be in non-overlapping source order)`
+          );
+        } else {
+          pos = idx;
+        }
+      }
     }
 
-    if (span.offset === undefined && countOccurrences(src, spanBuf) > 1) {
-      advisories.push(
-        `quote '${id}': span ${j} is location-ambiguous (occurs multiple times in source, no offset)`
+    if (pos === null) continue;
+
+    // AUDIT-31: consecutive resolved positions must not go backward or overlap.
+    if (prevIndex >= 0 && pos < prevEnd) {
+      errors.push(
+        `quote '${id}': span ${j} starts at/before span ${prevIndex} ends (spans must be in non-overlapping source order)`
       );
     }
+
+    prevEnd = pos + len;
+    prevIndex = j;
   }
 
   const r = reconstruct(quote);

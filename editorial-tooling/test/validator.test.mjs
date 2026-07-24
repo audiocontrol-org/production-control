@@ -32,11 +32,12 @@ test('buildSourceMap: loads all fixtures and reports no errors', async t => {
   const { sources, errors } = buildSourceMap(files);
 
   assert.equal(errors.length, 0, `Expected no errors, but got: ${errors.join(', ')}`);
-  assert.equal(sources.size, 4, 'Expected 4 sources in the map');
+  assert.equal(sources.size, 5, 'Expected 5 sources in the map');
   assert(sources.has('plymouth'), 'Expected plymouth source');
   assert(sources.has('bradford'), 'Expected bradford source');
   assert(sources.has('winthrop'), 'Expected winthrop source');
   assert(sources.has('standish'), 'Expected standish source');
+  assert(sources.has('cafe'), 'Expected cafe source');
 
   // Verify exact bytes are preserved
   const originalPlymouth = fs.readFileSync(path.join(sourcesDir, 'plymouth.txt'));
@@ -169,7 +170,7 @@ test('determinism: validateBank produces consistent results', async t => {
   assert.deepEqual(verdict1, verdict2, 'validateBank should produce identical results on repeated calls');
 });
 
-test('byte-exact comparison (no normalization) on reconstruction-mismatch', async t => {
+test('byte comparison catches an ASCII punctuation difference (reconstruction-mismatch)', async t => {
   const files = loadSources();
   const { sources } = buildSourceMap(files);
 
@@ -178,11 +179,73 @@ test('byte-exact comparison (no normalization) on reconstruction-mismatch', asyn
   const bank = parseBank(yamlText);
   const verdict = validateBank(bank, sources);
 
-  // The fixture differs only by a single ASCII punctuation byte ('.' vs '!').
-  // This test proves exact byte comparison is performed — no normalization.
-  // (Exercises FR-001: verbatim extraction and FR-002: byte-exact preservation)
+  // The fixture differs by a single ASCII punctuation byte ('.' vs '!'). This shows
+  // a byte difference is caught, but a '.'-vs-'!' diff survives every normalizer, so
+  // this case alone does NOT prove the ABSENCE of normalization. That is what the NFD
+  // test below (AUDIT-09) proves.
   assert.equal(verdict.state, 'failed',
-    'Byte-exact comparison should catch period vs exclamation difference');
+    'Byte comparison should catch period vs exclamation difference');
+});
+
+// AUDIT-09: prove NO Unicode normalization is applied. The span `raw` is the NFC bytes
+// present in the source (café, é = U+00E9); the `text` is the NFD form (café, e +
+// U+0301). Byte-exact reconstruction (NFC) differs from the NFD `text`, so a correct
+// validator FAILS with a reconstruction/byte mismatch — a normalize-then-compare
+// validator would wrongly pass. A '.'-vs-'!' fixture could never distinguish the two.
+test('AUDIT-09: NFC-vs-NFD text fails (no Unicode normalization)', async t => {
+  const files = loadSources();
+  const { sources } = buildSourceMap(files);
+
+  const yamlPath = path.join(banksDir, 'normalization-nfd.yaml');
+  const yamlText = fs.readFileSync(yamlPath, 'utf-8');
+  const bank = parseBank(yamlText);
+  const verdict = validateBank(bank, sources);
+
+  assert.equal(verdict.state, 'failed',
+    'A validator that normalized would wrongly pass NFC-vs-NFD; byte-exact must fail');
+  assert(verdict.errors.some(err => err.includes('q-nfd')),
+    'Expected error naming quote q-nfd');
+  assert(verdict.errors.some(err => err.match(/reconstruction|byte/i)),
+    `Expected a reconstruction/byte mismatch error, got: ${verdict.errors.join(', ')}`);
+});
+
+// AUDIT-32: a recorded span `offset` is a claim about WHERE `raw` sits and MUST be
+// verified against the source bytes; an offset pointing at the wrong location is an
+// ERROR, not a silently-accepted field.
+test('AUDIT-32: a wrong span offset is rejected (offset verified against source)', async t => {
+  const files = loadSources();
+  const { sources } = buildSourceMap(files);
+
+  const yamlPath = path.join(banksDir, 'offset-mismatch.yaml');
+  const yamlText = fs.readFileSync(yamlPath, 'utf-8');
+  const bank = parseBank(yamlText);
+  const verdict = validateBank(bank, sources);
+
+  assert.equal(verdict.state, 'failed');
+  assert(verdict.errors.some(err => err.includes('q-off')),
+    'Expected error naming quote q-off');
+  assert(verdict.errors.some(err => err.match(/offset .*does not match raw/i)),
+    `Expected an offset-mismatch error, got: ${verdict.errors.join(', ')}`);
+});
+
+// AUDIT-31: spans stitched into one quote must resolve to non-overlapping,
+// strictly-increasing source positions. Here span 0 is the LATER passage and span 1
+// the EARLIER — a reversed stitch that reconstructs byte-exactly yet violates source
+// order, so it must be rejected.
+test('AUDIT-31: out-of-source-order spans are rejected', async t => {
+  const files = loadSources();
+  const { sources } = buildSourceMap(files);
+
+  const yamlPath = path.join(banksDir, 'spans-out-of-order.yaml');
+  const yamlText = fs.readFileSync(yamlPath, 'utf-8');
+  const bank = parseBank(yamlText);
+  const verdict = validateBank(bank, sources);
+
+  assert.equal(verdict.state, 'failed');
+  assert(verdict.errors.some(err => err.includes('q-ooo')),
+    'Expected error naming quote q-ooo');
+  assert(verdict.errors.some(err => err.match(/non-overlapping source order/i)),
+    `Expected an out-of-order error, got: ${verdict.errors.join(', ')}`);
 });
 
 // AUDIT-19: an ocr-fix with a missing/non-string before is unanchored and MUST be

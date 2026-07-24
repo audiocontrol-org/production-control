@@ -98,5 +98,23 @@
     "file": "ocr-fix-multi-valid.yaml",
     "expect": "passed",
     "reason": "two non-overlapping ocr-fixes resolved in pristine coordinates (AUDIT-20 regression guard)"
+  },
+  {
+    "file": "offset-mismatch.yaml",
+    "expect": "failed",
+    "kind": "fidelity",
+    "reason": "recorded offset 40 does not match raw location in source (AUDIT-32)"
+  },
+  {
+    "file": "spans-out-of-order.yaml",
+    "expect": "failed",
+    "kind": "fidelity",
+    "reason": "span 1 (earlier passage) precedes span 0 in source order (AUDIT-31)"
+  },
+  {
+    "file": "normalization-nfd.yaml",
+    "expect": "failed",
+    "kind": "fidelity",
+    "reason": "raw is NFC, text is NFD café; byte-exact reconstruction mismatches (a normalizer would wrongly collapse them) (AUDIT-09)"
   }
 ]
