@@ -1,0 +1,8 @@
+version: 1
+quotes:
+  - id: "q-nfd"
+    source: "cafe"
+    spans:
+      - raw: "caf\u00e9"
+    text: "cafe\u0301"
+    edits: []

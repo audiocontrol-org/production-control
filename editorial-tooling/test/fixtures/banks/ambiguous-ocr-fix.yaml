@@ -1,0 +1,12 @@
+version: 1
+quotes:
+  - id: "q-amb"
+    source: "plymouth"
+    spans:
+      - raw: "The colony endured a hard winter.\nThe colony endured a hard winter."
+    text: "The colony endured a hard winter. The colony endured a hard winter."
+    edits:
+      - op: "ocr-fix"
+        span: 0
+        before: "colony"
+        after: "colony"

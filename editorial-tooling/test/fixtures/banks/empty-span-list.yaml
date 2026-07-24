@@ -1,0 +1,7 @@
+version: 1
+quotes:
+  - id: "q-empty"
+    source: "winthrop"
+    spans: []
+    text: ""
+    edits: []

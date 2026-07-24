@@ -1,0 +1,10 @@
+version: 1
+id: chain
+title: Chain
+profile: editorial-audio
+authored:
+  narration:
+    path: assets/narration/take-01.wav
+  spoken:
+    path: script.md
+targets: [voiceover, podcast]

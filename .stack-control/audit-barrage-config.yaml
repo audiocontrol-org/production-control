@@ -1,0 +1,226 @@
+# PROJECT OVERRIDE of the plugin's shipped audit-barrage fleet.
+# Copied from templates/audit-barrage-config.yaml with ONE change: the `sonnet`
+# lane is removed. Everything else is the plugin default, verbatim.
+#
+# WHY, on field evidence — which is precisely what the plugin's own comment asked
+# for. The shipped config promoted sonnet on a 12.4 KB per-phase calibration
+# (224 s) and warned in writing: "Watch latency on larger per-phase units: the
+# 13 s/KB slope hits the 300 s floor near ~23 KB."
+#
+# The first whole-feature govern of 001-episode-production-contract ran a 29.2 KB
+# payload — past that line. Across 8 rounds:
+#
+#   claude (opus)  completed 8, timed-out 0
+#   codex          completed 8, timed-out 0
+#   sonnet         completed 2, timed-out 6
+#
+# Sonnet's derived budget was max(420, 13 × 29.2) = 420 s. claude/opus rides the
+# SAME 13 s/KB slope and the SAME 420 s floor and finished every round. So this is
+# not "sonnet is slow" — it is that sonnet needs materially more budget than a
+# better lane for identical work, and the timeouts are its calibration expiring at
+# ~2.4x the payload it was measured on.
+#
+# A timing-out lane is worse than an absent one: it emits no findings AND marks the
+# round's fleet DEGRADED (FR-007), which makes any 0-HIGH verdict weak evidence.
+# Six of eight rounds were priced as degraded for a lane that produced nothing.
+#
+# The alternative — raise sonnet's timeout_floor_seconds — was rejected: a third
+# perspective that costs 2x the wall clock of a stronger lane, for less depth, is
+# not buying diversity, it is buying latency. Re-add it if a future payload is small
+# enough to fit its calibration, or if it is recalibrated at this size.
+#
+# NOTE: sonnet remains `balanced` in config.yaml's tier_map, where it implemented 29
+# tasks in this feature without trouble. Auditing a 29 KB diff and implementing a
+# scoped task are different jobs; do not conflate them.
+#
+# Two lanes meets govern's --require-models floor of 2 EXACTLY. Deliberate: if
+# either fails, the run refuses rather than converging on one model's opinion. Do
+# not lower the floor to route around a failing lane.
+#
+# Audit-barrage model battery — defaults shipped by the stack-control plugin.
+#
+# Project-overridable at:
+#   .stack-control/audit-barrage-config.yaml
+#
+# Each entry registers one CLI lane to fire as part of the audit barrage. The
+# orchestrator runs all configured lanes in parallel against the rendered
+# audit prompt; per-model output is captured under
+# `.stack-control/audit-runs/<timestamp>-<feature>/`.
+#
+# Config grammar v2 (specs/014-audit-barrage-reliability). Normative
+# contract: specs/014-audit-barrage-reliability/contracts/barrage-config-schema.md.
+# A lane missing the v2 fields is refused at load with a migration message
+# (FR-011) — copy a lane from this file and adjust.
+#
+# Per-lane fields:
+#   name                    — operator-visible identifier; per-model filename
+#                             stem in the run dir; the `--models` filter key.
+#   binary                  — path or PATH-resolvable name of the CLI to spawn.
+#   model                   — REQUIRED explicit model pin (alias or id). No
+#                             spawn floats on the user's ambient default
+#                             (FR-001). Pin the ALIAS class where the CLI
+#                             supports one — an alias tracks point releases;
+#                             a dated id rots.
+#   args_template           — whitespace-delimited argv template; MUST contain
+#                             `{{model}}` AND exactly one of `{{prompt}}`
+#                             (argv substitution) / `{{prompt-stdin}}` (stdin
+#                             delivery — bypasses the OS ARG_MAX limit; the
+#                             default for every shipped lane).
+#   readonly_enforcement    — REQUIRED. The CLI fragment that makes the spawn
+#                             MECHANICALLY read-only (injected into argv
+#                             before the prompt placeholder when the template
+#                             doesn't already carry it), or the explicit
+#                             sentinel `none` — the lane then runs loudly
+#                             marked write-UNENFORCED at fire time, in run
+#                             artifacts, and at synthesis (FR-003/FR-004).
+#                             Fragments ship only after passing the hostile
+#                             write-probe (scripts/probe-readonly-spawn.sh) —
+#                             never assumed.
+#   output_mode             — text | stream-json. stream-json lanes get their
+#                             final report extracted from the terminal result
+#                             event (the per-model markdown artifact contract
+#                             survives the wire-format change, FR-010) plus a
+#                             forensic <model>.events.ndjson capture.
+#   liveness_signal         — stdout | stderr | none. Which stream carries the
+#                             sign-of-life pulse for the watchdog (FR-008).
+#                             MUST be a signal a healthy run actually produces
+#                             (measured 2026-06-10: claude text mode emits 0
+#                             stdout bytes until completion — its pulse only
+#                             exists in stream-json; codex chatters on stderr).
+#                             `none` → liveness unmonitored, watchdog disarmed.
+#   liveness_window_seconds — staleness threshold; required when the signal is
+#                             monitored. A spawn with no pulse inside the
+#                             window is killed (terminal state
+#                             killed-no-liveness) instead of waiting out the
+#                             full timeout. REFUSED on a `liveness_signal:
+#                             none` lane — an unmonitored lane has no window
+#                             to honor (AUDIT-20260611-14).
+#   timeout_floor_seconds + timeout_secs_per_kb
+#                           — derivation pair (FR-002): effective timeout =
+#                             max(floor, ceil(secs_per_kb × payload_KB)) where
+#                             payload = rendered PROMPT.md bytes. Calibrated
+#                             2026-06-10 on a 69 KB payload (includes ~1.5×
+#                             margin over observed wall time):
+#                               claude/opus  586 s observed → 13 s/KB
+#                               claude/fable 669–750 s      → 17 s/KB
+#                               codex        123–290 s      → 7 s/KB
+#   timeout_seconds         — optional explicit operator override; displaces
+#                             derivation and is recorded as `override` in the
+#                             run artifacts.
+#
+# Thoroughness override profile for the claude lane (operator choice): pin
+# `model: fable` with `timeout_secs_per_kb: 17` — most thorough in the
+# 2026-06-10 experiment, at correspondingly higher latency. The shipped
+# default pins `opus` (near-fable quality at 586 s vs 669–750 s). haiku is
+# excluded (zero verification depth).
+#
+# sonnet (specs/015 US5 / FR-011 / D8) — PROMOTED TO DEFAULT FLEET 2026-06-12:
+# sonnet was excluded on the 69 KB whole-feature unit (off-task + 2226 s, and a
+# read-only violation). Both disqualifiers are coupled to payload size +
+# enforcement — the exact levers specs/015 moves: the per-phase unit (`govern
+# --phase`) shrinks the payload and `--permission-mode plan` makes the spawn
+# mechanically read-only.
+# Live calibration 2026-06-12 (specs/015 quickstart-results.md § US5) met all three
+# FR-011 bars on a 12.4 KB per-phase payload — latency 224 s (< 300 s derived
+# timeout; ~10x under the 2226 s big-unit disqualifier), 4 file:line-anchored
+# depth-findings (one corroborating an opus finding), 4 tool calls + zero repo
+# mutations (read-only held). Operator decision (2026-06-12): promote to the DEFAULT
+# fleet now — three models (opus + codex + sonnet) restore cross-model genetic
+# diversity, and live field-testing across many real change sets is the broader
+# sample (rather than gating promotion on more pre-promotion calibration runs). The
+# active lane is in `models:` below. Watch latency on larger per-phase units: the
+# 13 s/KB slope hits the 300 s floor near ~23 KB; a unit beyond that derives a
+# proportionally larger budget (timeout-derivation is linear by design).
+
+models:
+  - name: claude
+    binary: claude
+    model: opus
+    # No-grounding (specs/029 US1 / TASK-288): `--permission-mode plan` let the
+    # model READ files to ground findings, and the audit prompt instructs
+    # grounding, so the lane ran an unbounded read/grep tool-loop that consumed
+    # the whole budget. Dropping it (and denying tools via readonly_enforcement)
+    # makes the lane a single text-only pass over the payload (which already
+    # contains the diff under audit) — measured 167-233s on 14-24KB no-grounding
+    # payloads. codex remains the deep file-grounding lane; claude/sonnet are the
+    # fast cross-family text-diff lanes.
+    args_template: "-p --model {{model}} --output-format stream-json --verbose {{prompt-stdin}}"
+    # No-tools = readonly by construction (denies Write/Edit) AND no grounding
+    # loop (denies Read/Grep/Glob/Bash/Task/web). Comma-joined single token so it
+    # survives the harness's whitespace split (spawn-cli injects it into argv).
+    readonly_enforcement: "--disallowedTools Bash,Read,Grep,Glob,Edit,Write,WebFetch,WebSearch,Task,NotebookEdit"
+    output_mode: stream-json
+    liveness_signal: stdout
+    # Widened from 60s (specs/029 US1): removing the grounding tool-loop (above)
+    # ALSO removed the lane's incidental stdout pulses — `--permission-mode plan`
+    # made Read/Grep tool calls that chattered on stdout and reset a tight
+    # watchdog. The no-grounding single pass emits only bursty `thinking_tokens`
+    # events whose gaps exceed 60s on larger payloads (observed Phase-1 govern: a
+    # healthy lane reached ~2768 thinking tokens, then a >60s gap tripped a FALSE
+    # killed-no-liveness, degrading the fleet). The lane MUST stay monitored —
+    # `fleet-negotiation.ts` deems an unmonitored (`none`) lane non-viable, which
+    # would drop the fleet below the --require-models floor. Unlike codex
+    # (reasoning summaries are a reliable stderr pulse → tight 60s window kept),
+    # this lane has no tighter pulse knob, so the capability-appropriate fix
+    # (Principle III) is a WIDE monitored window: 300s comfortably exceeds the
+    # ~170-233s healthy completion (never false-kills) while staying under the
+    # 420s timeout so a true infinite hang is still caught before the budget.
+    liveness_window_seconds: 300
+    # Floor raised 300 -> 420 for kill-cap headroom on larger phases; a
+    # successful no-grounding run still completes ~170-233s, so this does not
+    # slow good runs (FR-002).
+    timeout_floor_seconds: 420
+    timeout_secs_per_kb: 13
+  - name: codex
+    binary: codex
+    model: gpt-5.5
+    # Reasoning-summary liveness (specs/029 US1 / TASK-145): codex reasons
+    # silently for >60s on a real per-phase payload before its first stderr
+    # pulse, tripping killed-no-liveness on a tight window. model_reasoning_
+    # summary="detailed" makes codex emit reasoning summaries to stderr DURING
+    # reasoning, so the watchdog gets genuine pulses inside the tight 60s window
+    # instead of widening the window blindly (FR-003).
+    # Bare `key=value` (no quotes): the value travels as a literal argv element
+    # (programmatic spawn, no shell to strip quotes). codex parses the `-c` value
+    # as TOML and, on TOML-parse-failure of a bare word, uses the raw string as a
+    # literal — so `detailed` lands as the string `detailed` either way. Bare
+    # avoids embedding literal quote characters in argv (AUDIT-BARRAGE-claude-01).
+    args_template: "exec -m {{model}} -c model_reasoning_summary=detailed --sandbox read-only {{prompt-stdin}}"
+    readonly_enforcement: "--sandbox read-only"
+    output_mode: text
+    liveness_signal: stderr
+    # Widened 60 -> 150 on field evidence (govern run 2026-07-15T22-06-47):
+    # codex completed 37 of 38 chunk-rounds, then went >60s silent on ONE chunk
+    # and the watchdog fired killed-no-liveness, dropping a 2-lane fleet below the
+    # floor and refusing the whole pass. Same failure class the claude lane was
+    # widened 60->300 for (bursty pulses exceeding a tight window). 150s still
+    # catches a true hang well under the 300s timeout floor; it just stops
+    # false-killing codex's occasional long silent reasoning stretch.
+    #
+    # WIDENED AGAIN 150 -> 280 (govern run 2026-07-17T00-30-55): at 150s codex was
+    # still false-killed on exactly 1 of 43 chunks (claude 43/43 clean), and one
+    # false-kill FATALs the whole 2-lane floor-of-2 pass. killed-no-liveness is a
+    # WATCHDOG kill for silence, not a codex crash — and codex's real budget is the
+    # 300s timeout. 280 gives it nearly the full budget before a liveness kill,
+    # mirroring the claude lane (300s window under a 420s timeout) which never
+    # false-kills. Only a near-total hang dies here now; the 300s timeout is the
+    # real backstop. A true hang costs ~280s to catch instead of 150 — acceptable,
+    # since a single false-kill was FATAL-ing an entire ~40-chunk run.
+    liveness_window_seconds: 280
+    timeout_floor_seconds: 300
+    timeout_secs_per_kb: 7
+  # gemini — DISABLED (commented out). gemini-cli was failing 94.1% of runs
+  # (16 of 17 across the graphical-entries Phase 0 audit cycle) on cascading
+  # ClassifierStrategy JSON-routing failures + quota exhaustion; re-enable
+  # when upstream stabilizes. When re-enabling: keep readonly_enforcement at
+  # `none` until the lane passes scripts/probe-readonly-spawn.sh (the lane
+  # then runs loudly marked write-unenforced), and pin the model explicitly.
+  # - name: gemini
+  #   binary: gemini
+  #   model: gemini-2.5-pro
+  #   args_template: "-m {{model}} {{prompt-stdin}}"
+  #   readonly_enforcement: none
+  #   output_mode: text
+  #   liveness_signal: none
+  #   timeout_floor_seconds: 300
+  #   timeout_secs_per_kb: 7

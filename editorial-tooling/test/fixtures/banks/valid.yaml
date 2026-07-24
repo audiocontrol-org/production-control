@@ -1,0 +1,28 @@
+version: 1
+quotes:
+  - id: "q-w1"
+    source: "winthrop"
+    spans:
+      - raw: "We shall be as a city upon a hill."
+    text: "We shall be as a city upon a hill."
+    edits: []
+  - id: "q-b1"
+    source: "bradford"
+    spans:
+      - raw: "They founded a small coiony by the shore."
+    text: "They founded a small colony by the shore."
+    edits:
+      - op: "ocr-fix"
+        span: 0
+        before: "coiony"
+        after: "colony"
+  - id: "q-w2"
+    source: "winthrop"
+    spans:
+      - raw: "We shall be as a city upon a hill."
+      - raw: "The eyes of all people are upon us."
+    text: "We shall be as a city upon a hill. … The eyes of all people are upon us."
+    edits:
+      - op: "ellipsis-join"
+        between: [0, 1]
+        separator: " … "

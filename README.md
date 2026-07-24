@@ -15,12 +15,25 @@ do, and why those refusals are load-bearing.
 
 ## Status
 
-**Design phase. Nothing is implemented yet.**
+**Milestone 1 (the oracle) is implemented and tested. Most of Milestone 2 (the execution
+layer) is too.**
 
-The architecture is settled and recorded; the code does not exist. See
-[ROADMAP.md](ROADMAP.md) for the governed work graph, and
+Working today, offline, and covered by the test suite:
+
+- `pc status`, `pc next`, `pc explain`, and `pc release-check` — the read verbs, exercised
+  against fixture episodes with no craft tool installed and no network reachable.
+- `pc build`, `pc validate`, and `pc review --waive` — building and recording provenance as
+  one act, recording a validation verdict, and recording a human's waiver.
+- `pc asset add` — content-addressed large-asset storage, with the S3-compatible adapter
+  tested against a real MinIO server (via `testcontainers`), not a mock.
+
+Not built, and out of scope for this version by design (see spec.md § Out of Scope):
+video production, publishing and distribution, and scheduling. This is stated plainly
+rather than as a roadmap promise — see [ROADMAP.md](ROADMAP.md) for the governed work
+graph, and
 [the Episode Production Contract design](docs/superpowers/specs/2026-07-14-episode-production-contract-design.md)
-for the current design record.
+and [spec.md](specs/001-episode-production-contract/spec.md) for the design record and
+current specification.
 
 ## The idea
 
@@ -86,6 +99,54 @@ targets: [website, epub, voiceover, podcast]
 
 A *profile* is the generic recipe binding targets to providers. Profiles are where
 reuse across subjects lives; the episode holds only what is specific to it.
+
+## Usage
+
+The full contract for the command surface is
+[specs/001-episode-production-contract/contracts/cli.md](specs/001-episode-production-contract/contracts/cli.md);
+this is the short version an agent needs to branch correctly, not a restatement of it.
+
+`--json` is the primary interface; human-readable text is the convenience layer over it.
+Every verb takes `--episode <dir>` (defaults to the current directory). The exit code is
+the contract:
+
+| Class | Verbs | Exit |
+|---|---|---|
+| **Read** | `status`, `next`, `explain <node>` | Always **0** — even when reporting problems |
+| **Gate** | `validate`, `release-check` | **0** if clean, **1** if not |
+| **Act** | `build <target>`, `asset add <file>`, `review <node> --waive --reason` | **0** on success, **1** on failure |
+| **Any** | — | **2** on a usage error (bad flag, missing argument) |
+
+A read verb reporting "everything is broken" has *succeeded* — it answered the
+question. Only a gate or an act ever reports failure via its exit code.
+
+```
+$ pc status --episode examples/minimal-podcast
+outline    present       Authored node "outline" resolves, and it follows nothing.
+spoken     present       Authored node "spoken" resolves, and it follows nothing.
+narration  needs-review  Authored node "narration" follows "spoken", and no review …
+voiceover  missing       "voiceover" has no record in the ledger: it has never been built.
+podcast    blocked       Input "voiceover" of "podcast" is absent …
+$ echo $?
+0
+```
+
+(`examples/minimal-podcast` — see its own README — has never been built, so `voiceover`
+and `podcast` have something to say; `narration`'s cause is truncated above for width.)
+
+### How a provider participates
+
+A provider is any external program that turns local input files into local output
+files and reports what it produced — a subprocess speaking JSON over stdio, never an
+in-process plugin. `pc build` resolves every declared input to a local path, spawns the
+provider named in the profile, hashes what it produced itself (never trusting the
+provider's own word for it), and records the result — inputs, tool, version, and
+output hash — as part of the same action that ran the build. Any tool that satisfies
+the contract can be bound to a target, swapped for another, or run by hand outside
+production-control entirely with no credentials and no orchestrator present. The full
+contract, including the exact request/response shapes and the failure rules a provider
+must be held to, is
+[specs/001-episode-production-contract/contracts/provider.md](specs/001-episode-production-contract/contracts/provider.md).
 
 ## Repository structure
 

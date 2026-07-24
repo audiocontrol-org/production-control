@@ -468,9 +468,17 @@ adapter is tested against a local S3-compatible server.
 advisory edges + `needs-review`, validation state, release-check, private
 content-addressed store, provider contract, the agent CLI surface.
 
-**Targets**: website, EPUB, voiceover, podcast. Editorial + audio — two genuinely
-different crafts, which forces the timed-transcript contract that video will later
-need, without coupling v0.1 to videocontrol's maturity.
+**Targets**: website, EPUB, voiceover, podcast, **timed transcript**. Editorial +
+audio — two genuinely different crafts, which forces the timed-transcript contract that
+video will later need, without coupling v0.1 to videocontrol's maturity.
+
+The transcript derives from `[narration, spoken]` — aligning a performance to the script
+it performs. Its consumers (video cut lists, audiobook indices and chapter marks) are
+deferred, but they are known and planned, and alignment is the only way to make narration
+addressable at all. Its producer is whichever tool satisfies *narration + script →
+timings*; production-control is ignorant of which, so requiring it does not couple v0.1 to
+videocontrol. It is also the only v0.1 output that is structured data rather than media
+bytes, which is what makes it worth proving first.
 
 **Deferred, deliberately**:
 
@@ -483,11 +491,17 @@ need, without coupling v0.1 to videocontrol's maturity.
 
 ## Open questions
 
-**The timed transcript schema is not settled.** It is named in the vision as a
-first-class artifact and is the keystone coupling audio to video. v0.1 forces its
-existence by including both crafts, but its shape should be pinned during
-implementation, when contact with real audio tooling can inform it rather than
-guesswork.
+**The timed transcript's schema is not settled — but v0.1 now forces the question.**
+Earlier this record claimed the editorial+audio slice "forces the timed-transcript
+contract" while declaring no target that produced one; the transcript is now a declared
+v0.1 target, which resolves that contradiction in the direction this record always
+intended.
+
+What remains open is its shape: segment-level or word-level timings, how it references
+the script's structure, and how confidence or alignment failure is represented. This
+should be pinned on contact with a real aligner rather than guessed. The risk of building
+it before its consumers exist is that the shape goes unvalidated until video arrives —
+accepted deliberately, because the alternative is that video's spec starts with nothing.
 
 **How an impure provider declares itself is not specified.** The provider contract
 requires the declaration (see *The provider contract*); the mechanism — a field in

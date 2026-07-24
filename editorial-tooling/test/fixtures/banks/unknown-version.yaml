@@ -1,0 +1,8 @@
+version: 2
+quotes:
+  - id: "q-v"
+    source: "winthrop"
+    spans:
+      - raw: "We shall be as a city upon a hill."
+    text: "We shall be as a city upon a hill."
+    edits: []
