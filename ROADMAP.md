@@ -20,7 +20,7 @@ edit this file directly, then run `stackctl roadmap order` to revalidate the
 graph (it fails loud on a cycle / dangling ref / duplicate id).
 
 ## design:feature/episode-production-contract
-- status: in-flight
+- status: shipped
 - analyze-clean: yes
 - spec: specs/001-episode-production-contract
 - design: docs/superpowers/specs/2026-07-14-episode-production-contract-design.md
