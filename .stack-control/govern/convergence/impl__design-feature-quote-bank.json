@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "mode": "impl",
+  "item": "design:feature/quote-bank",
+  "governedShaBase": "override-short-circuit",
+  "headSha": "override-short-circuit",
+  "chunkIds": [],
+  "rounds": 0,
+  "liftedFindings": [],
+  "closedInLoopFindings": [],
+  "seamResult": {
+    "boundaryPairs": [],
+    "findings": [],
+    "suppressedCompatible": 0
+  },
+  "splitClusterRefs": [],
+  "outcome": "override-eligible",
+  "anchorRoot": "/Users/orion/work/production-control-work/production-control",
+  "override": true,
+  "overrideReason": "Quote-bank FEATURE findings fixed with regression tests (commits b63e455, 5db65f2, 4c32c38, 6bd1025): ocr-fix fabrication holes AUDIT-19/20, offset+source-order verification and a real NFD/NFC normalization test AUDIT-31/32/09, model-identity provenance AUDIT-21, miner-omission assertion and eslint/file-size gate coverage AUDIT-33/08/14; AUDIT-17 was a confirmed false positive. The remaining ~39 open findings are OUT OF SCOPE for quote-bank v1: bucket B (~36) is pre-existing production-control core from earlier episode/asset work never merged to main and re-surfaced by the whole-branch diff (tracked TASK-6); bucket C (~3) is the stack-control audit-barrage tool itself (tracked TASK-7). Full disposition in specs/002-quote-bank/audit-log.md. Operator-approved (fix-feature-then-override)."
+}

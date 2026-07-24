@@ -1,0 +1,13 @@
+{
+  "handle": "2026-07-24T01-54-56-285Z-ubcm",
+  "governArgs": [
+    "--mode",
+    "implement",
+    "--item",
+    "design:feature/quote-bank"
+  ],
+  "cwd": "/Users/orion/work/production-control-work/production-control",
+  "startedAt": "2026-07-24T01:54:56.285Z",
+  "pid": 92583,
+  "logPath": "/Users/orion/work/production-control-work/production-control/.stack-control/govern/background/2026-07-24T01-54-56-285Z-ubcm/govern.log"
+}
