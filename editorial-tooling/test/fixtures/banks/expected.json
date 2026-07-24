@@ -75,5 +75,28 @@
     "file": "location-ambiguous.yaml",
     "expect": "passed",
     "advisory": "location-ambiguous"
+  },
+  {
+    "file": "ocr-fix-missing-before.yaml",
+    "expect": "failed",
+    "kind": "structural",
+    "reason": "ocr-fix with missing before is unanchored (AUDIT-19)"
+  },
+  {
+    "file": "ocr-fix-empty-before.yaml",
+    "expect": "failed",
+    "kind": "structural",
+    "reason": "ocr-fix with empty before is an insertion, not permitted (AUDIT-19)"
+  },
+  {
+    "file": "ocr-fix-at-out-of-bounds.yaml",
+    "expect": "failed",
+    "kind": "structural",
+    "reason": "ocr-fix at 999 is out of range for the span (AUDIT-20)"
+  },
+  {
+    "file": "ocr-fix-multi-valid.yaml",
+    "expect": "passed",
+    "reason": "two non-overlapping ocr-fixes resolved in pristine coordinates (AUDIT-20 regression guard)"
   }
 ]

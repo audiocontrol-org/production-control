@@ -160,6 +160,18 @@ function checkOcrFix(edit, k, id, spans, spanCount, ocrRangesBySpan, defects) {
   }
 
   if (typeof edit.before !== 'string' || typeof edit.after !== 'string') {
+    // A missing or non-string before/after leaves the edit unanchored: a splice with
+    // no verifiable source substring. Reject it here rather than accepting silently
+    // (AUDIT-19).
+    defects.push(
+      `quote '${id}': ocr-fix (edit #${k}) has missing or non-string before/after`
+    );
+    return;
+  }
+
+  if (edit.before.length === 0) {
+    // An empty `before` is an insertion, which neither closed-set op permits (AUDIT-19).
+    defects.push(`quote '${id}': ocr-fix (edit #${k}) before is empty`);
     return;
   }
 
@@ -173,8 +185,23 @@ function checkOcrFix(edit, k, id, spans, spanCount, ocrRangesBySpan, defects) {
   const beforeBytes = Buffer.from(edit.before, 'utf8');
 
   let start;
-  if (Number.isInteger(edit.at)) {
-    start = edit.at;
+  if (edit.at !== undefined) {
+    // `at` is resolved against the PRISTINE span bytes — the same coordinate space
+    // reconstruction now uses (AUDIT-20). Bounds-check it and confirm the bytes at
+    // [at, at+len) actually equal `before`.
+    const at = edit.at;
+    const inRange =
+      Number.isInteger(at) &&
+      at >= 0 &&
+      at + beforeBytes.length <= rawBytes.length &&
+      rawBytes.subarray(at, at + beforeBytes.length).equals(beforeBytes);
+    if (!inRange) {
+      defects.push(
+        `quote '${id}': ocr-fix (edit #${k}) at ${at} is out of range or does not match before`
+      );
+      return;
+    }
+    start = at;
   } else {
     const occurrences = countOccurrences(rawBytes, beforeBytes);
     if (occurrences > 1) {

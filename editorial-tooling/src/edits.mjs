@@ -22,23 +22,37 @@ export function reconstruct(quote) {
   const spans = Array.isArray(quote?.spans) ? quote.spans : [];
   const edits = Array.isArray(quote?.edits) ? quote.edits : [];
 
-  // Step 1: each span's `raw` (as UTF-8 bytes) is its working buffer, in order.
-  const spanBufs = spans.map((span) => Buffer.from(String(span?.raw ?? ''), 'utf8'));
+  // Step 1: each span's PRISTINE `raw` (as UTF-8 bytes), in order. These original
+  // bytes are the single coordinate space for resolving EVERY ocr-fix on the span —
+  // never the cumulatively-mutated buffer — so structural checks (which measure
+  // overlap/occurrence in original bytes) and application agree (AUDIT-20).
+  const pristine = spans.map((span) => Buffer.from(String(span?.raw ?? ''), 'utf8'));
 
-  // Step 2: apply `ocr-fix` edits IN DECLARED ORDER, mutating span working buffers.
-  // Step 3 (collected in the same pass): `ellipsis-join` edits do NOT mutate bytes;
-  // they only define the separator inserted between a consecutive span pair.
+  // Step 2 (collected here, applied below): resolve each `ocr-fix` to a disjoint
+  // original-coordinate splice on its span. Step 3: `ellipsis-join` edits do NOT
+  // mutate bytes; they only define the separator inserted between a consecutive pair.
+  const splicesBySpan = new Map(); // span index -> [{ start, end, afterBuf }]
   const separatorByPair = new Map(); // pair i (join between span i and i+1) -> Buffer
 
   for (const edit of edits) {
     const op = edit?.op;
 
     if (op === 'ocr-fix') {
-      const result = applyOcrFix(spanBufs, edit, id);
-      if (result.error !== null) {
-        return { text: null, error: result.error };
+      const spanIndex = edit.span;
+      const base = pristine[spanIndex];
+      if (base === undefined) {
+        return {
+          text: null,
+          error: `quote '${id}': ocr-fix references nonexistent span ${spanIndex}`,
+        };
       }
-      spanBufs[edit.span] = result.buf;
+      const resolved = resolveOcrFix(base, edit, id, spanIndex);
+      if (resolved.error !== null) {
+        return { text: null, error: resolved.error };
+      }
+      const list = splicesBySpan.get(spanIndex) ?? [];
+      list.push(resolved.splice);
+      splicesBySpan.set(spanIndex, list);
     } else if (op === 'ellipsis-join') {
       // `between` is a consecutive pair [i, i+1]; index the separator by the lower i.
       const pair = edit?.between?.[0];
@@ -46,6 +60,14 @@ export function reconstruct(quote) {
     }
     // Any other op is ignored for reconstruction (rejected structurally upstream).
   }
+
+  // Rebuild each span buffer in ONE pass: stitch pristine slices with replacements
+  // over the span's disjoint, sorted splices (non-overlap is proven structurally).
+  const spanBufs = pristine.map((base, i) => {
+    const splices = splicesBySpan.get(i);
+    if (splices === undefined || splices.length === 0) return base;
+    return applySplices(base, splices);
+  });
 
   // Step 4: concatenate span0 + sep(0,1) + span1 + sep(1,2) + ... + spanLast.
   const parts = [];
@@ -68,44 +90,67 @@ export function reconstruct(quote) {
 }
 
 /**
- * Apply a single `ocr-fix` edit to the target span's working buffer (byte splice).
- * Returns the new buffer on success, or an error string naming the quote id and the
- * problem on verify failure. Does not mutate the input buffer array.
+ * Resolve a single `ocr-fix` edit to a disjoint original-coordinate splice against the
+ * PRISTINE span bytes: `at` if given, else the sole occurrence of `before`. Verifies
+ * the bytes at that range equal `before`. Refuses an EMPTY `before` (an insertion,
+ * which no closed-set op permits) so reconstruction never fabricates even if a defect
+ * slips the structural check (AUDIT-19). Returns the splice, or an error string naming
+ * the quote id and the problem.
  *
- * @param {Buffer[]} spanBufs
- * @param {{ span: number, before: string, after: string, at?: number }} edit
+ * @param {Buffer} base pristine span bytes
+ * @param {{ before: string, after: string, at?: number }} edit
  * @param {string} id
- * @returns {{ buf: Buffer|null, error: string|null }}
+ * @param {number} spanIndex
+ * @returns {{ splice: { start: number, end: number, afterBuf: Buffer }|null, error: string|null }}
  */
-function applyOcrFix(spanBufs, edit, id) {
-  const spanIndex = edit.span;
-  const buf = spanBufs[spanIndex];
+function resolveOcrFix(base, edit, id, spanIndex) {
   const beforeBuf = Buffer.from(String(edit.before ?? ''), 'utf8');
   const afterBuf = Buffer.from(String(edit.after ?? ''), 'utf8');
 
-  // Determine the byte offset in the CURRENT working buffer: explicit `at`, else the
-  // first occurrence of `before` (sole occurrence for a well-formed accepted bank).
-  const offset = Number.isInteger(edit.at) ? edit.at : buf.indexOf(beforeBuf);
-
-  // VERIFY the bytes at [offset, offset+beforeBuf.length) equal `before`.
-  const notFound =
-    offset < 0 ||
-    offset + beforeBuf.length > buf.length ||
-    !buf.subarray(offset, offset + beforeBuf.length).equals(beforeBuf);
-  if (notFound) {
+  if (beforeBuf.length === 0) {
     return {
-      buf: null,
+      splice: null,
+      error: `quote '${id}': ocr-fix on span ${spanIndex} has an empty before (insertion not permitted)`,
+    };
+  }
+
+  const start = Number.isInteger(edit.at) ? edit.at : base.indexOf(beforeBuf);
+  const end = start + beforeBuf.length;
+
+  // VERIFY the bytes at [start, end) equal `before` against the pristine buffer.
+  const matches =
+    start >= 0 && end <= base.length && base.subarray(start, end).equals(beforeBuf);
+  if (!matches) {
+    return {
+      splice: null,
       error: `quote '${id}': ocr-fix before '${edit.before}' not found in span ${spanIndex}`,
     };
   }
 
-  // Replace that byte range with `after` (splice).
-  const spliced = Buffer.concat([
-    buf.subarray(0, offset),
-    afterBuf,
-    buf.subarray(offset + beforeBuf.length),
-  ]);
-  return { buf: spliced, error: null };
+  return { splice: { start, end, afterBuf }, error: null };
+}
+
+/**
+ * Rebuild a span buffer from its pristine bytes and a set of disjoint splices, applied
+ * over ORIGINAL coordinates: sort by start, then stitch pristine slices with each
+ * replacement. Non-overlap is proven by the structural check, so a single left-to-right
+ * pass reproduces every splice exactly regardless of declared order or length changes.
+ *
+ * @param {Buffer} base pristine span bytes
+ * @param {Array<{ start: number, end: number, afterBuf: Buffer }>} splices
+ * @returns {Buffer}
+ */
+function applySplices(base, splices) {
+  const sorted = [...splices].sort((a, b) => a.start - b.start);
+  const parts = [];
+  let cursor = 0;
+  for (const { start, end, afterBuf } of sorted) {
+    parts.push(base.subarray(cursor, start));
+    parts.push(afterBuf);
+    cursor = end;
+  }
+  parts.push(base.subarray(cursor));
+  return Buffer.concat(parts);
 }
 
 /**

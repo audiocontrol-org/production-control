@@ -32,10 +32,11 @@ test('buildSourceMap: loads all fixtures and reports no errors', async t => {
   const { sources, errors } = buildSourceMap(files);
 
   assert.equal(errors.length, 0, `Expected no errors, but got: ${errors.join(', ')}`);
-  assert.equal(sources.size, 3, 'Expected 3 sources in the map');
+  assert.equal(sources.size, 4, 'Expected 4 sources in the map');
   assert(sources.has('plymouth'), 'Expected plymouth source');
   assert(sources.has('bradford'), 'Expected bradford source');
   assert(sources.has('winthrop'), 'Expected winthrop source');
+  assert(sources.has('standish'), 'Expected standish source');
 
   // Verify exact bytes are preserved
   const originalPlymouth = fs.readFileSync(path.join(sourcesDir, 'plymouth.txt'));
@@ -182,4 +183,71 @@ test('byte-exact comparison (no normalization) on reconstruction-mismatch', asyn
   // (Exercises FR-001: verbatim extraction and FR-002: byte-exact preservation)
   assert.equal(verdict.state, 'failed',
     'Byte-exact comparison should catch period vs exclamation difference');
+});
+
+// AUDIT-19: an ocr-fix with a missing/non-string before is unanchored and MUST be
+// rejected structurally — never silently accepted, which would let fabricated
+// presentation bytes be spliced in at offset 0.
+test('AUDIT-19: ocr-fix with missing before is rejected structurally', async t => {
+  const files = loadSources();
+  const { sources } = buildSourceMap(files);
+
+  const yamlPath = path.join(banksDir, 'ocr-fix-missing-before.yaml');
+  const yamlText = fs.readFileSync(yamlPath, 'utf-8');
+  const bank = parseBank(yamlText);
+  const verdict = validateBank(bank, sources);
+
+  assert.equal(verdict.state, 'failed');
+  assert(verdict.errors.some(err => err.match(/missing or non-string before/i)),
+    `Expected a missing-before defect, got: ${verdict.errors.join(', ')}`);
+  assert(!verdict.errors.some(err => err.match(/reconstruction/i)),
+    'Should reject structurally, before any reconstruction/fidelity check');
+});
+
+// AUDIT-19: an empty-string before is an insertion (neither closed-set op permits it).
+test('AUDIT-19: ocr-fix with empty before is rejected structurally', async t => {
+  const files = loadSources();
+  const { sources } = buildSourceMap(files);
+
+  const yamlPath = path.join(banksDir, 'ocr-fix-empty-before.yaml');
+  const yamlText = fs.readFileSync(yamlPath, 'utf-8');
+  const bank = parseBank(yamlText);
+  const verdict = validateBank(bank, sources);
+
+  assert.equal(verdict.state, 'failed');
+  assert(verdict.errors.some(err => err.match(/before is empty/i)),
+    `Expected an empty-before defect, got: ${verdict.errors.join(', ')}`);
+});
+
+// AUDIT-20: an `at` far past the span length must be bounds-checked structurally.
+test('AUDIT-20: ocr-fix with out-of-bounds at is rejected structurally', async t => {
+  const files = loadSources();
+  const { sources } = buildSourceMap(files);
+
+  const yamlPath = path.join(banksDir, 'ocr-fix-at-out-of-bounds.yaml');
+  const yamlText = fs.readFileSync(yamlPath, 'utf-8');
+  const bank = parseBank(yamlText);
+  const verdict = validateBank(bank, sources);
+
+  assert.equal(verdict.state, 'failed');
+  assert(verdict.errors.some(err => err.match(/at 999 is out of range or does not match before/i)),
+    `Expected an out-of-range at defect, got: ${verdict.errors.join(', ')}`);
+});
+
+// AUDIT-20 regression guard: two non-overlapping ocr-fixes on one span whose
+// replacements differ in byte length from their `before`. Because the first splice
+// shifts every subsequent byte, resolving the second edit against the mutated buffer
+// (the old bug) FALSE-REJECTS; resolving against pristine bytes reproduces `text`.
+test('AUDIT-20: two length-changing ocr-fixes reconstruct in pristine coordinates', async t => {
+  const files = loadSources();
+  const { sources } = buildSourceMap(files);
+
+  const yamlPath = path.join(banksDir, 'ocr-fix-multi-valid.yaml');
+  const yamlText = fs.readFileSync(yamlPath, 'utf-8');
+  const bank = parseBank(yamlText);
+  const verdict = validateBank(bank, sources);
+
+  assert.equal(verdict.state, 'passed',
+    `Expected pass, got errors: ${verdict.errors.join(', ')}`);
+  assert.equal(verdict.errors.length, 0);
 });

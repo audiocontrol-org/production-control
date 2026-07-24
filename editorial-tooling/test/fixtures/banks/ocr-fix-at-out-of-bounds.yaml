@@ -1,0 +1,13 @@
+version: 1
+quotes:
+  - id: "q-at-oob"
+    source: "bradford"
+    spans:
+      - raw: "They founded a small coiony by the shore."
+    text: "They founded a small colony by the shore."
+    edits:
+      - op: "ocr-fix"
+        span: 0
+        at: 999
+        before: "coiony"
+        after: "colony"
