@@ -1,0 +1,12 @@
+version: 1
+quotes:
+  - id: "q-oos"
+    source: "winthrop"
+    spans:
+      - raw: "We shall be as a city upon a hill."
+    text: "We shall be as a city upon a mountain."
+    edits:
+      - op: "paraphrase"
+        span: 0
+        before: "hill"
+        after: "mountain"

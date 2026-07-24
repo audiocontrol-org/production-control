@@ -1,0 +1,8 @@
+version: 1
+quotes:
+  - id: "q-loc"
+    source: "plymouth"
+    spans:
+      - raw: "The colony endured a hard winter."
+    text: "The colony endured a hard winter."
+    edits: []

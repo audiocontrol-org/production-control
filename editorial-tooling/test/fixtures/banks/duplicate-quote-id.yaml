@@ -1,0 +1,14 @@
+version: 1
+quotes:
+  - id: "dup"
+    source: "winthrop"
+    spans:
+      - raw: "We shall be as a city upon a hill."
+    text: "We shall be as a city upon a hill."
+    edits: []
+  - id: "dup"
+    source: "winthrop"
+    spans:
+      - raw: "We shall be as a city upon a hill."
+    text: "We shall be as a city upon a hill."
+    edits: []

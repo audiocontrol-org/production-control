@@ -1,0 +1,79 @@
+[
+  {
+    "file": "valid.yaml",
+    "expect": "passed"
+  },
+  {
+    "file": "fabricated-span.yaml",
+    "expect": "failed",
+    "kind": "fidelity",
+    "reason": "span raw not a substring of source"
+  },
+  {
+    "file": "reconstruction-mismatch.yaml",
+    "expect": "failed",
+    "kind": "fidelity",
+    "reason": "reconstruction does not match text (final byte mismatch: . vs !)"
+  },
+  {
+    "file": "out-of-set-edit.yaml",
+    "expect": "failed",
+    "kind": "structural",
+    "reason": "edit op 'paraphrase' not in closed set"
+  },
+  {
+    "file": "multi-span-ellipsis.yaml",
+    "expect": "passed"
+  },
+  {
+    "file": "ambiguous-ocr-fix.yaml",
+    "expect": "failed",
+    "kind": "structural",
+    "reason": "ocr-fix ambiguous: before 'colony' occurs twice in span, no at offset"
+  },
+  {
+    "file": "overlapping-ocr-fix.yaml",
+    "expect": "failed",
+    "kind": "structural",
+    "reason": "ocr-fix edits overlap: [0,3) and [2,5)"
+  },
+  {
+    "file": "nonexistent-span-edit.yaml",
+    "expect": "failed",
+    "kind": "structural",
+    "reason": "edit references nonexistent span index 3"
+  },
+  {
+    "file": "duplicate-quote-id.yaml",
+    "expect": "failed",
+    "kind": "structural",
+    "reason": "duplicate quote id 'dup'"
+  },
+  {
+    "file": "empty-span-list.yaml",
+    "expect": "failed",
+    "kind": "structural",
+    "reason": "span list is empty"
+  },
+  {
+    "file": "unresolvable-source.yaml",
+    "expect": "failed",
+    "kind": "structural",
+    "reason": "source 'nonexistent' does not resolve"
+  },
+  {
+    "file": "unknown-version.yaml",
+    "expect": "failed",
+    "kind": "structural",
+    "reason": "unknown version 2"
+  },
+  {
+    "file": "empty-bank.yaml",
+    "expect": "passed"
+  },
+  {
+    "file": "location-ambiguous.yaml",
+    "expect": "passed",
+    "advisory": "location-ambiguous"
+  }
+]
