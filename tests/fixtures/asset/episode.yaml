@@ -1,0 +1,8 @@
+version: 1
+id: asset
+title: Asset
+profile: editorial-audio
+authored:
+  narration:
+    path: assets/narration/take-01.wav
+targets: [voiceover]

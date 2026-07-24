@@ -1,0 +1,31 @@
+govern clone-step: 9 clone group(s) in this codebase; 9 NEW (no baseline yet).
+  NEW clone b13d418b8b29 (6 lines)
+    /Users/orion/work/production-control-work/production-control/tests/integration/support.ts:162:167
+    /Users/orion/work/production-control-work/production-control/tests/unit/state/support.ts:27:32
+  NEW clone 320d73d84f8a (8 lines)
+    /Users/orion/work/production-control-work/production-control/src/manifest/load.ts:113:120
+    /Users/orion/work/production-control-work/production-control/src/providers/contract.ts:126:133
+  NEW clone f45e01308a2c (38 lines)
+    /Users/orion/work/production-control-work/production-control/src/ledger/store.ts:137:174
+    /Users/orion/work/production-control-work/production-control/src/manifest/load.ts:74:111
+  NEW clone eaa5bdd78328 (14 lines)
+    /Users/orion/work/production-control-work/production-control/src/ledger/store.ts:175:188
+    /Users/orion/work/production-control-work/production-control/src/manifest/load.ts:112:125
+  NEW clone a1b49cffc62a (6 lines)
+    /Users/orion/work/production-control-work/production-control/src/cli/index.ts:111:116
+    /Users/orion/work/production-control-work/production-control/src/cli/index.ts:204:209
+  NEW clone e673bb8ade24 (24 lines)
+    /Users/orion/work/production-control-work/production-control/src/cli/asset.ts:159:182
+    /Users/orion/work/production-control-work/production-control/src/manifest/load.ts:85:96
+  NEW clone 61390960e836 (13 lines)
+    /Users/orion/work/production-control-work/production-control/src/assets/pointer.ts:151:163
+    /Users/orion/work/production-control-work/production-control/src/manifest/load.ts:81:96
+  NEW clone 5c7e13fcb830 (7 lines)
+    /Users/orion/work/production-control-work/production-control/src/assets/pointer.ts:163:169
+    /Users/orion/work/production-control-work/production-control/src/manifest/load.ts:97:103
+  NEW clone aed071898b81 (9 lines)
+    /Users/orion/work/production-control-work/production-control/src/assets/pointer.ts:173:181
+    /Users/orion/work/production-control-work/production-control/src/manifest/load.ts:112:120
+govern: code-only scoping active — excluded 22 documentation file(s) from the audit payload.
+govern: FATAL — govern: FATAL — file 'tests/unit/architecture.test.ts' alone renders 29903 bytes, exceeding the fleet envelope 24576. A code file this large violates the 300-500-line cap (Constitution VI); a non-code file this large is not useful in the stack-control audit context. Fix or remove the file — govern does not hunk-split an a-priori-broken input.
+govern: terminal-outcome=fatal

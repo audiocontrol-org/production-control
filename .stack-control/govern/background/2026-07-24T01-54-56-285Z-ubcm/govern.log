@@ -1,0 +1,241 @@
+govern clone-step: 12 clone group(s) in this codebase; 12 NEW (no baseline yet).
+  NEW clone b13d418b8b29 (6 lines)
+    /Users/orion/work/production-control-work/production-control/tests/integration/support.ts:162:167
+    /Users/orion/work/production-control-work/production-control/tests/unit/state/support.ts:27:32
+  NEW clone 52c7fd1b974f (8 lines)
+    /Users/orion/work/production-control-work/production-control/src/providers/validate-run.ts:94:101
+    /Users/orion/work/production-control-work/production-control/tests/contract/provider-support.ts:59:64
+  NEW clone 76f5a504ed11 (22 lines)
+    /Users/orion/work/production-control-work/production-control/src/providers/run.ts:91:112
+    /Users/orion/work/production-control-work/production-control/tests/contract/provider-support.ts:58:113
+  NEW clone 61675dee217f (12 lines)
+    /Users/orion/work/production-control-work/production-control/src/providers/run.ts:175:186
+    /Users/orion/work/production-control-work/production-control/src/providers/validate-run.ts:54:63
+  NEW clone 320d73d84f8a (8 lines)
+    /Users/orion/work/production-control-work/production-control/src/manifest/load.ts:113:120
+    /Users/orion/work/production-control-work/production-control/src/providers/contract.ts:126:133
+  NEW clone f45e01308a2c (38 lines)
+    /Users/orion/work/production-control-work/production-control/src/ledger/store.ts:137:174
+    /Users/orion/work/production-control-work/production-control/src/manifest/load.ts:74:111
+  NEW clone eaa5bdd78328 (14 lines)
+    /Users/orion/work/production-control-work/production-control/src/ledger/store.ts:175:188
+    /Users/orion/work/production-control-work/production-control/src/manifest/load.ts:112:125
+  NEW clone a1b49cffc62a (6 lines)
+    /Users/orion/work/production-control-work/production-control/src/cli/index.ts:113:118
+    /Users/orion/work/production-control-work/production-control/src/cli/index.ts:217:222
+  NEW clone e673bb8ade24 (24 lines)
+    /Users/orion/work/production-control-work/production-control/src/cli/asset.ts:159:182
+    /Users/orion/work/production-control-work/production-control/src/manifest/load.ts:85:96
+  NEW clone 61390960e836 (13 lines)
+    /Users/orion/work/production-control-work/production-control/src/assets/pointer.ts:151:163
+    /Users/orion/work/production-control-work/production-control/src/manifest/load.ts:81:96
+  NEW clone 5c7e13fcb830 (7 lines)
+    /Users/orion/work/production-control-work/production-control/src/assets/pointer.ts:163:169
+    /Users/orion/work/production-control-work/production-control/src/manifest/load.ts:97:103
+  NEW clone aed071898b81 (9 lines)
+    /Users/orion/work/production-control-work/production-control/src/assets/pointer.ts:173:181
+    /Users/orion/work/production-control-work/production-control/src/manifest/load.ts:112:120
+govern: code-only scoping active — excluded 24 documentation file(s) from the audit payload.
+govern: chunk 028f99d391dc48c2 barrage run-dir = /Users/orion/work/production-control-work/production-control/.stack-control/audit-runs/20260724T015501924Z-002-quote-bank-after_implement
+govern: fleet — configured 2, produced 2
+govern:   claude: completed [enforced, monitored]
+govern:   codex: completed [enforced, monitored]
+govern: chunk 123e072b7df6ee6a barrage run-dir = /Users/orion/work/production-control-work/production-control/.stack-control/audit-runs/20260724T015733782Z-002-quote-bank-after_implement
+govern: fleet — configured 2, produced 2
+govern:   claude: completed [enforced, monitored]
+govern:   codex: completed [enforced, monitored]
+govern: chunk 13b39982699caaf7 barrage run-dir = /Users/orion/work/production-control-work/production-control/.stack-control/audit-runs/20260724T020025895Z-002-quote-bank-after_implement
+govern: fleet — configured 2, produced 2
+govern:   claude: completed [enforced, monitored]
+govern:   codex: completed [enforced, monitored]
+govern: chunk 22048bbac9609953 barrage run-dir = /Users/orion/work/production-control-work/production-control/.stack-control/audit-runs/20260724T020510352Z-002-quote-bank-after_implement
+govern: fleet — configured 2, produced 2
+govern:   claude: completed [enforced, monitored]
+govern:   codex: completed [enforced, monitored]
+govern: chunk 26ce1df39e051903 barrage run-dir = /Users/orion/work/production-control-work/production-control/.stack-control/audit-runs/20260724T021025800Z-002-quote-bank-after_implement
+govern: fleet — configured 2, produced 2
+govern:   claude: completed [enforced, monitored]
+govern:   codex: completed [enforced, monitored]
+govern: chunk 26d4410bfc99a079 barrage run-dir = /Users/orion/work/production-control-work/production-control/.stack-control/audit-runs/20260724T021317943Z-002-quote-bank-after_implement
+govern: fleet — configured 2, produced 2
+govern:   claude: completed [enforced, monitored]
+govern:   codex: completed [enforced, monitored]
+govern: chunk 29c3689fad854a60 barrage run-dir = /Users/orion/work/production-control-work/production-control/.stack-control/audit-runs/20260724T021838333Z-002-quote-bank-after_implement
+govern: fleet — configured 2, produced 2
+govern:   claude: completed [enforced, monitored]
+govern:   codex: completed [enforced, monitored]
+govern: chunk 2fc41a00f29c5ba0 barrage run-dir = /Users/orion/work/production-control-work/production-control/.stack-control/audit-runs/20260724T022110727Z-002-quote-bank-after_implement
+govern: fleet — configured 2, produced 2
+govern:   claude: completed [enforced, monitored]
+govern:   codex: completed [enforced, monitored]
+govern: chunk 4866e44c0801ff9f barrage run-dir = /Users/orion/work/production-control-work/production-control/.stack-control/audit-runs/20260724T022351678Z-002-quote-bank-after_implement
+govern: fleet — configured 2, produced 2
+govern:   claude: completed [enforced, monitored]
+govern:   codex: completed [enforced, monitored]
+govern: chunk 5220baef8cdb635f barrage run-dir = /Users/orion/work/production-control-work/production-control/.stack-control/audit-runs/20260724T022708610Z-002-quote-bank-after_implement
+govern: fleet — configured 2, produced 2
+govern:   claude: completed [enforced, monitored]
+govern:   codex: completed [enforced, monitored]
+govern: chunk 541bed0a849c3e72 barrage run-dir = /Users/orion/work/production-control-work/production-control/.stack-control/audit-runs/20260724T022906431Z-002-quote-bank-after_implement
+govern: fleet — configured 2, produced 2
+govern:   claude: completed [enforced, monitored]
+govern:   codex: completed [enforced, monitored]
+govern: chunk 6347bf649f2773e5 barrage run-dir = /Users/orion/work/production-control-work/production-control/.stack-control/audit-runs/20260724T023248132Z-002-quote-bank-after_implement
+govern: fleet — configured 2, produced 2
+govern:   claude: completed [enforced, monitored]
+govern:   codex: completed [enforced, monitored]
+govern: chunk 63adb8c98873b6fb barrage run-dir = /Users/orion/work/production-control-work/production-control/.stack-control/audit-runs/20260724T023745038Z-002-quote-bank-after_implement
+govern: fleet — configured 2, produced 2
+govern:   claude: completed [enforced, monitored]
+govern:   codex: completed [enforced, monitored]
+govern: chunk 6ba7072b5f624285 barrage run-dir = /Users/orion/work/production-control-work/production-control/.stack-control/audit-runs/20260724T024012562Z-002-quote-bank-after_implement
+govern: fleet — configured 2, produced 2
+govern:   claude: completed [enforced, monitored]
+govern:   codex: completed [enforced, monitored]
+govern: chunk 6f75501f17d1c752 barrage run-dir = /Users/orion/work/production-control-work/production-control/.stack-control/audit-runs/20260724T024202585Z-002-quote-bank-after_implement
+govern: fleet — configured 2, produced 2
+govern:   claude: completed [enforced, monitored]
+govern:   codex: completed [enforced, monitored]
+govern: chunk 733e50941da670cc barrage run-dir = /Users/orion/work/production-control-work/production-control/.stack-control/audit-runs/20260724T024502101Z-002-quote-bank-after_implement
+govern: fleet — configured 2, produced 2
+govern:   claude: completed [enforced, monitored]
+govern:   codex: completed [enforced, monitored]
+govern: chunk 777de80baa32f7dd barrage run-dir = /Users/orion/work/production-control-work/production-control/.stack-control/audit-runs/20260724T024818813Z-002-quote-bank-after_implement
+govern: fleet — configured 2, produced 2
+govern:   claude: completed [enforced, monitored]
+govern:   codex: completed [enforced, monitored]
+govern: chunk 7c0bfa86bb61ac01 barrage run-dir = /Users/orion/work/production-control-work/production-control/.stack-control/audit-runs/20260724T025328183Z-002-quote-bank-after_implement
+govern: fleet — configured 2, produced 2
+govern:   claude: completed [enforced, monitored]
+govern:   codex: completed [enforced, monitored]
+govern: chunk 839bbf74e18a0366 barrage run-dir = /Users/orion/work/production-control-work/production-control/.stack-control/audit-runs/20260724T025735026Z-002-quote-bank-after_implement
+govern: fleet — configured 2, produced 2
+govern:   claude: completed [enforced, monitored]
+govern:   codex: completed [enforced, monitored]
+govern: chunk 839f8aac98dc6bf9 barrage run-dir = /Users/orion/work/production-control-work/production-control/.stack-control/audit-runs/20260724T030055109Z-002-quote-bank-after_implement
+govern: fleet — configured 2, produced 2
+govern:   claude: completed [enforced, monitored]
+govern:   codex: completed [enforced, monitored]
+govern: chunk 85f60257986bd0c7 barrage run-dir = /Users/orion/work/production-control-work/production-control/.stack-control/audit-runs/20260724T030347199Z-002-quote-bank-after_implement
+govern: fleet — configured 2, produced 2
+govern:   claude: completed [enforced, monitored]
+govern:   codex: completed [enforced, monitored]
+govern: chunk 86b4aec01a1c90bb barrage run-dir = /Users/orion/work/production-control-work/production-control/.stack-control/audit-runs/20260724T030654004Z-002-quote-bank-after_implement
+govern: fleet — configured 2, produced 2
+govern:   claude: completed [enforced, monitored]
+govern:   codex: completed [enforced, monitored]
+govern: chunk 93e2aa565ec3ca48 barrage run-dir = /Users/orion/work/production-control-work/production-control/.stack-control/audit-runs/20260724T030915753Z-002-quote-bank-after_implement
+govern: fleet — configured 2, produced 2
+govern:   claude: completed [enforced, monitored]
+govern:   codex: completed [enforced, monitored]
+govern: chunk 99f989f35de6b9d7 barrage run-dir = /Users/orion/work/production-control-work/production-control/.stack-control/audit-runs/20260724T031246131Z-002-quote-bank-after_implement
+govern: fleet — configured 2, produced 2
+govern:   claude: completed [enforced, monitored]
+govern:   codex: completed [enforced, monitored]
+govern: chunk 9c1b1db455daa7b0 barrage run-dir = /Users/orion/work/production-control-work/production-control/.stack-control/audit-runs/20260724T031520563Z-002-quote-bank-after_implement
+govern: fleet — configured 2, produced 2
+govern:   claude: completed [enforced, monitored]
+govern:   codex: completed [enforced, monitored]
+govern: chunk 9d7ed6c878672363 barrage run-dir = /Users/orion/work/production-control-work/production-control/.stack-control/audit-runs/20260724T031719412Z-002-quote-bank-after_implement
+govern: fleet — configured 2, produced 2
+govern:   claude: completed [enforced, monitored]
+govern:   codex: completed [enforced, monitored]
+govern: chunk a51b1117efaba5f1 barrage run-dir = /Users/orion/work/production-control-work/production-control/.stack-control/audit-runs/20260724T032045386Z-002-quote-bank-after_implement
+govern: fleet — configured 2, produced 2
+govern:   claude: completed [enforced, monitored]
+govern:   codex: completed [enforced, monitored]
+govern: chunk ae3c9fed4672c16c barrage run-dir = /Users/orion/work/production-control-work/production-control/.stack-control/audit-runs/20260724T032418248Z-002-quote-bank-after_implement
+govern: fleet — configured 2, produced 2
+govern:   claude: completed [enforced, monitored]
+govern:   codex: completed [enforced, monitored]
+govern: chunk b086e892dc96efbb barrage run-dir = /Users/orion/work/production-control-work/production-control/.stack-control/audit-runs/20260724T032618321Z-002-quote-bank-after_implement
+govern: fleet — configured 2, produced 2
+govern:   claude: completed [enforced, monitored]
+govern:   codex: completed [enforced, monitored]
+govern: chunk b4b83cd95955f3ca barrage run-dir = /Users/orion/work/production-control-work/production-control/.stack-control/audit-runs/20260724T032939049Z-002-quote-bank-after_implement
+govern: fleet — configured 2, produced 2
+govern:   claude: completed [enforced, monitored]
+govern:   codex: completed [enforced, monitored]
+govern: chunk ba1e0e382d1f244e barrage run-dir = /Users/orion/work/production-control-work/production-control/.stack-control/audit-runs/20260724T033202608Z-002-quote-bank-after_implement
+govern: fleet — configured 2, produced 2
+govern:   claude: completed [enforced, monitored]
+govern:   codex: completed [enforced, monitored]
+govern: chunk bc3ec102fbe110cd barrage run-dir = /Users/orion/work/production-control-work/production-control/.stack-control/audit-runs/20260724T033459651Z-002-quote-bank-after_implement
+govern: fleet — configured 2, produced 2
+govern:   claude: completed [enforced, monitored]
+govern:   codex: completed [enforced, monitored]
+govern: chunk bca2aca953eb7927 barrage run-dir = /Users/orion/work/production-control-work/production-control/.stack-control/audit-runs/20260724T033936544Z-002-quote-bank-after_implement
+govern: fleet — configured 2, produced 2
+govern:   claude: completed [enforced, monitored]
+govern:   codex: completed [enforced, monitored]
+govern: chunk c3023e5b421f7e1b barrage run-dir = /Users/orion/work/production-control-work/production-control/.stack-control/audit-runs/20260724T034129750Z-002-quote-bank-after_implement
+govern: fleet — configured 2, produced 2
+govern:   claude: completed [enforced, monitored]
+govern:   codex: completed [enforced, monitored]
+govern: chunk c53bc95400e99ce3 barrage run-dir = /Users/orion/work/production-control-work/production-control/.stack-control/audit-runs/20260724T034404610Z-002-quote-bank-after_implement
+govern: fleet — configured 2, produced 2
+govern:   claude: completed [enforced, monitored]
+govern:   codex: completed [enforced, monitored]
+govern: chunk cd9f8e3b8f22c8d7 barrage run-dir = /Users/orion/work/production-control-work/production-control/.stack-control/audit-runs/20260724T034820157Z-002-quote-bank-after_implement
+govern: fleet — configured 2, produced 2
+govern:   claude: completed [enforced, monitored]
+govern:   codex: completed [enforced, monitored]
+govern: chunk d035e8099cb7993f barrage run-dir = /Users/orion/work/production-control-work/production-control/.stack-control/audit-runs/20260724T035017810Z-002-quote-bank-after_implement
+govern: fleet — configured 2, produced 2
+govern:   claude: completed [enforced, monitored]
+govern:   codex: completed [enforced, monitored]
+govern: chunk d40d2ea40d86dc73 barrage run-dir = /Users/orion/work/production-control-work/production-control/.stack-control/audit-runs/20260724T035235142Z-002-quote-bank-after_implement
+govern: fleet — configured 2, produced 2
+govern:   claude: completed [enforced, monitored]
+govern:   codex: completed [enforced, monitored]
+govern: chunk d4a06679d547dfec barrage run-dir = /Users/orion/work/production-control-work/production-control/.stack-control/audit-runs/20260724T035439373Z-002-quote-bank-after_implement
+govern: fleet — configured 2, produced 2
+govern:   claude: completed [enforced, monitored]
+govern:   codex: completed [enforced, monitored]
+govern: chunk d53569498fa285ce barrage run-dir = /Users/orion/work/production-control-work/production-control/.stack-control/audit-runs/20260724T035520671Z-002-quote-bank-after_implement
+govern: fleet — configured 2, produced 2
+govern:   claude: completed [enforced, monitored]
+govern:   codex: completed [enforced, monitored]
+govern: chunk de7f51d68549baa8 barrage run-dir = /Users/orion/work/production-control-work/production-control/.stack-control/audit-runs/20260724T035644444Z-002-quote-bank-after_implement
+govern: fleet — configured 2, produced 2
+govern:   claude: completed [enforced, monitored]
+govern:   codex: completed [enforced, monitored]
+govern: chunk e4293ec181164aba barrage run-dir = /Users/orion/work/production-control-work/production-control/.stack-control/audit-runs/20260724T035848580Z-002-quote-bank-after_implement
+govern: fleet — configured 2, produced 2
+govern:   claude: completed [enforced, monitored]
+govern:   codex: completed [enforced, monitored]
+govern: chunk e58b2f002eed1ed5 barrage run-dir = /Users/orion/work/production-control-work/production-control/.stack-control/audit-runs/20260724T040036329Z-002-quote-bank-after_implement
+govern: fleet — configured 2, produced 2
+govern:   claude: completed [enforced, monitored]
+govern:   codex: completed [enforced, monitored]
+govern: chunk e6547eaba106218a barrage run-dir = /Users/orion/work/production-control-work/production-control/.stack-control/audit-runs/20260724T040243603Z-002-quote-bank-after_implement
+govern: fleet — configured 2, produced 2
+govern:   claude: completed [enforced, monitored]
+govern:   codex: completed [enforced, monitored]
+govern: chunk f0921d66b2f7a652 barrage run-dir = /Users/orion/work/production-control-work/production-control/.stack-control/audit-runs/20260724T040423557Z-002-quote-bank-after_implement
+govern: fleet — configured 2, produced 2
+govern:   claude: completed [enforced, monitored]
+govern:   codex: completed [enforced, monitored]
+govern: chunk f5dabd05928cb682 barrage run-dir = /Users/orion/work/production-control-work/production-control/.stack-control/audit-runs/20260724T040601705Z-002-quote-bank-after_implement
+govern: fleet — configured 2, produced 2
+govern:   claude: completed [enforced, monitored]
+govern:   codex: completed [enforced, monitored]
+govern: chunk f7ce46b3c7727ca4 barrage run-dir = /Users/orion/work/production-control-work/production-control/.stack-control/audit-runs/20260724T040739464Z-002-quote-bank-after_implement
+govern: fleet — configured 2, produced 2
+govern:   claude: completed [enforced, monitored]
+govern:   codex: completed [enforced, monitored]
+govern: chunk f8ec1f88254c21bf barrage run-dir = /Users/orion/work/production-control-work/production-control/.stack-control/audit-runs/20260724T040954024Z-002-quote-bank-after_implement
+govern: fleet — configured 2, produced 2
+govern:   claude: completed [enforced, monitored]
+govern:   codex: completed [enforced, monitored]
+govern: chunk f995e12cb595ac30 barrage run-dir = /Users/orion/work/production-control-work/production-control/.stack-control/audit-runs/20260724T041124583Z-002-quote-bank-after_implement
+govern: fleet — configured 2, produced 2
+govern:   claude: completed [enforced, monitored]
+govern:   codex: completed [enforced, monitored]
+govern: chunk ffdbc3765b1a2c5d barrage run-dir = /Users/orion/work/production-control-work/production-control/.stack-control/audit-runs/20260724T041403527Z-002-quote-bank-after_implement
+govern: fleet — configured 2, produced 2
+govern:   claude: completed [enforced, monitored]
+govern:   codex: completed [enforced, monitored]
+govern: lift-once — recorded 49 finding(s) as ONE section in /Users/orion/work/production-control-work/production-control/specs/002-quote-bank/audit-log.md (FR-026).
+govern: implementation NOT done — end-govern reconciled to 'override-eligible' (49 open finding(s) over 50 chunk(s), 1 round(s)). Fix the surfaced findings & re-govern, or record --override.
+govern: terminal-outcome=blocked

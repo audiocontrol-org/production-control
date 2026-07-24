@@ -1,0 +1,43 @@
+{
+  "name": "production-control",
+  "version": "0.0.1",
+  "description": "An agent-native orchestration system for multimedia production",
+  "type": "module",
+  "private": false,
+  "engines": {
+    "node": ">=20"
+  },
+  "bin": {
+    "pc": "dist/cli/index.js"
+  },
+  "scripts": {
+    "build": "tsc && tsc-alias && node -e \"require('fs').chmodSync('dist/cli/index.js', 0o755)\"",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:offline": "vitest run --project integration tests/integration/offline.test.ts",
+    "typecheck": "tsc --noEmit",
+    "test:integration:store": "vitest run --project contract tests/contract/s3-store.test.ts"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.1087.0",
+    "commander": "^15.0.0",
+    "yaml": "^2.9.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^20.19.43",
+    "@typescript-eslint/eslint-plugin": "^8.64.0",
+    "@typescript-eslint/parser": "^8.64.0",
+    "eslint": "^10.7.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-prettier": "^5.5.6",
+    "prettier": "^3.9.5",
+    "testcontainers": "^12.0.4",
+    "tsc-alias": "^1.9.1",
+    "tsx": "^4.23.1",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.64.0",
+    "vitest": "^4.1.10"
+  }
+}

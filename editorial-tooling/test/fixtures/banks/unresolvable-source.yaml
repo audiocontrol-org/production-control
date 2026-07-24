@@ -1,0 +1,8 @@
+version: 1
+quotes:
+  - id: "q-nosrc"
+    source: "nonexistent"
+    spans:
+      - raw: "Whatever."
+    text: "Whatever."
+    edits: []

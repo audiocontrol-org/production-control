@@ -1,0 +1,17 @@
+version: 1
+quotes:
+  - id: "q-multi"
+    source: "standish"
+    spans:
+      - raw: "So rnany came to the coiiony."
+    text: "So many came to the colony."
+    edits:
+      - op: "ocr-fix"
+        span: 0
+        before: "rn"
+        after: "m"
+      - op: "ocr-fix"
+        span: 0
+        at: 21
+        before: "coiiony"
+        after: "colony"

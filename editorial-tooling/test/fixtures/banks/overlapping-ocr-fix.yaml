@@ -1,0 +1,18 @@
+version: 1
+quotes:
+  - id: "q-ovl"
+    source: "bradford"
+    spans:
+      - raw: "coiony"
+    text: "colony"
+    edits:
+      - op: "ocr-fix"
+        span: 0
+        at: 0
+        before: "coi"
+        after: "col"
+      - op: "ocr-fix"
+        span: 0
+        at: 2
+        before: "ion"
+        after: "lon"

@@ -1,0 +1,12 @@
+version: 1
+quotes:
+  - id: "q-ooo"
+    source: "winthrop"
+    spans:
+      - raw: "The eyes of all people are upon us."
+      - raw: "We shall be as a city upon a hill."
+    text: "The eyes of all people are upon us. … We shall be as a city upon a hill."
+    edits:
+      - op: "ellipsis-join"
+        between: [0, 1]
+        separator: " … "

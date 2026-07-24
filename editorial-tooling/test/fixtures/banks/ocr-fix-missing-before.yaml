@@ -1,0 +1,11 @@
+version: 1
+quotes:
+  - id: "q-missing-before"
+    source: "bradford"
+    spans:
+      - raw: "They founded a small coiony by the shore."
+    text: "They founded a small colony by the shore."
+    edits:
+      - op: "ocr-fix"
+        span: 0
+        after: "X"

@@ -1,0 +1,17 @@
+{
+  "name": "editorial-tooling",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "description": "Reusable craft tools to build and verify a verbatim, source-cited quote bank from primary sources.",
+  "scripts": {
+    "test": "node --test"
+  },
+  "bin": {
+    "quote-validator": "./bin/quote-validator.mjs",
+    "quote-miner": "./bin/quote-miner.mjs"
+  },
+  "dependencies": {
+    "yaml": "^2.4.0"
+  }
+}

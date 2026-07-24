@@ -1,0 +1,10 @@
+version: 1
+id: tree-output
+title: Tree Output
+profile: editorial-audio
+authored:
+  longform:
+    path: article.mdx
+  assets:
+    path: assets
+targets: [website]

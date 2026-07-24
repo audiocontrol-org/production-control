@@ -1,0 +1,2 @@
+govern: FATAL — /Users/orion/work/production-control-work/production-control/.stack-control/fleet-knowledge.yaml: fleet-knowledge lanes must exactly match configured barrage lanes; missing: sonnet
+govern: terminal-outcome=fatal

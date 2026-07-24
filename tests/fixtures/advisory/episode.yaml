@@ -1,0 +1,11 @@
+version: 1
+id: advisory
+title: Advisory
+profile: editorial-audio
+authored:
+  spoken:
+    path: script.md
+  narration:
+    path: assets/narration/take-03.wav
+    follows: spoken
+targets: [voiceover, podcast]

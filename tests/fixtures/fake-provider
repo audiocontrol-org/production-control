@@ -1,0 +1,180 @@
+#!/usr/bin/env node
+//
+// The reference implementation of the provider contract's "test double"
+// (specs/001-episode-production-contract/contracts/provider.md § Test double, SC-007).
+//
+// It satisfies contracts/provider.md exactly: reads a BuildRequest on stdin, writes
+// deterministic bytes derived from its inputs into output_dir, and returns a well-formed
+// BuildResponse on stdout. It requires no ffmpeg, no network, and no bucket.
+//
+// Why plain ESM and not TypeScript: this file must be directly executable with no
+// production-control present and no build step (FR-031, SC-008 — "a provider MUST be
+// runnable by hand"). tsconfig.json's rootDir is ./src, so anything under tests/fixtures
+// is deliberately outside the compiled tree; routing this fixture through tsc would insert
+// a dist/ step between the file a human runs and the file that actually ran, which is the
+// opposite of the point. Node's module resolution reads this package's
+// "type": "module" from the nearest package.json even for an extensionless file, so plain
+// ESM (import/export) works directly under the shebang.
+//
+// Failure modes are selected via FAKE_PROVIDER_MODE so contract tests can exercise every
+// path the real contract requires production-control to catch:
+//   fail        -> diagnostic on stderr, exit non-zero
+//   silent      -> exit 0, zero outputs (Rule 7: "silence is failure")
+//   undeclared  -> exit 0, but an extra file appears in output_dir the response never named
+//                  (Rule 5: "a provider MUST declare everything it produces")
+//   impure      -> declares impure + emits content that differs per run
+//   (unset)     -> deterministic, honest behaviour (the default and the point of this fixture)
+
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+
+const TOOL_NAME = 'fake-provider';
+const TOOL_VERSION = '1.0.0';
+
+class MalformedRequestError extends Error {}
+
+function readStdin() {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    process.stdin.on('data', (chunk) => chunks.push(chunk));
+    process.stdin.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+    process.stdin.on('error', reject);
+  });
+}
+
+function isPlainObject(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function parseRequest(raw) {
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    throw new MalformedRequestError(`stdin is not valid JSON: ${reason}`);
+  }
+
+  if (!isPlainObject(parsed)) {
+    throw new MalformedRequestError('BuildRequest must be a JSON object');
+  }
+  if (parsed.version !== 1) {
+    throw new MalformedRequestError(`BuildRequest.version must be 1, got ${JSON.stringify(parsed.version)}`);
+  }
+  if (typeof parsed.target !== 'string' || parsed.target.length === 0) {
+    throw new MalformedRequestError('BuildRequest.target must be a non-empty string');
+  }
+  if (!isPlainObject(parsed.inputs)) {
+    throw new MalformedRequestError('BuildRequest.inputs must be an object keyed by input identity');
+  }
+  for (const [identity, input] of Object.entries(parsed.inputs)) {
+    if (!isPlainObject(input)) {
+      throw new MalformedRequestError(`BuildRequest.inputs.${identity} must be an object`);
+    }
+    if (typeof input.path !== 'string' || input.path.length === 0) {
+      throw new MalformedRequestError(`BuildRequest.inputs.${identity}.path must be a non-empty string`);
+    }
+    if (typeof input.hash !== 'string' || input.hash.length === 0) {
+      throw new MalformedRequestError(`BuildRequest.inputs.${identity}.hash must be a non-empty string`);
+    }
+  }
+  if (typeof parsed.output_dir !== 'string' || parsed.output_dir.length === 0) {
+    throw new MalformedRequestError('BuildRequest.output_dir must be a non-empty string');
+  }
+
+  return parsed;
+}
+
+// Deterministic bytes derived from the inputs: sorted "<identity>:<hash>" lines plus the
+// target name. No timestamp, no random value, no process id, no absolute path -- output_dir
+// and input paths differ per machine and would break reproducibility, so neither appears.
+function deterministicContent(request) {
+  const identities = Object.keys(request.inputs).sort();
+  const lines = identities.map((identity) => `${identity}:${request.inputs[identity].hash}`);
+  lines.push(`target:${request.target}`);
+  return lines.join('\n') + '\n';
+}
+
+function writeResponse(response) {
+  process.stdout.write(JSON.stringify(response));
+}
+
+async function main() {
+  const mode = process.env.FAKE_PROVIDER_MODE ?? '';
+  const raw = await readStdin();
+  const request = parseRequest(raw);
+
+  if (mode === 'fail') {
+    process.stderr.write('fake-provider: FAKE_PROVIDER_MODE=fail -- simulated failure\n');
+    process.exitCode = 1;
+    return;
+  }
+
+  if (!['', 'silent', 'undeclared', 'impure'].includes(mode)) {
+    throw new MalformedRequestError(`unknown FAKE_PROVIDER_MODE: ${mode}`);
+  }
+
+  mkdirSync(request.output_dir, { recursive: true });
+  const outputName = `${request.target}.out`;
+
+  if (mode === 'silent') {
+    // Exit 0 with no outputs at all. The contract's Rule 7 calls this a failure that
+    // production-control must catch -- this mode exists so contract tests can prove it does.
+    writeResponse({
+      version: 1,
+      outputs: [],
+      tool: { name: TOOL_NAME, version: TOOL_VERSION },
+      validation: { state: 'passed' },
+    });
+    return;
+  }
+
+  if (mode === 'undeclared') {
+    writeFileSync(join(request.output_dir, outputName), deterministicContent(request));
+    // An extra file the BuildResponse never names -- Rule 5: "A provider MUST declare
+    // everything it produces." Emitting this without declaring it is the failure being
+    // exercised.
+    writeFileSync(join(request.output_dir, `${request.target}.undeclared`), 'surprise\n');
+    writeResponse({
+      version: 1,
+      outputs: [{ path: outputName }],
+      tool: { name: TOOL_NAME, version: TOOL_VERSION },
+      validation: { state: 'passed' },
+    });
+    return;
+  }
+
+  if (mode === 'impure') {
+    const content = `${deterministicContent(request)}nonce:${Date.now()}:${Math.random()}\n`;
+    writeFileSync(join(request.output_dir, outputName), content);
+    writeResponse({
+      version: 1,
+      outputs: [{ path: outputName }],
+      tool: { name: TOOL_NAME, version: TOOL_VERSION },
+      impure: { reason: 'emits a per-run timestamp and random nonce; output varies by invocation' },
+      validation: { state: 'passed' },
+    });
+    return;
+  }
+
+  // Default: deterministic, honest behaviour. This is the whole point of the fixture.
+  writeFileSync(join(request.output_dir, outputName), deterministicContent(request));
+  writeResponse({
+    version: 1,
+    outputs: [{ path: outputName }],
+    tool: { name: TOOL_NAME, version: TOOL_VERSION },
+    validation: { state: 'passed' },
+  });
+}
+
+main()
+  .then(() => {
+    if (process.exitCode === undefined) {
+      process.exitCode = 0;
+    }
+  })
+  .catch((err) => {
+    const reason = err instanceof Error ? err.message : String(err);
+    process.stderr.write(`fake-provider: ${reason}\n`);
+    process.exitCode = 1;
+  });

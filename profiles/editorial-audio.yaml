@@ -1,0 +1,25 @@
+# A profile is a generic, reusable recipe binding targets to their inputs and producing tools.
+# It is subject-agnostic and describes roles and transformations, not content or specific stories.
+
+version: 1
+targets:
+  website:
+    inputs: [longform, assets]
+    provider:
+      cmd: [npx, web-tooling, build]
+  epub:
+    inputs: [longform, assets]
+    provider:
+      cmd: [npx, epub-tooling, build]
+  voiceover:
+    inputs: [narration]
+    provider:
+      cmd: [npx, audio-tooling, master]
+  podcast:
+    inputs: [voiceover]
+    provider:
+      cmd: [npx, audio-tooling, publish]
+  transcript:
+    inputs: [narration, spoken]
+    provider:
+      cmd: [npx, alignment-tooling, align]

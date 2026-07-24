@@ -1,0 +1,26 @@
+version: 1
+id: minimal-podcast
+title: Minimal Podcast Example
+
+# The generic recipe this episode follows. `editorial-audio` is the real, shared profile
+# committed at profiles/editorial-audio.yaml — this fixture uses it unmodified, so `pc status`
+# here exercises the actual resolution path a real content repo would use, not a stand-in.
+profile: editorial-audio
+
+authored:
+  # Unused by any declared target below. Still a first-class node: `pc status` reports it
+  # `present`, because an authored file nobody builds from is still an authored file.
+  outline:
+    path: outline.md
+  spoken:
+    path: script.md
+  narration:
+    path: assets/narration/take-01.wav
+    # Advisory only (FR-018/FR-019): revising script.md never rebuilds anything here. It raises
+    # `needs-review` on narration, asking a human whether the recording still answers the words.
+    follows: spoken
+
+# A subset of what profiles/editorial-audio.yaml can produce — enough to show the dependency
+# chain (`voiceover ← [narration]`, `podcast ← [voiceover]`) without needing `longform` or
+# `assets` (the website/epub targets' inputs), which this fixture does not declare.
+targets: [voiceover, podcast]
