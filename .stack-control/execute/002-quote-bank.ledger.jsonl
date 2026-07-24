@@ -1,0 +1,20 @@
+{"id":"T001","tierLabel":"fast","model":"haiku","commit":"38af48b","reviewClean":true}
+{"id":"T002","tierLabel":"fast","model":"haiku","commit":"a671895","reviewClean":true}
+{"id":"T003","tierLabel":"fast","model":"haiku","commit":"33d2355","reviewClean":true}
+{"id":"T004","tierLabel":"fast","model":"haiku","commit":"1212346","reviewClean":true}
+{"id":"T005","tierLabel":"fast","model":"haiku","commit":"6439dab","reviewClean":true}
+{"id":"T006","tierLabel":"balanced","model":"sonnet","commit":"abe30c9","reviewClean":true}
+{"id":"T007","tierLabel":"powerful","model":"opus","commit":"ea1ef4d","reviewClean":true}
+{"id":"T008","tierLabel":"balanced","model":"sonnet","commit":"a9dcb72","reviewClean":true}
+{"id":"T009","tierLabel":"balanced","model":"sonnet","commit":"633252f","reviewClean":true}
+{"id":"T010","tierLabel":"fast","model":"haiku","commit":"a610d95","reviewClean":true}
+{"id":"T011","tierLabel":"fast","model":"haiku","commit":"7ae2741","reviewClean":true}
+{"id":"T012","tierLabel":"balanced","model":"sonnet","commit":"0f39099","reviewClean":true}
+{"id":"T013","tierLabel":"powerful","model":"opus","commit":"110d7b4","reviewClean":true}
+{"id":"T014","tierLabel":"balanced","model":"sonnet","commit":"c1e7761","reviewClean":true}
+{"id":"T015","tierLabel":"balanced","model":"sonnet","commit":"live-run-no-code-change","reviewClean":true}
+{"id":"T016","tierLabel":"balanced","model":"sonnet","commit":"aa50f71(proving-ground)","reviewClean":true}
+{"id":"T017","tierLabel":"balanced","model":"sonnet","commit":"7e18ec8(proving-ground)","reviewClean":true}
+{"id":"T018","tierLabel":"balanced","model":"sonnet","commit":"observation-reverted(proving-ground)","reviewClean":true,"note":"FR-019 clean; FR-020/021 drift-advisory + no-auto-rebuild confirmed; side-finding: quote-miner hardcodes output path (collision on duplicate targets) -> backlog"}
+{"id":"T019","tierLabel":"fast","model":"haiku","commit":"9a0a1a5","reviewClean":true}
+{"id":"T020","tierLabel":"fast","model":"haiku","commit":"verify-only","reviewClean":true,"note":"checks 1-4 pass; check5 (src untouched) PASS when scoped to feature 047c4eb..HEAD (0 src changes) - agent used main...branch base which conflated earlier-session core work"}

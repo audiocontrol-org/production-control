@@ -18,7 +18,7 @@ All code lives in a NEW `editorial-tooling/` package (own package.json, plain ES
 
 ## Phase 1: Setup
 
-- [ ] T001 [tier:fast] Create the `editorial-tooling/` package: `package.json`
+- [x] T001 [tier:fast] Create the `editorial-tooling/` package: `package.json`
   (`type: module`, `test: node --test`, bin `quote-validator`/`quote-miner`), and the
   `src/`, `bin/`, `test/`, `test/fixtures/` directories. (plan.md structure; FR-022)
 
@@ -26,7 +26,7 @@ All code lives in a NEW `editorial-tooling/` package (own package.json, plain ES
 
 ## Phase 2: Foundational (blocking prerequisites)
 
-- [ ] T002 [P] [tier:fast] Synthetic fixture sources under
+- [x] T002 [P] [tier:fast] Synthetic fixture sources under
   `editorial-tooling/test/fixtures/sources/` — a few tiny UTF-8 documents with
   filename-stem ids (one with a repeated passage, one with an OCR error, one with
   non-adjacent quotable passages). Shared by US1 and US2. (FR-001, FR-018)
@@ -42,40 +42,40 @@ and rejects any structurally invalid or unfaithful one, naming each defect.
 
 ### RED tests (US1)
 
-- [ ] T003 [P] [US1] [tier:fast] RED: hand-written bank fixtures under
+- [x] T003 [P] [US1] [tier:fast] RED: hand-written bank fixtures under
   `test/fixtures/banks/` — valid; fabricated span; reconstruction-mismatch
   (undisclosed alteration); out-of-set edit; multi-span ellipsis join; ambiguous
   `ocr-fix`; overlapping `ocr-fix`; edit → nonexistent span; duplicate quote id;
   empty span list; unresolvable source; unknown version; empty bank; location-ambiguous
   repeated span. (data-model.md; FR-005/007/009/010)
-- [ ] T004 [US1] [tier:fast] RED: `test/validator.test.mjs` — structural pre-check
+- [x] T004 [US1] [tier:fast] RED: `test/validator.test.mjs` — structural pre-check
   rejects each malformed fixture BEFORE fidelity (FR-007); fidelity accepts the valid
   bank and the empty bank; rejects the fabricated span and the out-of-set edit;
   reports a reconstruction MISMATCH with the first differing byte (never an inferred
   op) for the altered fixture (FR-009); flags the location-ambiguous span but still
   passes it (FR-010); byte-for-byte, UTF-8 exact, no normalization (FR-001/002).
-- [ ] T005 [US1] [tier:fast] RED: `test/validator-bin.test.mjs` — pipe a ValidateRequest
+- [x] T005 [US1] [tier:fast] RED: `test/validator-bin.test.mjs` — pipe a ValidateRequest
   to `bin/quote-validator.mjs`; assert a well-formed ValidateResponse
   (`passed` / `failed`+`errors` naming quotes by id); a malformed request or unreadable
   source → non-zero exit, stderr, and NO `passed`. (contracts/quote-validator.md; SC-002/003)
 
 ### Implementation (US1)
 
-- [ ] T006 [US1] [tier:balanced] `src/schema.mjs` — parse the YAML bank; the structural
+- [x] T006 [US1] [tier:balanced] `src/schema.mjs` — parse the YAML bank; the structural
   validity pre-check (version, required fields, non-empty spans, unique quote id,
   edit→span references, ellipsis-join count = spans−1 over consecutive pairs,
   ocr-fix non-overlap/disambiguation). Fail loud naming the defect. (FR-007; data-model.md)
-- [ ] T007 [US1] [tier:powerful] `src/edits.mjs` — the closed edit set and the
+- [x] T007 [US1] [tier:powerful] `src/edits.mjs` — the closed edit set and the
   **deterministic reconstruction algorithm**: apply `ocr-fix` (span/before/after/optional
   `at`) then `ellipsis-join` (between/separator) in declared order over the spans' raw
   bytes; return the reconstructed bytes and, on mismatch with `text`, the first differing
   byte offset. Byte-exact; no normalization. (FR-005/024; data-model.md)
-- [ ] T008 [US1] [tier:balanced] `src/validator.mjs` — the source-id mapping
+- [x] T008 [US1] [tier:balanced] `src/validator.mjs` — the source-id mapping
   (filename stem, unambiguous; duplicate/case-colliding/invalid → fail before any quote,
   FR-018); the four fidelity checks over every quote (source resolves; span.raw is an
   exact substring; reconstruction reproduces text; closed edit set); the
   location-ambiguity advisory. Reads only; mutates nothing. (FR-008/009/010/011)
-- [ ] T009 [US1] [tier:balanced] `bin/quote-validator.mjs` — the ValidateRequest→
+- [x] T009 [US1] [tier:balanced] `bin/quote-validator.mjs` — the ValidateRequest→
   ValidateResponse entrypoint over `src/validator.mjs`: `passed` only if structurally
   valid AND every quote passes; else `failed` with each violation named by quote id;
   no verdict → non-zero exit. Runnable by hand. (contracts/quote-validator.md)
@@ -95,12 +95,12 @@ validator; it is accepted. (quickstart S4)
 
 ### RED tests (US2)
 
-- [ ] T010 [P] [US2] [tier:fast] RED: `test/miner.test.mjs` (INJECTED FAKE model) —
+- [x] T010 [P] [US2] [tier:fast] RED: `test/miner.test.mjs` (INJECTED FAKE model) —
   grounding: a passage present in a source → the exact byte span is extracted; a passage
   the fake model invents (not present) → OMITTED and counted in the report (FR-014;
   SC-004). Schema emission produces a bank the REAL validator accepts. Source-id mapping
   and mapping-failure (duplicate/invalid id → fail before any quote, FR-018).
-- [ ] T011 [US2] [tier:fast] RED: `test/miner-bin.test.mjs` (fake model) — pipe a
+- [x] T011 [US2] [tier:fast] RED: `test/miner-bin.test.mjs` (fake model) — pipe a
   BuildRequest to `bin/quote-miner.mjs`; assert a single-output BuildResponse declaring
   `impure` and reporting NO `validation` (FR-013); a machine-readable mining report on
   STDERR (FR-017); a source-level failure (unreadable/non-UTF-8) or model failure → the
@@ -108,18 +108,18 @@ validator; it is accepted. (quickstart S4)
 
 ### Implementation (US2)
 
-- [ ] T012 [US2] [tier:balanced] `src/claude.mjs` — the `claude` CLI adapter (spawn,
+- [x] T012 [US2] [tier:balanced] `src/claude.mjs` — the `claude` CLI adapter (spawn,
   prompt in, selection out), injectable so `miner.mjs` is testable with a fake. (R4)
-- [ ] T013 [US2] [tier:powerful] `src/miner.mjs` — selection prompt; **grounding**
+- [x] T013 [US2] [tier:powerful] `src/miner.mjs` — selection prompt; **grounding**
   (locate the model's pointer in the source, snap to the exact byte span, record raw +
   disclosed closed-set edits; OMIT the ungroundable); assemble the bank via `schema.mjs`;
   emit the mining report to stderr. Fail loud on source/model failure; never a partial
   bank. (FR-012/014/015/017)
-- [ ] T014 [US2] [tier:balanced] `bin/quote-miner.mjs` — the BuildRequest→BuildResponse
+- [x] T014 [US2] [tier:balanced] `bin/quote-miner.mjs` — the BuildRequest→BuildResponse
   entrypoint: exactly one output (the bank), `impure` declared with the model identity in
   `tool.version` (FR-020), NO validation verdict, atomic (complete bank only on success).
   (contracts/quote-miner.md; FR-013/016)
-- [ ] T015 [US2] [tier:balanced] Live by-hand run: pipe a real BuildRequest over the
+- [x] T015 [US2] [tier:balanced] Live by-hand run: pipe a real BuildRequest over the
   fixture corpus through `bin/quote-miner.mjs` (spawns `claude`); feed its bank to
   `bin/quote-validator.mjs`; confirm accepted and every quote attributed. (quickstart S4)
 
@@ -135,14 +135,14 @@ validator; regeneration is editorial, not freshness. **Depends on US1/US2.**
 **Independent test**: in a proving-ground episode, `pc build` then `pc validate`, and the
 drift/staleness semantics hold. (quickstart S5–S6)
 
-- [ ] T016 [US3] [tier:balanced] Proving-ground episode (in the nouvelle-france trial):
+- [x] T016 [US3] [tier:balanced] Proving-ground episode (in the nouvelle-france trial):
   a `sources/` directory input and a `quote-bank` target whose profile binds the provider
   to `bin/quote-miner.mjs` and the `validator` to `bin/quote-validator.mjs`. (quickstart S5)
-- [ ] T017 [US3] [tier:balanced] Exercise end-to-end: `pc build quote-bank` → a bank
+- [x] T017 [US3] [tier:balanced] Exercise end-to-end: `pc build quote-bank` → a bank
   under `ai-generated/`, ledger records producer + impurity + input hash, node NOT
   validated; `pc validate quote-bank` → the independent validator records `passed`;
   `pc status` → `fresh` + `validated: passed`. (quickstart S5; FR-013)
-- [ ] T018 [US3] [tier:balanced] Lifecycle: change a source file → bank reported `stale`;
+- [x] T018 [US3] [tier:balanced] Lifecycle: change a source file → bank reported `stale`;
   change only the miner `tool.version` → producer drift reported, bank stays `fresh`
   (not auto-restaled); regeneration is a deliberate `pc build`. (quickstart S6;
   FR-019/020/021)
@@ -151,9 +151,9 @@ drift/staleness semantics hold. (quickstart S5–S6)
 
 ## Phase 6: Polish & cross-cutting
 
-- [ ] T019 [P] [tier:fast] `editorial-tooling/README.md` — what it is, the two tools,
+- [x] T019 [P] [tier:fast] `editorial-tooling/README.md` — what it is, the two tools,
   running each by hand, the schema (link data-model.md). No production-control coupling.
-- [ ] T020 [tier:fast] Verify: every file < 500 lines; `node --test` green; no fallbacks
+- [x] T020 [tier:fast] Verify: every file < 500 lines; `node --test` green; no fallbacks
   or mock data outside tests; no subject knowledge in any tool (SC-005). Confirm
   production-control `src/` is untouched.
 
