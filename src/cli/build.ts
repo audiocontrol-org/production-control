@@ -140,6 +140,13 @@ export async function buildCommand(
         graph,
         ledger,
         runner: subprocessRunner(),
+        // The provider's stderr, forwarded to the operator AS IT ARRIVES rather than held until
+        // the process ends. A build can take hours (a 123-source corpus), and the provider's
+        // progress lines are the only evidence it is working rather than hung. This is the one
+        // layer that knows where an operator's eyes are; `src/providers/` only knows it has a sink.
+        onDiagnostic: (chunk: string): void => {
+          deps.output.diagnostic(chunk);
+        },
         assets: envInputResolver(process.env, assetCacheDir(episodeDir)),
         // The real git-backed tracked check: `pc build` runs where git is available, so FR-026's
         // exception for a git-tracked oversized authored file is active here (AUDIT-20260716-26).

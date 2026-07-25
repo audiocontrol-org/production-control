@@ -108,6 +108,12 @@ export async function validateCommand(
       graph,
       ledger,
       runner: subprocessRunner(),
+      // Whatever the provider or the declared validator writes to stderr reaches the operator as
+      // it is written — including on a PASS, where the tool's report is the only thing that says
+      // anything about the quality of what passed.
+      onDiagnostic: (chunk: string): void => {
+        deps.output.diagnostic(chunk);
+      },
       assets: envInputResolver(process.env, assetCacheDir(episodeDir)),
       // Validation re-invokes the provider and so re-resolves the same inputs — the FR-026 guard
       // applies exactly as it does for `pc build`, with the real git-backed check (AUDIT-20260716-26).

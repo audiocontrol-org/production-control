@@ -81,6 +81,8 @@ export async function validateTarget(context: BuildContext, id: Identity): Promi
       target: id,
       inputs,
       outputDir,
+      // Spread-guarded for `exactOptionalPropertyTypes`, as in `build.ts`.
+      ...(context.onDiagnostic !== undefined ? { onDiagnostic: context.onDiagnostic } : {}),
     });
 
     if (output.hash !== existing.output.hash) {
@@ -158,7 +160,9 @@ async function validateWithDeclaredValidator(
     inputs,
   };
 
-  const response = await subprocessValidatorRunner().run(request, validator);
+  // The validator's own stderr is teed to the operator as it runs: a validator that passes can
+  // still report a great deal (weak selection, advisories, counts), and a verdict is not a report.
+  const response = await subprocessValidatorRunner().run(request, validator, context.onDiagnostic);
   const record = await recordVerdict(context, id, existing, response.state);
   return { state: response.state, record };
 }

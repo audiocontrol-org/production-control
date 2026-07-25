@@ -13,6 +13,16 @@ export interface Output {
   out(line: string): void;
   /** The refusal, named. Always stderr, never a stack trace (FR-036). */
   err(line: string): void;
+  /**
+   * A spawned craft tool's OWN diagnostics, forwarded as they arrive.
+   *
+   * Stderr, like a refusal — but it is neither pc's words nor a line: it is a raw chunk of
+   * somebody else's output, passed through with nothing added, no newline appended, and no
+   * prefix. A provider that spends hours over a corpus streams its progress here, and a validator
+   * that passes still reports here (`src/providers/diagnostics.ts`). It must never reach stdout:
+   * a caller piping `pc build --json` into a parser would find a progress bar in its JSON.
+   */
+  diagnostic(chunk: string): void;
 }
 
 export function createStdioOutput(): Output {
@@ -22,6 +32,9 @@ export function createStdioOutput(): Output {
     },
     err(line: string): void {
       process.stderr.write(`${line}\n`);
+    },
+    diagnostic(chunk: string): void {
+      process.stderr.write(chunk);
     },
   };
 }
