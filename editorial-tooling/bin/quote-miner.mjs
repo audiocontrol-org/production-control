@@ -111,10 +111,14 @@ async function main() {
 
   writeMiningReport(result.report);
 
+  // PROVENANCE ORDERING (AUDIT-21/FR-020): the adapter only learns the REAL model the
+  // CLI used from the response envelope, so the identity must be read AFTER mining.
+  // Reading it earlier would stamp every bank with the command name (`claude`) and hide
+  // a model swap behind a fixed command from producer-drift reporting.
   const response = {
     version: 1,
     outputs: [{ path: 'quote-bank.yaml' }],
-    tool: { name: 'quote-miner', version: `0.1.0+${model.id}` },
+    tool: { name: 'quote-miner', version: `0.1.0+${model.resolvedId()}` },
     impure: {
       reason: 'selects quotable passages via a language model; selection varies by model and run',
     },

@@ -342,6 +342,71 @@ process.exit(3);
     }
   });
 
+  // Case 6 (AUDIT-21 / FR-020): when the miner takes the DEFAULT structured-output path,
+  // `tool.version` must carry the REAL model identity reported by the CLI envelope, not
+  // the command basename — otherwise an Opus->Sonnet swap behind a fixed `claude` command
+  // is invisible to producer-drift reporting. The stand-in below is NAMED `claude`, so the
+  // adapter takes the structured path against it.
+  await t.test('PROVENANCE: tool.version carries the real model identity on the structured path', () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'qm-'));
+    try {
+      const sourcesDir = path.join(tmpDir, 'sources');
+      fs.mkdirSync(sourcesDir);
+      fs.writeFileSync(path.join(sourcesDir, 'speech.txt'), 'Duty is ours.\n', 'utf8');
+
+      const envelope = {
+        is_error: false,
+        subtype: 'success',
+        type: 'result',
+        modelUsage: {
+          'claude-opus-5[1m]': { outputTokens: 12, canonicalModel: 'claude-opus-5' }
+        },
+        result: '{"candidates":[{"text":"Duty is ours.","corrections":[]}]}',
+        structured_output: { candidates: [{ text: 'Duty is ours.', corrections: [] }] }
+      };
+
+      // The stand-in binary's basename IS `claude`, which is what selects the structured path.
+      const binDir = path.join(tmpDir, 'stub-bin');
+      fs.mkdirSync(binDir);
+      const fakeModelPath = path.join(binDir, 'claude');
+      const fakeModelCode =
+        '#!/usr/bin/env node\n' +
+        'process.stdin.on("data", () => {});\n' +
+        'process.stdin.on("end", () => {\n' +
+        `  process.stdout.write(${JSON.stringify(JSON.stringify(envelope))});\n` +
+        '});\n';
+      fs.writeFileSync(fakeModelPath, fakeModelCode, 'utf8');
+      fs.chmodSync(fakeModelPath, 0o755);
+
+      const outputDir = path.join(tmpDir, 'output');
+      fs.mkdirSync(outputDir);
+
+      const req = {
+        version: 1,
+        target: 'quote-bank',
+        inputs: { sources: { path: sourcesDir, hash: 'sha256:abc123' } },
+        output_dir: outputDir
+      };
+
+      const result = spawnSync(process.execPath, [binPath], {
+        input: JSON.stringify(req),
+        encoding: 'utf8',
+        env: { ...process.env, QUOTE_MINER_MODEL_CMD: fakeModelPath, QUOTE_MINER_MODEL_ID: '' }
+      });
+
+      assert.equal(result.status, 0, `expected exit 0, got ${result.status}. stderr: ${result.stderr}`);
+
+      const response = JSON.parse(result.stdout);
+      assert.equal(
+        response.tool.version,
+        '0.1.0+claude-opus-5',
+        `tool.version should carry the real model identity; got: ${result.stdout}`
+      );
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
   // Case 4: PROGRESS (TASK-10) — a long run must be observable while it runs, not only
   // at the end. Progress lines go to STDERR; stdout stays exactly one BuildResponse.
   await t.test('PROGRESS: per-source lines on stderr, stdout still one BuildResponse', () => {
