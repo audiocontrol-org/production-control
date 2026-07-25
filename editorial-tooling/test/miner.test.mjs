@@ -157,3 +157,55 @@ test('miner: grounding and omission (US2 RED)', async (t) => {
     );
   });
 });
+
+test('miner: per-source progress (TASK-10)', async (t) => {
+  const winthropBytes = fs.readFileSync(path.join(fixtureDir, 'winthrop.txt'));
+
+  await t.test('invokes onProgress once per source with that source counts', async () => {
+    const seen = [];
+    const { report } = await mine({
+      sources: [
+        { id: 'alpha', bytes: winthropBytes },
+        { id: 'beta', bytes: Buffer.from('nothing quotable here\n', 'utf8') }
+      ],
+      model: fakeModel,
+      onProgress: (event) => seen.push(event)
+    });
+
+    assert.equal(seen.length, 2, 'onProgress should fire once per source');
+
+    assert.equal(seen[0].id, 'alpha');
+    assert.equal(seen[0].index, 1, 'first event is source 1');
+    assert.equal(seen[0].total, 2);
+    assert.equal(seen[0].selected, 3);
+    assert.equal(seen[0].grounded, 2);
+    assert.equal(seen[0].omitted, 1);
+
+    assert.equal(seen[1].id, 'beta');
+    assert.equal(seen[1].index, 2, 'second event is source 2');
+    assert.equal(seen[1].total, 2);
+    assert.equal(seen[1].selected, 3);
+    assert.equal(seen[1].grounded, 0, 'nothing grounds against the second source');
+    assert.equal(seen[1].omitted, 3);
+
+    // Progress is purely additional: the final report is unchanged.
+    assert.deepEqual(
+      report.per_source.map((s) => ({
+        id: s.id,
+        selected: s.selected,
+        grounded: s.grounded,
+        omitted: s.omitted
+      })),
+      seen.map((s) => ({ id: s.id, selected: s.selected, grounded: s.grounded, omitted: s.omitted })),
+      'progress events should agree with the final per-source report'
+    );
+  });
+
+  await t.test('onProgress is optional (mine works without it)', async () => {
+    const { report } = await mine({
+      sources: [{ id: 'winthrop', bytes: winthropBytes }],
+      model: fakeModel
+    });
+    assert.equal(report.sources_processed, 1);
+  });
+});

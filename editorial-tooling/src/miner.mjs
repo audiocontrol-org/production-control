@@ -15,13 +15,22 @@ import { buildSourceMap } from './validator.mjs';
 /**
  * Mine grounded quotes from a corpus of sources using an injected model.
  *
+ * `onProgress` (optional) is invoked after EACH source completes, with that source's
+ * counts, so a caller can report progress WHILE a long run is in flight instead of only
+ * seeing the report at the end (TASK-10). It is a diagnostic channel only: it does not
+ * affect the bank or the final report.
+ *
  * @param {{
  *   sources: Array<{ id: string, bytes: Buffer }>,
- *   model: { id: string, select: (sourceId: string, sourceText: string) => Promise<string[]> }
+ *   model: { id: string, select: (sourceId: string, sourceText: string) => Promise<string[]> },
+ *   onProgress?: (event: {
+ *     index: number, total: number, id: string,
+ *     selected: number, grounded: number, omitted: number
+ *   }) => void
  * }} args
  * @returns {Promise<{ bank: object, report: object }>}
  */
-export async function mine({ sources, model }) {
+export async function mine({ sources, model, onProgress }) {
   // FR-018: enforce the source-id mapping BEFORE processing any quote. A duplicate,
   // case-collision, or invalid (path/control-char) id fails the whole run loud.
   const { errors } = buildSourceMap(sources);
@@ -35,7 +44,8 @@ export async function mine({ sources, model }) {
   let totalGrounded = 0;
   let totalOmitted = 0;
 
-  for (const { id, bytes } of sources) {
+  for (let index = 0; index < sources.length; index++) {
+    const { id, bytes } = sources[index];
     // Decode with FATAL so invalid UTF-8 throws. A non-UTF-8 source fails the run
     // (FR-015b/016) — no partial bank, no catch-and-continue.
     const text = decodeUtf8OrThrow(id, bytes);
@@ -72,6 +82,12 @@ export async function mine({ sources, model }) {
     totalGrounded += grounded;
     totalOmitted += omitted;
     perSource.push({ id, selected, grounded, omitted });
+
+    // Emit progress AFTER the source is fully accounted for, so what a caller prints
+    // matches this source's row in the final report.
+    if (onProgress !== undefined) {
+      onProgress({ index: index + 1, total: sources.length, id, selected, grounded, omitted });
+    }
   }
 
   const bank = { version: 1, quotes };

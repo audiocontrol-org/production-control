@@ -251,4 +251,71 @@ process.exit(3);
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }
   });
+
+  // Case 4: PROGRESS (TASK-10) — a long run must be observable while it runs, not only
+  // at the end. Progress lines go to STDERR; stdout stays exactly one BuildResponse.
+  await t.test('PROGRESS: per-source lines on stderr, stdout still one BuildResponse', () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'qm-'));
+    try {
+      const sourcesDir = path.join(tmpDir, 'sources');
+      fs.mkdirSync(sourcesDir);
+      fs.writeFileSync(path.join(sourcesDir, 'one.txt'), 'Alpha line one.\n', 'utf8');
+      fs.writeFileSync(path.join(sourcesDir, 'two.txt'), 'Beta line two.\n', 'utf8');
+      fs.writeFileSync(path.join(sourcesDir, 'three.txt'), 'Gamma line three.\n', 'utf8');
+
+      const fakeModelPath = path.join(tmpDir, 'fake-model.mjs');
+      const fakeModelCode = `#!/usr/bin/env node
+process.stdin.on('data', () => {});
+process.stdin.on('end', () => {
+  process.stdout.write(JSON.stringify(["Alpha line one.", "Not in any source."]));
+});
+`;
+      fs.writeFileSync(fakeModelPath, fakeModelCode, 'utf8');
+      fs.chmodSync(fakeModelPath, 0o755);
+
+      const outputDir = path.join(tmpDir, 'output');
+      fs.mkdirSync(outputDir);
+
+      const req = {
+        version: 1,
+        target: 'quote-bank',
+        inputs: { sources: { path: sourcesDir, hash: 'sha256:abc123' } },
+        output_dir: outputDir
+      };
+
+      const result = spawnSync(process.execPath, [binPath], {
+        input: JSON.stringify(req),
+        encoding: 'utf8',
+        env: { ...process.env, QUOTE_MINER_MODEL_CMD: fakeModelPath }
+      });
+
+      assert.equal(result.status, 0, `expected exit 0, got ${result.status}. stderr: ${result.stderr}`);
+
+      // One progress line per source, on STDERR.
+      const progressLines = result.stderr.split('\n').filter((line) => line.startsWith('progress:'));
+      assert.equal(
+        progressLines.length,
+        3,
+        `expected one progress line per source, got: ${JSON.stringify(progressLines)}`
+      );
+      assert.match(progressLines[0], /^progress: 1\/3 \S+ selected=\d+ grounded=\d+ omitted=\d+$/);
+      assert.match(progressLines[2], /^progress: 3\/3 /);
+      const progressIds = progressLines.map((line) => line.split(' ')[2]).sort();
+      assert.deepEqual(progressIds, ['one', 'three', 'two']);
+
+      // The final machine-readable mining report (FR-017) is untouched.
+      const report = parseMiningReport(result.stderr);
+      assert.equal(report.sources_processed, 3);
+
+      // STDOUT stays exactly one BuildResponse JSON — no progress leaks into it.
+      const stdoutLines = result.stdout.split('\n').filter((line) => line.trim().length > 0);
+      assert.equal(stdoutLines.length, 1, `stdout should be exactly one line: ${result.stdout}`);
+      const response = JSON.parse(stdoutLines[0]);
+      assert.equal(response.version, 1);
+      assert.equal(response.outputs[0].path, 'quote-bank.yaml');
+      assert(!result.stdout.includes('progress:'), 'progress must not appear on stdout');
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
 });
