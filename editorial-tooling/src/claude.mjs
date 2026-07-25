@@ -28,10 +28,17 @@
 // error — it never degrades to an empty candidate list, which would silently assert
 // that the source had nothing quotable.
 //
+// NON-BLOCKING SPAWN (TASK-11): the subprocess is run with `spawn`, not `spawnSync`, and
+// `select()` awaits it. `spawnSync` would freeze the whole event loop for the duration of
+// every model call, which would silently defeat the miner's bounded-concurrency pool — the
+// pool would start N calls that still ran strictly one after another. The injected
+// `spawnImpl` seam keeps the spawnSync-shaped RESULT (`{ status, stdout, stderr, error }`);
+// it is awaited, so a synchronous test fake returning that object plainly still works.
+//
 // This module performs no IO beyond the subprocess calls and does not import
 // production-control.
 
-import { spawnSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { basename } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import {
@@ -43,6 +50,69 @@ import {
 } from './claude-protocol.mjs';
 
 const DEFAULT_MAX_ATTEMPTS = 3;
+
+/** Same output ceiling `spawnSync`'s `maxBuffer` used to enforce, kept explicit. */
+const MAX_OUTPUT_BYTES = 64 * 1024 * 1024;
+
+/**
+ * Run a command to completion WITHOUT blocking the event loop, returning the same result
+ * shape `spawnSync` did (`{ status, stdout, stderr, error }`) so every caller and every
+ * injected fake keeps working. This never rejects: a spawn failure comes back as `error`,
+ * exactly as it did before.
+ *
+ * @param {string} command
+ * @param {string[]} args
+ * @param {{ input?: string, maxBuffer?: number }} options
+ * @returns {Promise<{ status: number | null, stdout: string, stderr: string, error?: Error }>}
+ */
+function spawnCapture(command, args, options = {}) {
+  const maxBuffer = options.maxBuffer ?? MAX_OUTPUT_BYTES;
+  return new Promise((resolve) => {
+    let child;
+    try {
+      child = spawn(command, args, { stdio: ['pipe', 'pipe', 'pipe'] });
+    } catch (error) {
+      resolve({ status: null, stdout: '', stderr: '', error });
+      return;
+    }
+
+    let stdout = '';
+    let stderr = '';
+    let settled = false;
+    const settle = (result) => {
+      if (settled) return;
+      settled = true;
+      resolve(result);
+    };
+
+    child.stdout.setEncoding('utf8');
+    child.stderr.setEncoding('utf8');
+    child.stdout.on('data', (chunk) => {
+      stdout += chunk;
+      if (stdout.length > maxBuffer) {
+        child.kill();
+        settle({
+          status: null,
+          stdout: '',
+          stderr,
+          error: new Error(`stdout exceeded maxBuffer of ${maxBuffer} bytes`),
+        });
+      }
+    });
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk;
+    });
+
+    child.on('error', (error) => settle({ status: null, stdout, stderr, error }));
+    child.on('close', (status) => settle({ status, stdout, stderr }));
+
+    // A child that exits before reading the whole prompt makes this pipe emit EPIPE. That
+    // is not a spawn failure — the exit status and stderr below are the real verdict — so
+    // it must not become an unhandled 'error' event that kills the process.
+    child.stdin.on('error', () => {});
+    child.stdin.end(options.input ?? '', 'utf8');
+  });
+}
 
 /**
  * Build a model object bound to the `claude` CLI (or an injected override).
@@ -67,7 +137,9 @@ const DEFAULT_MAX_ATTEMPTS = 3;
  * @param {{
  *   command?: string,
  *   args?: string[],
- *   spawnImpl?: typeof spawnSync,
+ *   spawnImpl?: (command: string, args: string[], options: object) =>
+ *     { status: number | null, stdout: string, stderr: string, error?: Error } |
+ *     Promise<{ status: number | null, stdout: string, stderr: string, error?: Error }>,
  *   modelId?: string,
  *   maxAttempts?: number,
  *   retryDelayMs?: number,
@@ -96,7 +168,7 @@ export function claudeModel(options = {}) {
     options.args ??
     (structured ? structuredArgs() : modelCmdOverride ? [] : TOLERANT_DEFAULT_ARGS);
 
-  const spawnImpl = options.spawnImpl ?? spawnSync;
+  const spawnImpl = options.spawnImpl ?? spawnCapture;
   const maxAttempts = resolveMaxAttempts(options.maxAttempts);
   const retryDelayMs = resolveRetryDelayMs(options.retryDelayMs);
   const sleepImpl = options.sleepImpl ?? defaultSleep;
@@ -130,7 +202,9 @@ export function claudeModel(options = {}) {
           await sleepImpl(retryDelayMs * (attempt - 1));
         }
         try {
-          return attemptSelect({ command, args, prompt, spawnImpl, structured, onIdentity });
+          // `await` here is load-bearing: without it a rejected attempt would escape the
+          // catch below and skip the retry budget entirely.
+          return await attemptSelect({ command, args, prompt, spawnImpl, structured, onIdentity });
         } catch (err) {
           lastError = err;
         }
@@ -153,13 +227,16 @@ export function claudeModel(options = {}) {
  * One spawn + parse. Throws on spawn error, non-zero exit, or output the chosen
  * protocol cannot understand; the caller decides whether to retry.
  *
- * @returns {Array<{ text: string, corrections: Array<{ before: string, after: string }> }>}
+ * `spawnImpl` is awaited so the real (asynchronous) implementation and the synchronous
+ * result objects the tests inject are both accepted.
+ *
+ * @returns {Promise<Array<{ text: string, corrections: Array<{ before: string, after: string }> }>>}
  */
-function attemptSelect({ command, args, prompt, spawnImpl, structured, onIdentity }) {
-  const res = spawnImpl(command, args, {
+async function attemptSelect({ command, args, prompt, spawnImpl, structured, onIdentity }) {
+  const res = await spawnImpl(command, args, {
     input: prompt,
     encoding: 'utf8',
-    maxBuffer: 64 * 1024 * 1024,
+    maxBuffer: MAX_OUTPUT_BYTES,
   });
 
   if (res.error) {

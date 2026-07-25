@@ -12,14 +12,31 @@
 import { stringify } from 'yaml';
 import { buildSourceMap } from './validator.mjs';
 import { normalizeCandidates, buildQuote } from './corrections.mjs';
+import { mapWithConcurrency, resolveConcurrency } from './pool.mjs';
 
 /**
  * Mine grounded quotes from a corpus of sources using an injected model.
  *
+ * Sources are mined with BOUNDED CONCURRENCY (TASK-11). They are completely independent —
+ * grounding is a byte search against THAT source's own bytes and quote ids are
+ * `q-<sourceId>-<n>`, scoped per source — so serializing them bought nothing but wall
+ * clock, and on a 100+ source corpus that wall clock was long enough that interruptions
+ * kept destroying whole runs (the build is atomic). ASSEMBLY REMAINS DETERMINISTIC: each
+ * source's result is collected into a slot keyed by its ORIGINAL index and the bank and
+ * report are assembled in that order, so identical model responses produce identical
+ * output no matter which source finishes first.
+ *
+ * `concurrency` (optional) bounds the number of in-flight model calls; it falls back to
+ * `QUOTE_MINER_CONCURRENCY`, then to 4. A non-integer or `< 1` value throws. `concurrency:
+ * 1` is exactly the old serial path.
+ *
  * `onProgress` (optional) is invoked after EACH source completes, with that source's
  * counts, so a caller can report progress WHILE a long run is in flight instead of only
  * seeing the report at the end (TASK-10). It is a diagnostic channel only: it does not
- * affect the bank or the final report.
+ * affect the bank or the final report. Because completions no longer arrive in source
+ * order, the event carries BOTH `index` (the source's original 1-based position, which
+ * identifies it) and `completed` (a monotonically increasing count, which shows forward
+ * motion).
  *
  * A model may additionally PROPOSE OCR corrections per candidate (TASK-9). It only ever
  * points at them: the tool verifies each against the grounded bytes, discloses the kept
@@ -37,15 +54,16 @@ import { normalizeCandidates, buildQuote } from './corrections.mjs';
  *     select: (sourceId: string, sourceText: string) =>
  *       Promise<Array<string | { text: string, corrections?: Array<{ before: string, after: string }> }>>
  *   },
+ *   concurrency?: number,
  *   onProgress?: (event: {
- *     index: number, total: number, id: string,
+ *     index: number, completed: number, total: number, id: string,
  *     selected: number, grounded: number, omitted: number,
  *     corrections_proposed: number, corrections_applied: number, corrections_dropped: number
  *   }) => void
  * }} args
  * @returns {Promise<{ bank: object, report: object }>}
  */
-export async function mine({ sources, model, onProgress }) {
+export async function mine({ sources, model, onProgress, concurrency }) {
   // FR-018: enforce the source-id mapping BEFORE processing any quote. A duplicate,
   // case-collision, or invalid (path/control-char) id fails the whole run loud.
   const { errors } = buildSourceMap(sources);
@@ -53,8 +71,34 @@ export async function mine({ sources, model, onProgress }) {
     throw new Error(`source-id mapping is ambiguous (FR-018): ${errors.join('; ')}`);
   }
 
+  // A bad bound fails BEFORE any model subprocess is spawned.
+  const limit = resolveConcurrency(concurrency, process.env.QUOTE_MINER_CONCURRENCY);
+
+  const total = sources.length;
+  let completed = 0;
+
+  // The pool returns per-source results in ORIGINAL index order regardless of which
+  // source finished first (src/pool.mjs), and it fails the whole run on the first error
+  // without leaving in-flight work unhandled — preserving FR-015/FR-016 atomicity.
+  const mined = await mapWithConcurrency(sources, limit, async (source, index) => {
+    const result = await mineSource(source, model);
+
+    // Progress is a LIVENESS signal, emitted in completion order: `completed` counts up
+    // monotonically so an operator sees motion, while `index`/`id` name WHICH source it
+    // was (its original 1-based position). Neither influences assembly below.
+    completed++;
+    if (onProgress !== undefined) {
+      onProgress({
+        index: index + 1,
+        completed,
+        total,
+        ...result.counts
+      });
+    }
+    return result;
+  });
+
   const quotes = [];
-  const perSource = [];
   let totalSelected = 0;
   let totalGrounded = 0;
   let totalOmitted = 0;
@@ -62,84 +106,17 @@ export async function mine({ sources, model, onProgress }) {
   let totalApplied = 0;
   let totalDropped = 0;
 
-  for (let index = 0; index < sources.length; index++) {
-    const { id, bytes } = sources[index];
-    // Decode with FATAL so invalid UTF-8 throws. A non-UTF-8 source fails the run
-    // (FR-015b/016) — no partial bank, no catch-and-continue.
-    const text = decodeUtf8OrThrow(id, bytes);
-
-    // Impure step: the model points at candidate passages (and may propose OCR
-    // corrections for them). A model rejection propagates and fails the run.
-    const candidates = normalizeCandidates(
-      await model.select(id, text),
-      `miner: model '${model.id}' on source '${id}'`
-    );
-
-    let grounded = 0;
-    let omitted = 0;
-    let proposed = 0;
-    let applied = 0;
-    let dropped = 0;
-
-    for (const candidate of candidates) {
-      // Ground by copying EXACT bytes: is the candidate an exact byte substring of
-      // THIS source? (UTF-8 bytes, no normalization.)
-      const candBuf = Buffer.from(candidate.text, 'utf8');
-      if (bytes.indexOf(candBuf) >= 0) {
-        // The grounded source bytes are the span's `raw` — always, uncorrected. Any
-        // proposed correction is verified against those bytes, disclosed as an
-        // `ocr-fix`, and `text` is derived mechanically (src/corrections.mjs).
-        // Corrections are only counted for GROUNDED candidates: an omitted candidate
-        // has no `raw` to verify a correction against.
-        const built = buildQuote({
-          id: `q-${id}-${grounded}`,
-          source: id,
-          raw: candidate.text,
-          corrections: candidate.corrections
-        });
-        quotes.push(built.quote);
-        proposed += built.proposed;
-        applied += built.applied;
-        dropped += built.dropped;
-        grounded++;
-      } else {
-        // Ungrounded: OMIT it (never emit an unverified passage — FR-014).
-        omitted++;
-      }
-    }
-
-    const selected = candidates.length;
-    totalSelected += selected;
-    totalGrounded += grounded;
-    totalOmitted += omitted;
-    totalProposed += proposed;
-    totalApplied += applied;
-    totalDropped += dropped;
-    perSource.push({
-      id,
-      selected,
-      grounded,
-      omitted,
-      corrections_proposed: proposed,
-      corrections_applied: applied,
-      corrections_dropped: dropped
-    });
-
-    // Emit progress AFTER the source is fully accounted for, so what a caller prints
-    // matches this source's row in the final report.
-    if (onProgress !== undefined) {
-      onProgress({
-        index: index + 1,
-        total: sources.length,
-        id,
-        selected,
-        grounded,
-        omitted,
-        corrections_proposed: proposed,
-        corrections_applied: applied,
-        corrections_dropped: dropped
-      });
-    }
+  // DETERMINISTIC ASSEMBLY: walk the slots in original source order, never completion
+  // order, so two runs over the same corpus with the same model responses are byte
+  // identical.
+  for (const result of mined) {
+    quotes.push(...result.quotes);
+    totalSelected += result.counts.selected;
+    totalGrounded += result.counts.grounded;
+    totalOmitted += result.counts.omitted;
+    totalProposed += result.counts.corrections_proposed;
+    totalApplied += result.counts.corrections_applied;
+    totalDropped += result.counts.corrections_dropped;
   }
 
   const bank = { version: 1, quotes };
@@ -161,10 +138,87 @@ export async function mine({ sources, model, onProgress }) {
     corrections_proposed: totalProposed,
     corrections_applied: totalApplied,
     corrections_dropped: totalDropped,
-    per_source: perSource
+    // Ordered by original source index (see the assembly loop above), not by which
+    // source the pool happened to finish first.
+    per_source: mined.map((result) => result.counts)
   };
 
   return { bank, report };
+}
+
+/**
+ * Mine ONE source: decode it, ask the model to point at candidates, and ground each
+ * candidate against this source's own bytes.
+ *
+ * Extracted so the pool can run sources concurrently while this stays a pure per-source
+ * unit: it touches no shared accumulator, so nothing here depends on the order sources are
+ * processed in. Grounding semantics are unchanged (FR-014).
+ *
+ * @param {{ id: string, bytes: Buffer }} source
+ * @param {{ id: string, select: Function }} model
+ * @returns {Promise<{ quotes: object[], counts: object }>}
+ */
+async function mineSource({ id, bytes }, model) {
+  // Decode with FATAL so invalid UTF-8 throws. A non-UTF-8 source fails the run
+  // (FR-015b/016) — no partial bank, no catch-and-continue.
+  const text = decodeUtf8OrThrow(id, bytes);
+
+  // Impure step: the model points at candidate passages (and may propose OCR
+  // corrections for them). A model rejection propagates and fails the run.
+  const candidates = normalizeCandidates(
+    await model.select(id, text),
+    `miner: model '${model.id}' on source '${id}'`
+  );
+
+  const quotes = [];
+  let grounded = 0;
+  let omitted = 0;
+  let proposed = 0;
+  let applied = 0;
+  let dropped = 0;
+
+  for (const candidate of candidates) {
+    // Ground by copying EXACT bytes: is the candidate an exact byte substring of
+    // THIS source? (UTF-8 bytes, no normalization.)
+    const candBuf = Buffer.from(candidate.text, 'utf8');
+    if (bytes.indexOf(candBuf) >= 0) {
+      // The grounded source bytes are the span's `raw` — always, uncorrected. Any
+      // proposed correction is verified against those bytes, disclosed as an
+      // `ocr-fix`, and `text` is derived mechanically (src/corrections.mjs).
+      // Corrections are only counted for GROUNDED candidates: an omitted candidate
+      // has no `raw` to verify a correction against.
+      //
+      // The `<n>` in the id counts grounded quotes WITHIN this source, so ids stay
+      // stable no matter how many sources run at once.
+      const built = buildQuote({
+        id: `q-${id}-${grounded}`,
+        source: id,
+        raw: candidate.text,
+        corrections: candidate.corrections
+      });
+      quotes.push(built.quote);
+      proposed += built.proposed;
+      applied += built.applied;
+      dropped += built.dropped;
+      grounded++;
+    } else {
+      // Ungrounded: OMIT it (never emit an unverified passage — FR-014).
+      omitted++;
+    }
+  }
+
+  return {
+    quotes,
+    counts: {
+      id,
+      selected: candidates.length,
+      grounded,
+      omitted,
+      corrections_proposed: proposed,
+      corrections_applied: applied,
+      corrections_dropped: dropped
+    }
+  };
 }
 
 /**

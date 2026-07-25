@@ -453,13 +453,30 @@ process.stdin.on('end', () => {
         3,
         `expected one progress line per source, got: ${JSON.stringify(progressLines)}`
       );
+      // The leading counter is now `completed`/`total` (TASK-11): sources are mined
+      // concurrently, so completions do not arrive in source order and a loop position
+      // would jump around. `[source N]` carries the source's ORIGINAL 1-based position so
+      // the line still says which source it is about.
       assert.match(
         progressLines[0],
-        /^progress: 1\/3 \S+ selected=\d+ grounded=\d+ omitted=\d+ corrections=\d+\/\d+$/
+        /^progress: 1\/3 \S+ \[source [1-3]\] selected=\d+ grounded=\d+ omitted=\d+ corrections=\d+\/\d+$/
       );
       assert.match(progressLines[2], /^progress: 3\/3 /);
+      assert.deepEqual(
+        progressLines.map((line) => line.split(' ')[1]),
+        ['1/3', '2/3', '3/3'],
+        'the completed count must climb monotonically whatever order sources finish in'
+      );
       const progressIds = progressLines.map((line) => line.split(' ')[2]).sort();
       assert.deepEqual(progressIds, ['one', 'three', 'two']);
+      const progressSourceNumbers = progressLines
+        .map((line) => /\[source (\d+)\]/.exec(line)[1])
+        .sort();
+      assert.deepEqual(
+        progressSourceNumbers,
+        ['1', '2', '3'],
+        'every original source position should be reported exactly once'
+      );
 
       // The final machine-readable mining report (FR-017) is untouched.
       const report = parseMiningReport(result.stderr);

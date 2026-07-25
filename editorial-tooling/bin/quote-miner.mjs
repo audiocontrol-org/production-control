@@ -21,9 +21,14 @@ function fail(message) {
 // Per-source progress (TASK-10), written to STDERR the moment a source completes so a
 // long run is observable while it runs. These are ADDITIONAL diagnostics: the final
 // mining report below is unchanged (FR-017), and stdout stays exactly one BuildResponse.
+//
+// Sources are mined concurrently (TASK-11), so completions do not arrive in source order.
+// The counter is `completed` — the number of sources DONE, which only ever climbs — so the
+// line still reads as forward progress, while `[source N]` names which of the original
+// sources this row is about.
 function writeProgress(event) {
   process.stderr.write(
-    `progress: ${event.index}/${event.total} ${event.id}` +
+    `progress: ${event.completed}/${event.total} ${event.id} [source ${event.index}]` +
       ` selected=${event.selected} grounded=${event.grounded} omitted=${event.omitted}` +
       ` corrections=${event.corrections_applied}/${event.corrections_proposed}\n`
   );
