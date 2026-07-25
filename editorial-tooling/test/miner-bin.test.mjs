@@ -342,6 +342,71 @@ process.exit(3);
     }
   });
 
+  // Case 6 (AUDIT-21 / FR-020): when the miner takes the DEFAULT structured-output path,
+  // `tool.version` must carry the REAL model identity reported by the CLI envelope, not
+  // the command basename — otherwise an Opus->Sonnet swap behind a fixed `claude` command
+  // is invisible to producer-drift reporting. The stand-in below is NAMED `claude`, so the
+  // adapter takes the structured path against it.
+  await t.test('PROVENANCE: tool.version carries the real model identity on the structured path', () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'qm-'));
+    try {
+      const sourcesDir = path.join(tmpDir, 'sources');
+      fs.mkdirSync(sourcesDir);
+      fs.writeFileSync(path.join(sourcesDir, 'speech.txt'), 'Duty is ours.\n', 'utf8');
+
+      const envelope = {
+        is_error: false,
+        subtype: 'success',
+        type: 'result',
+        modelUsage: {
+          'claude-opus-5[1m]': { outputTokens: 12, canonicalModel: 'claude-opus-5' }
+        },
+        result: '{"candidates":[{"text":"Duty is ours.","corrections":[]}]}',
+        structured_output: { candidates: [{ text: 'Duty is ours.', corrections: [] }] }
+      };
+
+      // The stand-in binary's basename IS `claude`, which is what selects the structured path.
+      const binDir = path.join(tmpDir, 'stub-bin');
+      fs.mkdirSync(binDir);
+      const fakeModelPath = path.join(binDir, 'claude');
+      const fakeModelCode =
+        '#!/usr/bin/env node\n' +
+        'process.stdin.on("data", () => {});\n' +
+        'process.stdin.on("end", () => {\n' +
+        `  process.stdout.write(${JSON.stringify(JSON.stringify(envelope))});\n` +
+        '});\n';
+      fs.writeFileSync(fakeModelPath, fakeModelCode, 'utf8');
+      fs.chmodSync(fakeModelPath, 0o755);
+
+      const outputDir = path.join(tmpDir, 'output');
+      fs.mkdirSync(outputDir);
+
+      const req = {
+        version: 1,
+        target: 'quote-bank',
+        inputs: { sources: { path: sourcesDir, hash: 'sha256:abc123' } },
+        output_dir: outputDir
+      };
+
+      const result = spawnSync(process.execPath, [binPath], {
+        input: JSON.stringify(req),
+        encoding: 'utf8',
+        env: { ...process.env, QUOTE_MINER_MODEL_CMD: fakeModelPath, QUOTE_MINER_MODEL_ID: '' }
+      });
+
+      assert.equal(result.status, 0, `expected exit 0, got ${result.status}. stderr: ${result.stderr}`);
+
+      const response = JSON.parse(result.stdout);
+      assert.equal(
+        response.tool.version,
+        '0.1.0+claude-opus-5',
+        `tool.version should carry the real model identity; got: ${result.stdout}`
+      );
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
   // Case 4: PROGRESS (TASK-10) — a long run must be observable while it runs, not only
   // at the end. Progress lines go to STDERR; stdout stays exactly one BuildResponse.
   await t.test('PROGRESS: per-source lines on stderr, stdout still one BuildResponse', () => {
@@ -388,13 +453,30 @@ process.stdin.on('end', () => {
         3,
         `expected one progress line per source, got: ${JSON.stringify(progressLines)}`
       );
+      // The leading counter is now `completed`/`total` (TASK-11): sources are mined
+      // concurrently, so completions do not arrive in source order and a loop position
+      // would jump around. `[source N]` carries the source's ORIGINAL 1-based position so
+      // the line still says which source it is about.
       assert.match(
         progressLines[0],
-        /^progress: 1\/3 \S+ selected=\d+ grounded=\d+ omitted=\d+ corrections=\d+\/\d+$/
+        /^progress: 1\/3 \S+ \[source [1-3]\] selected=\d+ grounded=\d+ omitted=\d+ corrections=\d+\/\d+$/
       );
       assert.match(progressLines[2], /^progress: 3\/3 /);
+      assert.deepEqual(
+        progressLines.map((line) => line.split(' ')[1]),
+        ['1/3', '2/3', '3/3'],
+        'the completed count must climb monotonically whatever order sources finish in'
+      );
       const progressIds = progressLines.map((line) => line.split(' ')[2]).sort();
       assert.deepEqual(progressIds, ['one', 'three', 'two']);
+      const progressSourceNumbers = progressLines
+        .map((line) => /\[source (\d+)\]/.exec(line)[1])
+        .sort();
+      assert.deepEqual(
+        progressSourceNumbers,
+        ['1', '2', '3'],
+        'every original source position should be reported exactly once'
+      );
 
       // The final machine-readable mining report (FR-017) is untouched.
       const report = parseMiningReport(result.stderr);
