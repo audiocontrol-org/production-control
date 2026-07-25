@@ -158,6 +158,230 @@ test('miner: grounding and omission (US2 RED)', async (t) => {
   });
 });
 
+// --- Disclosed ocr-fix corrections (TASK-9) --------------------------------------
+//
+// The model POINTS (proposes a correction); the tool CONTROLS THE BYTES: `raw` stays
+// the exact corrupt source bytes, every correction is disclosed as a closed-set
+// `ocr-fix`, and `text` is derived MECHANICALLY by reconstruct() — the same function
+// the validator uses — so miner and validator agree by construction.
+
+const OCR_LINE =
+  'The Marquis de Bays has been arrested m this city on charges oi fraud.';
+const OCR_SOURCE = Buffer.from(`Cablegram.\n${OCR_LINE}\n`, 'utf8');
+
+const OCR_LONG_LINE =
+  'The Marquis de Bays has been arrested m this city on charges oi fraud and deception m connection with the New Ireland colonisation expeditions,';
+const OCR_LONG_SOURCE = Buffer.from(`${OCR_LONG_LINE}\n`, 'utf8');
+
+/** A fake model returning the object candidate shape: { text, corrections }. */
+function correctingModel(candidates) {
+  return { id: 'fake-correcting-model', async select() { return candidates; } };
+}
+
+/** Validate a mined bank with the REAL validator against the same sources. */
+function validateMined(bank, sources) {
+  const { sources: map, errors } = buildSourceMap(sources);
+  assert.deepEqual(errors, [], 'source map should have no errors');
+  return validateBank(bank, map);
+}
+
+test('miner: disclosed ocr-fix corrections (TASK-9)', async (t) => {
+  await t.test('applies a grounded correction, keeps raw corrupt, derives text', async () => {
+    const model = correctingModel([
+      {
+        text: OCR_LINE,
+        corrections: [
+          { before: 'de Bays', after: 'de Rays' },
+          { before: ' m ', after: ' in ' },
+          { before: ' oi ', after: ' of ' }
+        ]
+      }
+    ]);
+
+    const sources = [{ id: 'cable', bytes: OCR_SOURCE }];
+    const { bank, report } = await mine({ sources, model });
+
+    assert.equal(bank.quotes.length, 1);
+    const quote = bank.quotes[0];
+
+    // raw is UNTOUCHED source bytes — never the corrected form.
+    assert.equal(quote.spans[0].raw, OCR_LINE, 'raw must remain the exact source bytes');
+
+    // Every correction is disclosed as a closed-set ocr-fix recording the corrupt form.
+    assert.equal(quote.edits.length, 3);
+    for (const edit of quote.edits) {
+      assert.equal(edit.op, 'ocr-fix');
+      assert.equal(edit.span, 0);
+      assert.equal(typeof edit.before, 'string');
+      assert.equal(typeof edit.after, 'string');
+    }
+    const befores = quote.edits.map((e) => e.before).sort();
+    assert.deepEqual(befores, [' m ', ' oi ', 'de Bays'].sort());
+
+    // text is DERIVED mechanically from raw + edits.
+    assert.equal(
+      quote.text,
+      'The Marquis de Rays has been arrested in this city on charges of fraud.'
+    );
+
+    // Miner and validator agree by construction.
+    const verdict = validateMined(bank, sources);
+    assert.equal(
+      verdict.state,
+      'passed',
+      `validator should accept corrected bank; errors: ${verdict.errors.join(', ')}`
+    );
+
+    assert.equal(report.corrections_proposed, 3);
+    assert.equal(report.corrections_applied, 3);
+    assert.equal(report.corrections_dropped, 0);
+    assert.equal(report.per_source[0].corrections_proposed, 3);
+    assert.equal(report.per_source[0].corrections_applied, 3);
+    assert.equal(report.per_source[0].corrections_dropped, 0);
+  });
+
+  await t.test('drops a correction whose before is absent from raw, keeps the quote', async () => {
+    const model = correctingModel([
+      {
+        text: OCR_LINE,
+        corrections: [{ before: 'de Beys', after: 'de Rays' }] // hallucinated corrupt form
+      }
+    ]);
+
+    const sources = [{ id: 'cable', bytes: OCR_SOURCE }];
+    const { bank, report } = await mine({ sources, model });
+
+    assert.equal(bank.quotes.length, 1, 'dropping a correction never drops the quote');
+    const quote = bank.quotes[0];
+    assert.deepEqual(quote.edits, [], 'ungrounded correction must be dropped');
+    assert.equal(quote.text, quote.spans[0].raw, 'quote degrades to the verbatim source text');
+    assert.equal(quote.text, OCR_LINE);
+
+    assert.equal(report.corrections_proposed, 1);
+    assert.equal(report.corrections_applied, 0);
+    assert.equal(report.corrections_dropped, 1);
+
+    const verdict = validateMined(bank, sources);
+    assert.equal(verdict.state, 'passed', verdict.errors.join(', '));
+  });
+
+  await t.test('drops the second of two overlapping corrections', async () => {
+    const model = correctingModel([
+      {
+        text: OCR_LINE,
+        corrections: [
+          { before: 'de Bays', after: 'de Rays' },
+          { before: 'Bays has been', after: 'Rays has been' } // overlaps the first
+        ]
+      }
+    ]);
+
+    const sources = [{ id: 'cable', bytes: OCR_SOURCE }];
+    const { bank, report } = await mine({ sources, model });
+
+    const quote = bank.quotes[0];
+    assert.equal(quote.edits.length, 1, 'only one of two overlapping corrections applies');
+    assert.equal(quote.edits[0].before, 'de Bays');
+    assert.equal(quote.spans[0].raw, OCR_LINE);
+    assert.equal(
+      quote.text,
+      'The Marquis de Rays has been arrested m this city on charges oi fraud.'
+    );
+
+    assert.equal(report.corrections_proposed, 2);
+    assert.equal(report.corrections_applied, 1);
+    assert.equal(report.corrections_dropped, 1);
+
+    const verdict = validateMined(bank, sources);
+    assert.equal(verdict.state, 'passed', verdict.errors.join(', '));
+  });
+
+  await t.test('records an explicit at when before occurs more than once', async () => {
+    const model = correctingModel([
+      { text: OCR_LONG_LINE, corrections: [{ before: ' m ', after: ' in ' }] }
+    ]);
+
+    const sources = [{ id: 'cable-long', bytes: OCR_LONG_SOURCE }];
+    const { bank, report } = await mine({ sources, model });
+
+    const quote = bank.quotes[0];
+    assert.equal(quote.edits.length, 1);
+    assert.equal(
+      quote.edits[0].at,
+      Buffer.from(OCR_LONG_LINE, 'utf8').indexOf(Buffer.from(' m ', 'utf8')),
+      'at pins the FIRST occurrence so the edit is unambiguous'
+    );
+    assert.equal(quote.spans[0].raw, OCR_LONG_LINE);
+    assert.equal(quote.text, OCR_LONG_LINE.replace(' m ', ' in '));
+
+    assert.equal(report.corrections_applied, 1);
+    assert.equal(report.corrections_dropped, 0);
+
+    const verdict = validateMined(bank, sources);
+    assert.equal(verdict.state, 'passed', verdict.errors.join(', '));
+  });
+
+  await t.test('accepts the legacy plain-string candidate shape (backward compatibility)', async () => {
+    const model = { id: 'legacy', async select() { return [OCR_LINE]; } };
+    const sources = [{ id: 'cable', bytes: OCR_SOURCE }];
+    const { bank, report } = await mine({ sources, model });
+
+    assert.equal(bank.quotes.length, 1);
+    assert.deepEqual(bank.quotes[0].edits, []);
+    assert.equal(bank.quotes[0].text, OCR_LINE);
+    assert.equal(report.corrections_proposed, 0);
+    assert.equal(report.corrections_applied, 0);
+    assert.equal(report.corrections_dropped, 0);
+  });
+
+  await t.test('rejects a candidate that is neither a string nor an object with text', async () => {
+    const model = { id: 'bad', async select() { return [{ corrections: [] }]; } };
+    await assert.rejects(
+      () => mine({ sources: [{ id: 'cable', bytes: OCR_SOURCE }], model }),
+      /candidate/i
+    );
+  });
+
+  await t.test('an ungrounded candidate counts no corrections', async () => {
+    const model = correctingModel([
+      { text: 'A wholly invented line.', corrections: [{ before: 'wholly', after: 'holy' }] }
+    ]);
+    const { bank, report } = await mine({
+      sources: [{ id: 'cable', bytes: OCR_SOURCE }],
+      model
+    });
+
+    assert.equal(bank.quotes.length, 0, 'ungrounded candidate is omitted (FR-014)');
+    assert.equal(report.omitted_ungrounded, 1);
+    assert.equal(report.corrections_proposed, 0, 'corrections are only counted for grounded quotes');
+    assert.equal(report.corrections_applied, 0);
+    assert.equal(report.corrections_dropped, 0);
+  });
+
+  await t.test('progress reports per-source correction counts', async () => {
+    const model = correctingModel([
+      {
+        text: OCR_LINE,
+        corrections: [
+          { before: ' m ', after: ' in ' },
+          { before: 'de Beys', after: 'de Rays' }
+        ]
+      }
+    ]);
+    const seen = [];
+    await mine({
+      sources: [{ id: 'cable', bytes: OCR_SOURCE }],
+      model,
+      onProgress: (event) => seen.push(event)
+    });
+
+    assert.equal(seen.length, 1);
+    assert.equal(seen[0].corrections_proposed, 2);
+    assert.equal(seen[0].corrections_applied, 1);
+    assert.equal(seen[0].corrections_dropped, 1);
+  });
+});
+
 test('miner: per-source progress (TASK-10)', async (t) => {
   const winthropBytes = fs.readFileSync(path.join(fixtureDir, 'winthrop.txt'));
 

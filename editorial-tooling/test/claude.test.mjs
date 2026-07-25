@@ -61,7 +61,7 @@ test('claudeModel: id (AUDIT-21 provenance)', async (t) => {
 });
 
 test('claudeModel: select() via injected fake spawn', async (t) => {
-  await t.test('resolves to the parsed JSON array on success', async () => {
+  await t.test('normalizes a plain-string array to the candidate object shape', async () => {
     const fakeSpawn = makeFakeSpawn({
       stdout: '["a quote", "another quote"]',
       status: 0,
@@ -70,8 +70,61 @@ test('claudeModel: select() via injected fake spawn', async (t) => {
 
     const result = await model.select('source-1', 'some source text');
 
-    assert.deepEqual(result, ['a quote', 'another quote']);
+    assert.deepEqual(result, [
+      { text: 'a quote', corrections: [] },
+      { text: 'another quote', corrections: [] },
+    ]);
     assert.equal(fakeSpawn.calls.length, 1, 'expected exactly one spawn invocation');
+  });
+
+  await t.test('parses proposed OCR corrections (TASK-9)', async () => {
+    const fakeSpawn = makeFakeSpawn({
+      stdout: JSON.stringify([
+        { text: 'arrested m this city', corrections: [{ before: ' m ', after: ' in ' }] },
+        { text: 'a clean passage', corrections: [] },
+        'a bare string candidate',
+      ]),
+      status: 0,
+    });
+    const model = claudeModel({ spawnImpl: fakeSpawn });
+
+    const result = await model.select('source-1', 'some source text');
+
+    assert.deepEqual(result, [
+      { text: 'arrested m this city', corrections: [{ before: ' m ', after: ' in ' }] },
+      { text: 'a clean passage', corrections: [] },
+      { text: 'a bare string candidate', corrections: [] },
+    ]);
+  });
+
+  await t.test('throws on a candidate that is neither string nor {text}', async () => {
+    const fakeSpawn = makeFakeSpawn({ stdout: '[{"corrections": []}]', status: 0 });
+    const model = claudeModel({ spawnImpl: fakeSpawn });
+
+    await assert.rejects(() => model.select('source-1', 'text'), /candidate/i);
+  });
+
+  await t.test('throws on a malformed correction entry', async () => {
+    const fakeSpawn = makeFakeSpawn({
+      stdout: JSON.stringify([{ text: 'passage', corrections: [{ before: 5, after: 'x' }] }]),
+      status: 0,
+    });
+    const model = claudeModel({ spawnImpl: fakeSpawn });
+
+    await assert.rejects(() => model.select('source-1', 'text'), /correction/i);
+  });
+
+  await t.test('the prompt asks for the object shape and forbids authoring', async () => {
+    const fakeSpawn = makeFakeSpawn({ stdout: '[]', status: 0 });
+    const model = claudeModel({ spawnImpl: fakeSpawn });
+
+    await model.select('source-1', 'some source text');
+
+    const prompt = fakeSpawn.calls[0].opts.input;
+    assert.match(prompt, /corrections/);
+    assert.match(prompt, /"before"/);
+    assert.match(prompt, /"after"/);
+    assert.match(prompt, /paraphrase/i);
   });
 
   await t.test('throws when the fake spawn reports a non-zero exit', async () => {

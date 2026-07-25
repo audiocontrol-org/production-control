@@ -14,7 +14,7 @@ import { parse as parseYaml } from 'yaml';
 function parseMiningReport(stderr) {
   const report = {};
   for (const line of stderr.split('\n')) {
-    const match = /^(selected|grounded|omitted_ungrounded|sources_processed|sources_skipped|sources_failed):\s*(\d+)$/.exec(
+    const match = /^(selected|grounded|omitted_ungrounded|sources_processed|sources_skipped|sources_failed|corrections_proposed|corrections_applied|corrections_dropped):\s*(\d+)$/.exec(
       line
     );
     if (match) {
@@ -26,6 +26,7 @@ function parseMiningReport(stderr) {
 
 const thisDir = path.dirname(fileURLToPath(import.meta.url));
 const binPath = path.resolve(thisDir, '..', 'bin', 'quote-miner.mjs');
+const validatorBinPath = path.resolve(thisDir, '..', 'bin', 'quote-validator.mjs');
 
 test('miner-bin contract test suite', async (t) => {
   // Case 1: SUCCESS (happy path with fake model)
@@ -252,6 +253,95 @@ process.exit(3);
     }
   });
 
+  // Case 5 (TASK-9): a model-proposed OCR correction survives end-to-end — the written
+  // bank carries a disclosed ocr-fix, and the REAL validator subprocess accepts it.
+  await t.test('OCR-FIX: disclosed correction in the bank passes the real validator', () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'qm-'));
+    try {
+      const sourcesDir = path.join(tmpDir, 'sources');
+      fs.mkdirSync(sourcesDir);
+      const corruptLine = 'The Marquis de Bays has been arrested m this city.';
+      fs.writeFileSync(path.join(sourcesDir, 'cable.txt'), `${corruptLine}\n`, 'utf8');
+
+      const candidates = [
+        {
+          text: corruptLine,
+          corrections: [
+            { before: 'de Bays', after: 'de Rays' },
+            { before: ' m ', after: ' in ' }
+          ]
+        }
+      ];
+      const fakeModelPath = path.join(tmpDir, 'fake-model.mjs');
+      const fakeModelCode =
+        '#!/usr/bin/env node\n' +
+        'process.stdin.on("data", () => {});\n' +
+        'process.stdin.on("end", () => {\n' +
+        `  process.stdout.write(${JSON.stringify(JSON.stringify(candidates))});\n` +
+        '});\n';
+      fs.writeFileSync(fakeModelPath, fakeModelCode, 'utf8');
+      fs.chmodSync(fakeModelPath, 0o755);
+
+      const outputDir = path.join(tmpDir, 'output');
+      fs.mkdirSync(outputDir);
+
+      const req = {
+        version: 1,
+        target: 'quote-bank',
+        inputs: { sources: { path: sourcesDir, hash: 'sha256:abc123' } },
+        output_dir: outputDir
+      };
+
+      const result = spawnSync(process.execPath, [binPath], {
+        input: JSON.stringify(req),
+        encoding: 'utf8',
+        env: { ...process.env, QUOTE_MINER_MODEL_CMD: fakeModelPath }
+      });
+      assert.equal(result.status, 0, `expected exit 0, got ${result.status}. stderr: ${result.stderr}`);
+
+      const bankPath = path.join(outputDir, 'quote-bank.yaml');
+      const bank = parseYaml(fs.readFileSync(bankPath, 'utf8'));
+      assert.equal(bank.quotes.length, 1);
+      const quote = bank.quotes[0];
+
+      const ocrFixes = quote.edits.filter((edit) => edit.op === 'ocr-fix');
+      assert.equal(ocrFixes.length, 2, `expected 2 ocr-fix edits, got: ${JSON.stringify(quote.edits)}`);
+      // raw stays the corrupt source bytes; text is the mechanically derived presentation.
+      assert.equal(quote.spans[0].raw, corruptLine);
+      assert.equal(quote.text, 'The Marquis de Rays has been arrested in this city.');
+
+      // The mining report discloses the correction counts (FR-017 keys unchanged).
+      const report = parseMiningReport(result.stderr);
+      assert.equal(report.corrections_proposed, 2, `stderr: ${result.stderr}`);
+      assert.equal(report.corrections_applied, 2, `stderr: ${result.stderr}`);
+      assert.equal(report.corrections_dropped, 0, `stderr: ${result.stderr}`);
+
+      // END-TO-END PROOF: the REAL validator binary accepts the corrected bank.
+      const validation = spawnSync(process.execPath, [validatorBinPath], {
+        input: JSON.stringify({
+          version: 1,
+          target: 'quote-bank',
+          artifact: { path: bankPath, hash: 'sha256:placeholder' },
+          inputs: { sources: { path: sourcesDir, hash: 'sha256:placeholder' } }
+        }),
+        encoding: 'utf8'
+      });
+      assert.equal(
+        validation.status,
+        0,
+        `validator should reach a verdict; stderr: ${validation.stderr}`
+      );
+      const verdict = JSON.parse(validation.stdout);
+      assert.equal(
+        verdict.state,
+        'passed',
+        `validator should accept the mined bank; got: ${validation.stdout}`
+      );
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
   // Case 4: PROGRESS (TASK-10) — a long run must be observable while it runs, not only
   // at the end. Progress lines go to STDERR; stdout stays exactly one BuildResponse.
   await t.test('PROGRESS: per-source lines on stderr, stdout still one BuildResponse', () => {
@@ -298,7 +388,10 @@ process.stdin.on('end', () => {
         3,
         `expected one progress line per source, got: ${JSON.stringify(progressLines)}`
       );
-      assert.match(progressLines[0], /^progress: 1\/3 \S+ selected=\d+ grounded=\d+ omitted=\d+$/);
+      assert.match(
+        progressLines[0],
+        /^progress: 1\/3 \S+ selected=\d+ grounded=\d+ omitted=\d+ corrections=\d+\/\d+$/
+      );
       assert.match(progressLines[2], /^progress: 3\/3 /);
       const progressIds = progressLines.map((line) => line.split(' ')[2]).sort();
       assert.deepEqual(progressIds, ['one', 'three', 'two']);

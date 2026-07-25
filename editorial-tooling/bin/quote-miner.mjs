@@ -24,7 +24,8 @@ function fail(message) {
 function writeProgress(event) {
   process.stderr.write(
     `progress: ${event.index}/${event.total} ${event.id}` +
-      ` selected=${event.selected} grounded=${event.grounded} omitted=${event.omitted}\n`
+      ` selected=${event.selected} grounded=${event.grounded} omitted=${event.omitted}` +
+      ` corrections=${event.corrections_applied}/${event.corrections_proposed}\n`
   );
 }
 
@@ -36,9 +37,17 @@ function writeMiningReport(report) {
   lines.push(`sources_processed: ${report.sources_processed}`);
   lines.push(`sources_skipped: ${report.sources_skipped}`);
   lines.push(`sources_failed: ${report.sources_failed}`);
+  // Disclosed OCR corrections (TASK-9): proposed by the model, applied only after the
+  // tool verified `before` against the grounded source bytes, dropped otherwise.
+  lines.push(`corrections_proposed: ${report.corrections_proposed}`);
+  lines.push(`corrections_applied: ${report.corrections_applied}`);
+  lines.push(`corrections_dropped: ${report.corrections_dropped}`);
   for (const src of report.per_source ?? []) {
     lines.push(
-      `source ${src.id}: selected=${src.selected} grounded=${src.grounded} omitted=${src.omitted}`
+      `source ${src.id}: selected=${src.selected} grounded=${src.grounded} omitted=${src.omitted}` +
+        ` corrections_proposed=${src.corrections_proposed}` +
+        ` corrections_applied=${src.corrections_applied}` +
+        ` corrections_dropped=${src.corrections_dropped}`
     );
   }
   process.stderr.write(lines.join('\n') + '\n');

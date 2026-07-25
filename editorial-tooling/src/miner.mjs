@@ -11,6 +11,7 @@
 
 import { stringify } from 'yaml';
 import { buildSourceMap } from './validator.mjs';
+import { normalizeCandidates, buildQuote } from './corrections.mjs';
 
 /**
  * Mine grounded quotes from a corpus of sources using an injected model.
@@ -20,12 +21,26 @@ import { buildSourceMap } from './validator.mjs';
  * seeing the report at the end (TASK-10). It is a diagnostic channel only: it does not
  * affect the bank or the final report.
  *
+ * A model may additionally PROPOSE OCR corrections per candidate (TASK-9). It only ever
+ * points at them: the tool verifies each against the grounded bytes, discloses the kept
+ * ones as closed-set `ocr-fix` edits, and derives `text` mechanically (src/corrections.mjs).
+ * `spans[].raw` remains the exact source bytes in every case.
+ *
+ * `model.select` may return either plain candidate strings (legacy shape) or
+ * `{ text, corrections }` objects; both are normalized. A candidate that is neither
+ * THROWS rather than being guessed at.
+ *
  * @param {{
  *   sources: Array<{ id: string, bytes: Buffer }>,
- *   model: { id: string, select: (sourceId: string, sourceText: string) => Promise<string[]> },
+ *   model: {
+ *     id: string,
+ *     select: (sourceId: string, sourceText: string) =>
+ *       Promise<Array<string | { text: string, corrections?: Array<{ before: string, after: string }> }>>
+ *   },
  *   onProgress?: (event: {
  *     index: number, total: number, id: string,
- *     selected: number, grounded: number, omitted: number
+ *     selected: number, grounded: number, omitted: number,
+ *     corrections_proposed: number, corrections_applied: number, corrections_dropped: number
  *   }) => void
  * }} args
  * @returns {Promise<{ bank: object, report: object }>}
@@ -43,6 +58,9 @@ export async function mine({ sources, model, onProgress }) {
   let totalSelected = 0;
   let totalGrounded = 0;
   let totalOmitted = 0;
+  let totalProposed = 0;
+  let totalApplied = 0;
+  let totalDropped = 0;
 
   for (let index = 0; index < sources.length; index++) {
     const { id, bytes } = sources[index];
@@ -50,26 +68,39 @@ export async function mine({ sources, model, onProgress }) {
     // (FR-015b/016) — no partial bank, no catch-and-continue.
     const text = decodeUtf8OrThrow(id, bytes);
 
-    // Impure step: the model points at candidate passages. A model rejection
-    // propagates and fails the run.
-    const candidates = await model.select(id, text);
+    // Impure step: the model points at candidate passages (and may propose OCR
+    // corrections for them). A model rejection propagates and fails the run.
+    const candidates = normalizeCandidates(
+      await model.select(id, text),
+      `miner: model '${model.id}' on source '${id}'`
+    );
 
     let grounded = 0;
     let omitted = 0;
+    let proposed = 0;
+    let applied = 0;
+    let dropped = 0;
 
     for (const candidate of candidates) {
       // Ground by copying EXACT bytes: is the candidate an exact byte substring of
       // THIS source? (UTF-8 bytes, no normalization.)
-      const candBuf = Buffer.from(candidate, 'utf8');
+      const candBuf = Buffer.from(candidate.text, 'utf8');
       if (bytes.indexOf(candBuf) >= 0) {
-        // v1 copies exact bytes, so text === raw and edits is empty.
-        quotes.push({
+        // The grounded source bytes are the span's `raw` — always, uncorrected. Any
+        // proposed correction is verified against those bytes, disclosed as an
+        // `ocr-fix`, and `text` is derived mechanically (src/corrections.mjs).
+        // Corrections are only counted for GROUNDED candidates: an omitted candidate
+        // has no `raw` to verify a correction against.
+        const built = buildQuote({
           id: `q-${id}-${grounded}`,
           source: id,
-          spans: [{ raw: candidate }],
-          text: candidate,
-          edits: []
+          raw: candidate.text,
+          corrections: candidate.corrections
         });
+        quotes.push(built.quote);
+        proposed += built.proposed;
+        applied += built.applied;
+        dropped += built.dropped;
         grounded++;
       } else {
         // Ungrounded: OMIT it (never emit an unverified passage — FR-014).
@@ -81,12 +112,33 @@ export async function mine({ sources, model, onProgress }) {
     totalSelected += selected;
     totalGrounded += grounded;
     totalOmitted += omitted;
-    perSource.push({ id, selected, grounded, omitted });
+    totalProposed += proposed;
+    totalApplied += applied;
+    totalDropped += dropped;
+    perSource.push({
+      id,
+      selected,
+      grounded,
+      omitted,
+      corrections_proposed: proposed,
+      corrections_applied: applied,
+      corrections_dropped: dropped
+    });
 
     // Emit progress AFTER the source is fully accounted for, so what a caller prints
     // matches this source's row in the final report.
     if (onProgress !== undefined) {
-      onProgress({ index: index + 1, total: sources.length, id, selected, grounded, omitted });
+      onProgress({
+        index: index + 1,
+        total: sources.length,
+        id,
+        selected,
+        grounded,
+        omitted,
+        corrections_proposed: proposed,
+        corrections_applied: applied,
+        corrections_dropped: dropped
+      });
     }
   }
 
@@ -101,6 +153,14 @@ export async function mine({ sources, model, onProgress }) {
     // skipped and 0 failed.
     sources_skipped: 0,
     sources_failed: 0,
+    // Disclosed OCR corrections (TASK-9). `proposed` counts only corrections attached
+    // to a GROUNDED candidate; `applied` are the ones verified against `raw` and
+    // emitted as `ocr-fix` edits; `dropped` are the rest (before absent from raw,
+    // overlapping an accepted edit, or a whole-quote degrade to verbatim source text).
+    // proposed === applied + dropped, always.
+    corrections_proposed: totalProposed,
+    corrections_applied: totalApplied,
+    corrections_dropped: totalDropped,
     per_source: perSource
   };
 
