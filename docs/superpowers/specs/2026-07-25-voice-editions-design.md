@@ -88,8 +88,16 @@ inverting the relationship among them.
 > verifies preservation of declared literal payload. It does **not** prove
 > semantic claim equivalence for rewritten prose, and it does **not** validate
 > that an edition conforms to its declared voice.
+>
+> **The validator corroborates declared source-to-edition mappings; it never
+> infers them.**
 
 That is a narrower promise than the first draft made, and it is defensible.
+
+The final sentence is the whole trust model in one line, and it is deliberate
+rather than a limitation. A validator that inferred mappings would have to guess
+which edition prose corresponds to which source unit, and guessing requires a
+similarity threshold — the exact thing quote-bank FR-009 forbids. See D22.
 
 ## Solution space
 
@@ -212,6 +220,8 @@ disposition satisfies its applicable deterministic obligations — exact quotati
 survival, citation preservation, configured literal-payload survival, and recorded
 reasons for cuts. **It does not prove semantic equivalence of rewritten prose, nor
 the wisdom of an editorial disposition, nor conformance to the declared voice.**
+The validator corroborates the producer's declared mappings and never infers them
+(D22).
 
 **D5 — v1 scope is source-locked revision only.**
 A governed target MUST declare exactly one source draft. Targets without one are
@@ -430,6 +440,35 @@ never a false clean.
 **D21 — Blended voices are deferred (operator decision).**
 The ledger MUST remain additively extensible so `function:` and `voice:` fields can
 land later without a breaking change.
+
+**D22 — The validator corroborates declared mappings; it never infers them.**
+This is the trust model stated in full, and it is a deliberate architectural
+position rather than a limitation the design tolerates.
+
+The validator answers *"is what was declared mechanically true?"* — never *"can I
+infer what probably happened?"* Given a `represented` entry naming a destination,
+it checks that the destination exists, that the source unit's payload survives
+within it, and that every obligation of the operation holds. It does **not** ask
+whether some other edition unit would have been a better destination, nor attempt
+to discover a mapping the producer did not declare.
+
+Two consequences follow, and both are intended:
+
+1. **Inference would require a threshold.** To infer which edition prose
+   corresponds to which source unit, the validator would have to score candidate
+   alignments — and quote-bank FR-009 requires a verdict reached with "no language
+   model, no similarity threshold, and no network." Corroboration keeps every check
+   exact; inference could not.
+2. **The ledger is therefore the authoritative editorial declaration**, not a
+   convenience record. It is the artifact under review, and a false entry is a
+   false statement made explicitly and diffably rather than a silence. Review
+   effort moves from reading prose against its source to auditing a mapping — which
+   is both cheaper and reviewable by someone who was not present when it was
+   produced.
+
+This is why D12 makes uncorroborated entries a counted, first-class field: when the
+validator's leverage is limited to what was declared, how much of the ledger it
+could actually corroborate is itself a quality signal.
 
 ## Deferred scope (captured, not built)
 
@@ -673,3 +712,18 @@ Extended beyond the review, where its proposed fix was incomplete:
 - **Quote-bank reuse made conditional (D14).** The corpus's blockquotes originate
   from the spine, not a validated quote bank, so quote-bank identity checks apply
   only where a quote bank is a declared input.
+
+**Second review round (2026-07-25).** The reviewer assessed the revision as
+addressing the fundamental issue and recommended approval with one remaining
+architectural recommendation: state explicitly that the validator corroborates
+declared source-to-edition mappings and never infers them. Incorporated as **D22**
+and as a line in the guarantee statement. The reviewer's observation that the
+ledger has thereby become the authoritative editorial declaration is recorded in
+D22 as intended behavior rather than an accepted cost.
+
+The reviewer also observed that quote-bank, voice-editions and artifact-adoption
+are converging on a recurring shape — impure producer → declarative metadata →
+deterministic corroboration → structured coverage report — and suggested capturing
+it as a named architectural pattern, explicitly not necessarily in this document.
+Captured in the governed design inbox rather than expanded here, so it is picked up
+in a deliberate triage pass instead of being absorbed into one feature's record.
