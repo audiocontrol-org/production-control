@@ -38,30 +38,58 @@ export const TOLERANT_DEFAULT_ARGS = ['-p'];
 export const CANDIDATE_SCHEMA = {
   type: 'object',
   properties: {
-    candidates: {
-      type: 'array',
-      items: {
-        type: 'object',
-        properties: {
-          text: { type: 'string' },
-          corrections: {
-            type: 'array',
-            items: {
-              type: 'object',
-              properties: {
-                before: { type: 'string' },
-                after: { type: 'string' },
-              },
-              required: ['before', 'after'],
-            },
-          },
-        },
-        required: ['text', 'corrections'],
-      },
-    },
+    candidates: candidateListSchema(),
   },
   required: ['candidates'],
 };
+
+/**
+ * The schema for ONE list of candidates — a passage plus the corrections merely PROPOSED
+ * for it. Built fresh on each call so a caller (e.g. the batch schema in
+ * src/claude-agent-protocol.mjs) can nest it without sharing a mutable object graph.
+ *
+ * @returns {object}
+ */
+export function candidateListSchema() {
+  return {
+    type: 'array',
+    items: {
+      type: 'object',
+      properties: {
+        text: { type: 'string' },
+        corrections: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              before: { type: 'string' },
+              after: { type: 'string' },
+            },
+            required: ['before', 'after'],
+          },
+        },
+      },
+      required: ['text', 'corrections'],
+    },
+  };
+}
+
+// THE SELECTION RULES LIVE HERE, ONCE. The per-source adapter states them in its prompt;
+// the fan-out adapter states them in the instructions each subagent works from. Two
+// adapters asking for passages under subtly different rules would produce two different
+// corpora from the same sources, so neither is allowed its own copy.
+
+/** Fidelity: the passage is COPIED, never authored. Callers append where to copy it from. */
+export const FIDELITY_RULE = `For each selected passage, copy it EXACTLY as it appears in the source — verbatim, byte-for-byte, character-for-character, INCLUDING any OCR errors it contains. Do NOT paraphrase. Do NOT summarize. Do NOT correct spelling, punctuation, or whitespace in the passage itself. Do NOT add or remove any characters.`;
+
+/** What a model may PROPOSE about OCR damage — and the narrow limits on it. */
+export const CORRECTION_RULES = `The source may be OCR output and may contain scanning corruption. For each passage you may separately PROPOSE corrections for that corruption. A correction names the exact corrupt substring and its correct form; it does not change the passage you copied.
+
+Rules for corrections:
+- Propose a correction ONLY for evident OCR or typographic corruption: broken or run-together words, "m" that should be "in", "oi" that should be "of", "coiony" that should be "colony", mangled proper names, stray punctuation introduced by scanning.
+- NEVER paraphrase, modernize, translate, reorder, expand abbreviations, or change meaning. Original spelling, capitalization, and period style are NOT errors and MUST be left alone.
+- "before" MUST be copied exactly from the passage, character-for-character, and must be long enough to identify the corruption unambiguously.
+- The "corrections" array may be empty. When in doubt, leave the text uncorrected.`;
 
 /**
  * Argv for the STRUCTURED protocol.

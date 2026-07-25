@@ -43,6 +43,7 @@ The `ValidateRequest` specifies paths to the artifact (the quote bank YAML) and 
 - **Bounded retry**: the model is stochastic, so each source's model call is retried on spawn error, non-zero exit, or unparseable output (default 3 attempts total; `QUOTE_MINER_MODEL_MAX_ATTEMPTS`, plus an optional `QUOTE_MINER_MODEL_RETRY_DELAY_MS` backoff that defaults to 0). After the last attempt it fails loud — it never degrades to "this source had nothing quotable".
 - **Real model identity in `tool.version`**: the response envelope names the model actually used (`modelUsage` → `canonicalModel`), and that identity — e.g. `0.1.0+claude-opus-5`, not `0.1.0+claude` — is what the `BuildResponse` reports, so a model swap behind a fixed `claude` command surfaces as producer drift.
 - **Sources are mined concurrently, output is deterministic**: sources are independent (grounding is a byte search against *that* source's own bytes, and quote ids are `q-<sourceId>-<n>`, scoped per source), so they are mined through a bounded worker pool instead of one at a time — a 100+ source corpus no longer costs an hour of wall clock in which any interruption discards every completed source. **Assembly does not follow completion order**: each source's result lands in a slot keyed by its original index, so the bank's `quotes` and the report's `per_source` are always in source order and the same model responses produce the same bytes whatever finishes first. The bound defaults to 4 (each model call is a full `claude` subprocess) and is set with `QUOTE_MINER_CONCURRENCY` or the `concurrency` option; a non-integer or `< 1` value fails loud rather than being clamped, and `1` is exactly the old serial path. Failure stays atomic: the first failing source fails the whole run, no further sources are scheduled, in-flight work is awaited to settlement, and no bank is written.
+- **Two mining strategies, chosen explicitly (`QUOTE_MINER_STRATEGY`)**: see [Mining Strategies](#mining-strategies) below. The default is `per-source`; `agent` is opt-in.
 - **Model override via env var**: set `QUOTE_MINER_MODEL_CMD` to override the model command used (default: `claude`). A command whose basename is not `claude` is invoked with plain args and its stdout parsed as a bare JSON array of candidates — the stand-in/fake-model seam used by the tests. `QUOTE_MINER_MODEL_ID` pins the recorded model identity by hand and outranks everything else.
 - **By-hand invocation**:
   ```
@@ -50,6 +51,30 @@ The `ValidateRequest` specifies paths to the artifact (the quote bank YAML) and 
   ```
 
 The `BuildRequest` specifies paths to the sources directory and an output directory. Stdout is a `BuildResponse` (success/failure; never partial output on failure). Stderr carries the mining report (counts: selected, grounded, omitted_ungrounded, sources processed/skipped/failed, and per-source breakdowns), plus a `progress: <completed>/<total> <id> [source <n>] selected=… grounded=… omitted=…` line emitted as each source completes so a long run is observable while it runs. Because sources are mined concurrently, completions do not arrive in source order: the leading counter is the number of sources *finished* (so it only ever climbs), while `[source <n>]` is that source's original position in the corpus.
+
+## Mining Strategies
+
+The miner has two interchangeable model adapters. They differ only in *how the model is asked*; everything downstream — grounding, disclosed edits, the bank, the validator's verdict — is identical, and the two produce byte-identical banks for identical model output. `QUOTE_MINER_STRATEGY` picks one; an unrecognized value fails the run rather than quietly choosing.
+
+### `per-source` (default)
+
+One `claude -p` invocation per source, with that source's text in the prompt.
+
+- **Portable.** This adapter needs only *a CLI that takes a prompt and returns JSON*. That is the whole contract, which is why it is the default seam: any other model tool — a different vendor's CLI, a local model wrapper, a stand-in binary — can be dropped in through `QUOTE_MINER_MODEL_CMD` without touching the miner.
+- **Best covered.** It carries the bulk of the test suite and every by-hand corpus run to date.
+- **Expensive at scale.** Every invocation rebuilds Claude Code's system prompt and tool definitions: 15,667–37,788 `cache_creation_input_tokens` measured for even a trivial prompt. Over a 123-source corpus that setup is paid 123 times, on top of pushing the corpus text (6.9 MB in the case that motivated this) through prompts.
+
+### `agent` (opt-in)
+
+One `claude` invocation per *chunk* of sources, which dispatches one subagent per source (`Task`); each subagent reads its own file (`Read`) and returns the passages it selected, and the top-level run aggregates them into a single schema-conforming envelope.
+
+- **Dramatically cheaper on a large corpus.** The CLI setup cost is paid once per chunk instead of once per source, and **source text never enters a prompt** — only file paths do, because the subagents open the files themselves.
+- **Claude-Code-specific.** It depends on subagents, the `Task` and `Read` tools, and `--json-schema`. It is *not* portable to "any CLI that takes a prompt", which is exactly why it is opt-in rather than the default.
+- **Chunk size** is `QUOTE_MINER_CHUNK_SIZE` (or the `chunkSize` option), default 10. Chunks are dispatched through the same bounded-concurrency pool as everything else, so chunks run concurrently *and* each one fans out internally; a non-integer or `< 1` value fails loud.
+- **Cost accounting on stderr**: each batch emits `batch-usage: sources=… turns=… cache_creation_input_tokens=… …` from the response envelope, so the saving is measurable rather than assumed.
+- **A source the model does not answer for fails the run.** It is *not* recorded as "nothing quotable". A missing answer and a barren source are different facts, and conflating them is the false-clean that once let roughly a quarter of a 123-source corpus contribute nothing while the run reported complete success. The failure happens inside the retry budget, so a dropped subagent normally costs one extra attempt; only a chunk that fails every attempt fails the run — atomically, writing no bank.
+
+**Fidelity is unaffected by the choice.** Whoever read the file, every candidate is still grounded against the bytes *the miner itself loaded*, and anything that is not an exact byte substring of them is omitted (FR-014). Grounding never consults what a subagent claims a file says, so a subagent that misreads, paraphrases, or hallucinates is caught exactly as a hallucinating single model was.
 
 ## Source Ids
 

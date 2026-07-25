@@ -12,10 +12,43 @@ import { join } from 'node:path';
 import { mine, serializeBank } from '../src/miner.mjs';
 import { loadSources } from '../src/sources.mjs';
 import { claudeModel } from '../src/claude.mjs';
+import { claudeAgentModel } from '../src/claude-agent.mjs';
 
 function fail(message) {
   process.stderr.write(`quote-miner: ${message}\n`);
   process.exit(1);
+}
+
+// WHICH MODEL ADAPTER MINES THIS CORPUS — an explicit operator choice, never an implicit
+// one (`QUOTE_MINER_STRATEGY`):
+//
+//   per-source (DEFAULT) — src/claude.mjs: one `claude -p` per source. It needs only "a
+//     CLI that takes a prompt and returns JSON", so it is the portable seam and the one
+//     with the most test coverage. It also pays Claude Code's system-prompt and
+//     tool-definition setup on every single source.
+//
+//   agent — src/claude-agent.mjs: one `claude` invocation per CHUNK of sources, fanned out
+//     to one subagent per source. Dramatically cheaper on a large corpus (setup paid once
+//     per chunk, and source text never enters a prompt), but Claude-Code-specific:
+//     subagents, the Task and Read tools, `--json-schema`.
+//
+// The default stays per-source; the agent strategy is opt-in. An unrecognized value FAILS
+// rather than quietly falling back — an operator who asked for the cheap path and silently
+// got the expensive one would have no way to tell.
+const STRATEGIES = new Map([
+  ['per-source', () => claudeModel()],
+  ['agent', () => claudeAgentModel({ onDiagnostic: writeUsage })],
+]);
+
+// Cost accounting from the batch envelope, stderr only. The whole reason the agent
+// strategy exists is token cost, so it is reported rather than discarded.
+function writeUsage(event) {
+  process.stderr.write(
+    `batch-usage: sources=${event.sources} turns=${event.num_turns}` +
+      ` cache_creation_input_tokens=${event.cache_creation_input_tokens}` +
+      ` cache_read_input_tokens=${event.cache_read_input_tokens}` +
+      ` input_tokens=${event.input_tokens} output_tokens=${event.output_tokens}\n`
+  );
 }
 
 // Per-source progress (TASK-10), written to STDERR the moment a source completes so a
@@ -92,7 +125,16 @@ async function main() {
     return;
   }
 
-  const model = claudeModel();
+  const strategyName = process.env.QUOTE_MINER_STRATEGY ?? 'per-source';
+  const makeModel = STRATEGIES.get(strategyName);
+  if (makeModel === undefined) {
+    fail(
+      `unknown QUOTE_MINER_STRATEGY '${strategyName}'; expected one of: ` +
+        `${[...STRATEGIES.keys()].join(', ')}`
+    );
+    return;
+  }
+  const model = makeModel();
 
   let result;
   try {

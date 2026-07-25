@@ -6,12 +6,13 @@
 // THAT source's own bytes and quote ids are `q-<sourceId>-<n>` (scoped per source) — so
 // there is no correctness reason to serialize them.
 //
-// These tests pin the four properties that make parallelism safe:
+// These tests pin the properties that make parallelism safe:
 //   1. DETERMINISM: output order follows the ORIGINAL source order, never completion
-//      order. This is the regression guard for the whole change.
+//      order — on the per-source path AND on the batch path, where the pool schedules
+//      CHUNKS. This is the regression guard for the whole change.
 //   2. Concurrency actually happens, and stays bounded.
 //   3. concurrency: 1 is exactly the old serial path.
-//   4. Fail-fast stays atomic (FR-015/FR-016) with no unhandled rejections.
+// Fail-fast atomicity and progress semantics live in miner-concurrency-failure.test.mjs.
 //
 // Every ordering test is CAUSAL, not timing-based: the fake model hands back deferred
 // promises that the test resolves by hand, so "slowest" and "fastest" are decided by the
@@ -19,7 +20,6 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { setImmediate as tick } from 'node:timers/promises';
 import { mine } from '../src/miner.mjs';
 
 /** A promise whose settlement the test controls. */
@@ -88,6 +88,32 @@ function deferredModel() {
       } finally {
         inFlight--;
       }
+    }
+  };
+}
+
+/**
+ * The BATCH equivalent of `deferredModel`: `selectBatch` returns a deferred promise the
+ * test settles by hand, keyed by the chunk's arrival order.
+ */
+function deferredBatchModel() {
+  const gates = [];
+  const calls = [];
+  return {
+    id: 'fake-deferred-batch-model',
+    calls,
+    /** Settle the Nth chunk this model was asked about. */
+    resolve(chunkIndex) {
+      const { gate, batch } = gates[chunkIndex];
+      gate.resolve(
+        new Map(batch.map((s) => [s.id, [lineFor(Number(s.id.slice('s-'.length)))]]))
+      );
+    },
+    async selectBatch(batch) {
+      calls.push(batch.map((s) => s.id));
+      const gate = deferred();
+      gates.push({ gate, batch });
+      return gate.promise;
     }
   };
 }
@@ -187,6 +213,44 @@ test('miner: deterministic assembly under concurrency (TASK-11)', async (t) => {
       reversedResult.bank,
       forwardResult.bank,
       'the same model responses must produce an identical bank regardless of completion order'
+    );
+    assert.deepEqual(reversedResult.report, forwardResult.report);
+  });
+
+  await t.test('the BATCH path holds the same guarantee, one level up', async () => {
+    // Chunks, not sources, are what the pool schedules on the batch path, so determinism
+    // has to survive chunks completing out of order as well. Same causal technique: the
+    // test decides which chunk settles when.
+    const sources = makeSources(6).map((source) => ({ ...source, path: `/corpus/${source.id}.txt` }));
+
+    const reversedModel = deferredBatchModel();
+    const reversed = mine({ sources, model: reversedModel, chunkSize: 2, concurrency: 3 });
+    await flush();
+    assert.equal(reversedModel.calls.length, 3, 'all 3 chunks should be in flight');
+    for (let chunk = 2; chunk >= 0; chunk--) {
+      reversedModel.resolve(chunk);
+      await flush(5);
+    }
+    const reversedResult = await reversed;
+
+    const forwardModel = deferredBatchModel();
+    const forward = mine({ sources, model: forwardModel, chunkSize: 2, concurrency: 3 });
+    await flush();
+    for (let chunk = 0; chunk < 3; chunk++) {
+      forwardModel.resolve(chunk);
+      await flush(5);
+    }
+    const forwardResult = await forward;
+
+    assert.deepEqual(
+      reversedResult.bank.quotes.map((q) => q.source),
+      sources.map((s) => s.id),
+      'quotes must be in original source order however the chunks landed'
+    );
+    assert.deepEqual(
+      reversedResult.bank,
+      forwardResult.bank,
+      'chunk completion order must not change a single byte of the bank'
     );
     assert.deepEqual(reversedResult.report, forwardResult.report);
   });
@@ -338,150 +402,6 @@ test('miner: invalid concurrency throws naming the value (TASK-11)', async (t) =
       } else {
         process.env.QUOTE_MINER_CONCURRENCY = previous;
       }
-    }
-  });
-});
-
-test('miner: fail-fast stays atomic under concurrency (FR-015/FR-016)', async (t) => {
-  await t.test('one failing source fails the whole run and stops scheduling', async () => {
-    const unhandled = [];
-    const onUnhandled = (reason) => unhandled.push(reason);
-    process.on('unhandledRejection', onUnhandled);
-
-    try {
-      const sources = makeSources(8);
-      const model = deferredModel();
-      const pending = mine({ sources, model, concurrency: 4 });
-      await flush();
-      assert.equal(model.calls.length, 4);
-
-      // Source 3 (the 4th of 8) blows up while 0-2 are still in flight.
-      model.reject(3, new Error("model refused source 's-3'"));
-      await flush();
-
-      // The three in-flight peers still settle normally; the pool must absorb them
-      // rather than scheduling sources 4-7.
-      model.resolve(0);
-      model.resolve(1);
-      model.resolve(2);
-
-      await assert.rejects(pending, /model refused source 's-3'/);
-
-      assert.equal(
-        model.calls.length,
-        4,
-        `scheduling must stop after a failure; model saw ${model.calls.length} calls`
-      );
-
-      // Give Node a full turn of the event loop: an unhandled rejection would surface here.
-      await tick();
-      await tick();
-      assert.deepEqual(unhandled, [], 'a failing source must not leave an unhandled rejection');
-    } finally {
-      process.off('unhandledRejection', onUnhandled);
-    }
-  });
-
-  await t.test('no bank is produced when a source fails', async () => {
-    const sources = makeSources(4);
-    const model = {
-      id: 'fake-failing-model',
-      async select(sourceId) {
-        if (sourceId === 's-2') {
-          throw new Error('model failure after retries');
-        }
-        return [lineFor(Number(sourceId.slice('s-'.length)))];
-      }
-    };
-
-    let result = 'not-assigned';
-    await assert.rejects(async () => {
-      result = await mine({ sources, model, concurrency: 4 });
-    }, /model failure after retries/);
-    assert.equal(result, 'not-assigned', 'mine must not return a partial bank');
-  });
-
-  await t.test('concurrent failures report the first and disclose the rest', async () => {
-    const unhandled = [];
-    const onUnhandled = (reason) => unhandled.push(reason);
-    process.on('unhandledRejection', onUnhandled);
-
-    try {
-      const sources = makeSources(4);
-      const model = deferredModel();
-      const pending = mine({ sources, model, concurrency: 4 });
-      await flush();
-
-      model.reject(1, new Error('first failure: s-1'));
-      model.reject(2, new Error('second failure: s-2'));
-      model.resolve(0);
-      model.resolve(3);
-
-      await assert.rejects(pending, (err) => {
-        assert.match(err.message, /first failure: s-1/, 'the first failure is reported');
-        assert.match(err.message, /second failure: s-2/, 'other failures are not swallowed');
-        return true;
-      });
-
-      await tick();
-      await tick();
-      assert.deepEqual(unhandled, [], 'concurrent failures must not leak unhandled rejections');
-    } finally {
-      process.off('unhandledRejection', onUnhandled);
-    }
-  });
-
-  await t.test('a non-UTF-8 source still fails the run under concurrency', async () => {
-    const sources = makeSources(4);
-    sources[2] = { id: 's-2', bytes: Buffer.from([0xff, 0xfe, 0xfd]) };
-    await assert.rejects(
-      () => mine({ sources, model: immediateModel(), concurrency: 4 }),
-      /not valid UTF-8/
-    );
-  });
-});
-
-test('miner: progress under concurrency (TASK-11)', async (t) => {
-  await t.test('reports the original index plus a monotonic completed count', async () => {
-    const sources = makeSources(8);
-    const model = deferredModel();
-    const seen = [];
-
-    const pending = mine({
-      sources,
-      model,
-      concurrency: 8,
-      onProgress: (event) => seen.push(event)
-    });
-    await flush();
-
-    // Complete in reverse order: `completed` must still count 1..8 upward while `index`
-    // keeps naming the source's ORIGINAL position.
-    for (let i = 7; i >= 0; i--) {
-      model.resolve(i);
-      await flush(5);
-    }
-    await pending;
-
-    assert.equal(seen.length, 8, 'one progress event per source');
-    assert.deepEqual(
-      seen.map((e) => e.completed),
-      [1, 2, 3, 4, 5, 6, 7, 8],
-      'completed must increase monotonically so an operator sees forward motion'
-    );
-    assert.deepEqual(
-      seen.map((e) => e.id),
-      ['s-7', 's-6', 's-5', 's-4', 's-3', 's-2', 's-1', 's-0'],
-      'progress is emitted in completion order (it is a liveness signal)'
-    );
-    assert.deepEqual(
-      seen.map((e) => e.index),
-      [8, 7, 6, 5, 4, 3, 2, 1],
-      'index must stay the source ORIGINAL 1-based position, not the completion position'
-    );
-    for (const event of seen) {
-      assert.equal(event.total, 8);
-      assert.equal(event.id, `s-${event.index - 1}`, 'index and id must name the same source');
     }
   });
 });

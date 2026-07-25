@@ -28,91 +28,31 @@
 // error — it never degrades to an empty candidate list, which would silently assert
 // that the source had nothing quotable.
 //
-// NON-BLOCKING SPAWN (TASK-11): the subprocess is run with `spawn`, not `spawnSync`, and
-// `select()` awaits it. `spawnSync` would freeze the whole event loop for the duration of
-// every model call, which would silently defeat the miner's bounded-concurrency pool — the
-// pool would start N calls that still ran strictly one after another. The injected
-// `spawnImpl` seam keeps the spawnSync-shaped RESULT (`{ status, stdout, stderr, error }`);
-// it is awaited, so a synchronous test fake returning that object plainly still works.
+// NON-BLOCKING SPAWN (TASK-11): the subprocess is run with `spawn`, not `spawnSync` (see
+// src/spawn.mjs), and `select()` awaits it. The injected `spawnImpl` seam keeps the
+// spawnSync-shaped RESULT (`{ status, stdout, stderr, error }`); it is awaited, so a
+// synchronous test fake returning that object plainly still works.
+//
+// A SECOND ADAPTER exists alongside this one: src/claude-agent.mjs asks ONE `claude`
+// invocation to fan a whole BATCH of sources out to subagents. It shares this module's
+// spawn (src/spawn.mjs), retry (src/retry.mjs), selection rules and identity resolution
+// (src/claude-protocol.mjs); only the wire shape differs.
 //
 // This module performs no IO beyond the subprocess calls and does not import
 // production-control.
 
-import { spawn } from 'node:child_process';
 import { basename } from 'node:path';
-import { setTimeout as delay } from 'node:timers/promises';
 import {
   DEFAULT_COMMAND,
   TOLERANT_DEFAULT_ARGS,
+  FIDELITY_RULE,
+  CORRECTION_RULES,
   structuredArgs,
   parseStructuredResponse,
   parseTolerantResponse,
 } from './claude-protocol.mjs';
-
-const DEFAULT_MAX_ATTEMPTS = 3;
-
-/** Same output ceiling `spawnSync`'s `maxBuffer` used to enforce, kept explicit. */
-const MAX_OUTPUT_BYTES = 64 * 1024 * 1024;
-
-/**
- * Run a command to completion WITHOUT blocking the event loop, returning the same result
- * shape `spawnSync` did (`{ status, stdout, stderr, error }`) so every caller and every
- * injected fake keeps working. This never rejects: a spawn failure comes back as `error`,
- * exactly as it did before.
- *
- * @param {string} command
- * @param {string[]} args
- * @param {{ input?: string, maxBuffer?: number }} options
- * @returns {Promise<{ status: number | null, stdout: string, stderr: string, error?: Error }>}
- */
-function spawnCapture(command, args, options = {}) {
-  const maxBuffer = options.maxBuffer ?? MAX_OUTPUT_BYTES;
-  return new Promise((resolve) => {
-    let child;
-    try {
-      child = spawn(command, args, { stdio: ['pipe', 'pipe', 'pipe'] });
-    } catch (error) {
-      resolve({ status: null, stdout: '', stderr: '', error });
-      return;
-    }
-
-    let stdout = '';
-    let stderr = '';
-    let settled = false;
-    const settle = (result) => {
-      if (settled) return;
-      settled = true;
-      resolve(result);
-    };
-
-    child.stdout.setEncoding('utf8');
-    child.stderr.setEncoding('utf8');
-    child.stdout.on('data', (chunk) => {
-      stdout += chunk;
-      if (stdout.length > maxBuffer) {
-        child.kill();
-        settle({
-          status: null,
-          stdout: '',
-          stderr,
-          error: new Error(`stdout exceeded maxBuffer of ${maxBuffer} bytes`),
-        });
-      }
-    });
-    child.stderr.on('data', (chunk) => {
-      stderr += chunk;
-    });
-
-    child.on('error', (error) => settle({ status: null, stdout, stderr, error }));
-    child.on('close', (status) => settle({ status, stdout, stderr }));
-
-    // A child that exits before reading the whole prompt makes this pipe emit EPIPE. That
-    // is not a spawn failure — the exit status and stderr below are the real verdict — so
-    // it must not become an unhandled 'error' event that kills the process.
-    child.stdin.on('error', () => {});
-    child.stdin.end(options.input ?? '', 'utf8');
-  });
-}
+import { spawnCapture, MAX_OUTPUT_BYTES } from './spawn.mjs';
+import { withRetry, resolveMaxAttempts, resolveRetryDelayMs, defaultSleep } from './retry.mjs';
 
 /**
  * Build a model object bound to the `claude` CLI (or an injected override).
@@ -196,25 +136,16 @@ export function claudeModel(options = {}) {
     async select(sourceId, sourceText) {
       const prompt = buildPrompt(sourceId, sourceText, structured);
 
-      let lastError = null;
-      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-        if (attempt > 1 && retryDelayMs > 0) {
-          await sleepImpl(retryDelayMs * (attempt - 1));
-        }
-        try {
-          // `await` here is load-bearing: without it a rejected attempt would escape the
-          // catch below and skip the retry budget entirely.
-          return await attemptSelect({ command, args, prompt, spawnImpl, structured, onIdentity });
-        } catch (err) {
-          lastError = err;
-        }
-      }
-
-      throw new Error(
-        `claude model adapter: source '${sourceId}': the model call failed after ${maxAttempts} attempt(s). ` +
+      return withRetry({
+        maxAttempts,
+        retryDelayMs,
+        sleepImpl,
+        attempt: () =>
+          attemptSelect({ command, args, prompt, spawnImpl, structured, onIdentity }),
+        describeFailure: (attempts, lastError) =>
+          `claude model adapter: source '${sourceId}': the model call failed after ${attempts} attempt(s). ` +
           `last error: ${lastError.message}`,
-        { cause: lastError }
-      );
+      });
     },
   };
 
@@ -260,54 +191,6 @@ async function attemptSelect({ command, args, prompt, spawnImpl, structured, onI
 }
 
 /**
- * Attempt budget for a single source: `options.maxAttempts`, else
- * `QUOTE_MINER_MODEL_MAX_ATTEMPTS`, else 3. A nonsensical value THROWS rather than
- * being quietly clamped.
- *
- * @param {number | undefined} option
- * @returns {number}
- */
-function resolveMaxAttempts(option) {
-  const raw = option ?? process.env.QUOTE_MINER_MODEL_MAX_ATTEMPTS;
-  if (raw === undefined || raw === null || raw === '') return DEFAULT_MAX_ATTEMPTS;
-
-  const value = Number(raw);
-  if (!Number.isInteger(value) || value < 1) {
-    throw new Error(
-      `claude model adapter: maxAttempts must be an integer >= 1; got ${JSON.stringify(raw)}`
-    );
-  }
-  return value;
-}
-
-/**
- * Backoff between attempts, in ms: `options.retryDelayMs`, else
- * `QUOTE_MINER_MODEL_RETRY_DELAY_MS`, else 0. The default is 0 because the failure this
- * retry exists for is model stochasticity, not rate limiting — an immediate second
- * attempt is the right move, and it keeps the test suite fast. Operators who want a
- * pause can configure one; the delay grows linearly with the attempt number.
- *
- * @param {number | undefined} option
- * @returns {number}
- */
-function resolveRetryDelayMs(option) {
-  const raw = option ?? process.env.QUOTE_MINER_MODEL_RETRY_DELAY_MS;
-  if (raw === undefined || raw === null || raw === '') return 0;
-
-  const value = Number(raw);
-  if (!Number.isFinite(value) || value < 0) {
-    throw new Error(
-      `claude model adapter: retryDelayMs must be a number >= 0; got ${JSON.stringify(raw)}`
-    );
-  }
-  return value;
-}
-
-function defaultSleep(ms) {
-  return delay(ms);
-}
-
-/**
  * Build the selection prompt: instructs the model to point at quotable passages, copy
  * them EXACTLY as they appear in the source (OCR damage included), and — for evident
  * OCR/typographic corruption only — POINT AT corrections it proposes.
@@ -328,15 +211,9 @@ Source id: ${sourceId}
 
 Read the source text below (delimited by <<<SOURCE and SOURCE) and select the most quotable passages: memorable, self-contained, and representative statements.
 
-For each selected passage, copy it EXACTLY as it appears in the source — verbatim, byte-for-byte, character-for-character, INCLUDING any OCR errors it contains. Do NOT paraphrase. Do NOT summarize. Do NOT correct spelling, punctuation, or whitespace in the passage itself. Do NOT add or remove any characters. Copy the passage precisely as written in the source text below.
+${FIDELITY_RULE} Copy the passage precisely as written in the source text below.
 
-The source may be OCR output and may contain scanning corruption. For each passage you may separately PROPOSE corrections for that corruption. A correction names the exact corrupt substring and its correct form; it does not change the passage you copied.
-
-Rules for corrections:
-- Propose a correction ONLY for evident OCR or typographic corruption: broken or run-together words, "m" that should be "in", "oi" that should be "of", "coiony" that should be "colony", mangled proper names, stray punctuation introduced by scanning.
-- NEVER paraphrase, modernize, translate, reorder, expand abbreviations, or change meaning. Original spelling, capitalization, and period style are NOT errors and MUST be left alone.
-- "before" MUST be copied exactly from the passage, character-for-character, and must be long enough to identify the corruption unambiguously.
-- The "corrections" array may be empty. When in doubt, leave the text uncorrected.
+${CORRECTION_RULES}
 
 ${structured ? STRUCTURED_OUTPUT_INSTRUCTION : ARRAY_OUTPUT_INSTRUCTION}
 

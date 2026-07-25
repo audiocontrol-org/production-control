@@ -94,19 +94,24 @@ function combineFailures(failures) {
  * A bad value THROWS naming it rather than being clamped: silently turning `0` or `'four'`
  * into 4 would hide a misconfigured pipeline behind a run that looks fine.
  *
+ * Also used for the batch path's `chunkSize` (src/miner.mjs), which has exactly the same
+ * "positive integer, else fail loud naming it" contract — hence the `label`/`envName`
+ * knobs rather than a second copy of this function.
+ *
  * @param {unknown} option  The caller's `concurrency` argument, or undefined.
  * @param {string | undefined} envValue  Raw environment string, or undefined.
- * @param {{ envName?: string, fallback?: number }} [names]
+ * @param {{ envName?: string, fallback?: number, label?: string }} [names]
  * @returns {number}
  */
 export function resolveConcurrency(option, envValue, names = {}) {
   const envName = names.envName ?? 'QUOTE_MINER_CONCURRENCY';
   const fallback = names.fallback ?? DEFAULT_CONCURRENCY;
+  const label = names.label ?? 'concurrency';
 
   if (option !== undefined) {
     if (!isPositiveInteger(option)) {
       throw new Error(
-        `invalid concurrency ${describe(option)}: must be an integer >= 1`
+        `invalid ${label} ${describe(option)}: must be an integer >= 1`
       );
     }
     return option;
