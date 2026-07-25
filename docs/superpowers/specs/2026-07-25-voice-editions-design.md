@@ -3,7 +3,7 @@
 **Roadmap item:** `design:feature/voice-editions`
 **Date:** 2026-07-25 (revised same day after third-party review)
 **Status:** awaiting operator approval (`design-approved:` marker)
-**Blocked by:** `design:feature/artifact-adoption`
+**Blocked by:** `design:feature/content-zone-segregation`
 
 ## Problem domain
 
@@ -416,16 +416,32 @@ genuinely *is* out of date. Restaling only *reports*; rebuilding stays the
 operator's call. A model version change is producer **drift**, never an
 auto-restale (quote-bank FR-020); regeneration is a deliberate human act.
 
-**D19 — Human-edited editions depend on core artifact adoption.**
-An edition is prose, and an editorial polish pass is a normal part of its
-lifecycle, not an edge case. `src/providers/validate.ts:146` refuses to validate
-when the on-disk artifact does not match its recorded hash: rebuilding destroys
-the edit, waiving discards the fidelity proof. The fidelity validator does not care
-who wrote the prose, so a human edit *could* be proven by the same check — but
-that requires re-recording an artifact's hash without regenerating it, which is
-generic core lifecycle behavior and must not be smuggled into a domain package.
-Recorded as `design:feature/artifact-adoption` and declared as a **`depends-on`
-edge**; the roadmap now correctly reports voice-editions as blocked by it.
+**D19 — An edition is a machine artifact and is never hand-edited; human polish is a companion, and the whole feature depends on content-zone segregation.**
+An edition is AI-generated prose. This design originally proposed that a human
+would hand-polish the edition in place and the system would re-attest it, and
+declared a dependency on a core "artifact-adoption" verb. **That premise was wrong
+and is superseded.** Two facts drove the correction:
+
+1. The escape hatch this record previously named — "waiving discards the fidelity
+   proof" — does not exist. `src/cli/review.ts:136` refuses `review --waive` on a
+   *derived* node outright ("what resolves its state is a rebuild, not a human
+   decision"). A hand-edited edition has no non-destructive exit at all: `build`
+   overwrites it and `waive` is refused. There is no `resolve-edit` verb.
+2. The operator set a stricter rule than adoption: **AI-generated content must never
+   be written to a human-safe area, and an AI draft is never taken over by a human.**
+
+So an edition is treated as a machine artifact throughout its life, written to a
+dot-zoned (AI-permitted) path under `dist/` and never edited in place. A human who
+wants to work on the prose authors a **separate companion document in a human-safe
+area**, which the manifest's existing `follows` advisory edge already models ("is a
+response to," distinct from a build dependency, FR-019). The companion is authored
+content in the human zone; the edition remains the machine artifact it was.
+
+This is why the dependency is `design:feature/content-zone-segregation`, not an
+adoption verb: the feature that must land first is the enforced boundary keeping AI
+output out of the human's working area. Recorded as a **`depends-on` edge**; the
+roadmap reports voice-editions as blocked by it. See
+`docs/superpowers/specs/2026-07-25-content-zone-segregation-design.md`.
 
 **D20 — Failure levels, mirroring quote-bank FR-015.**
 A source unit the producer cannot account for fails the run with **no partial
@@ -562,9 +578,12 @@ constituent is edited. Silent staleness. Three candidates, none chosen:
 
 Recorded so relationships are visible on the roadmap rather than folklore.
 
-- **`design:feature/artifact-adoption` — a declared `depends-on` blocker (D19).**
-  Human editorial polish is normal for this artifact type, and production-control
-  cannot currently adopt hand-edited bytes without regeneration.
+- **`design:feature/content-zone-segregation` — a declared `depends-on` blocker (D19).**
+  An edition is AI-generated prose and must never land in a human's working area; the
+  segregation invariant (impure output confined to dot-zoned paths) must exist before
+  editions can be produced safely. This supersedes the earlier "artifact-adoption"
+  blocker — a human never hand-edits an edition, so there is nothing to adopt; human
+  polish is a `follows` companion in a human-safe area.
 - **`design:feature/directory-outputs` (TASK-1) — deliberately not a blocker.** Two
   distinct rules confirmed: `onlyOutput` (exactly one output per target,
   `invoke.ts:101`) is deliberate and directory support would *not* relax it;
@@ -634,16 +653,19 @@ Plus:
   and reports no validation verdict of its own.
 - **Integration** — end-to-end `pc build` / `pc validate` over a fixture episode,
   including restale-on-voice-edit and drift-on-model-version (D18).
-- **Lifecycle** — a hand-edited artifact passes `voice fidelity` directly yet cannot
-  be adopted, demonstrating the D19 dependency.
+- **Lifecycle** — an edition written to a human-safe (dot-free) path is refused by the
+  segregation gate, and a human polish *companion* authored in a human-safe area
+  `follows` the edition without the edition itself ever being marked `modified`,
+  demonstrating the D19 dependency on content-zone segregation.
 
 ## Provenance
 
 - **Design backend:** `superpowers:brainstorming`, driven in-session by
   `/stack-control:design` under house-rules block `stack-control-design-v1`.
-- **Roadmap:** `design:feature/voice-editions`, added 2026-07-25;
-  `design:feature/artifact-adoption` added the same day and recorded as a
-  `depends-on` blocker.
+- **Roadmap:** `design:feature/voice-editions`, added 2026-07-25; its blocker was
+  added the same day as `design:feature/artifact-adoption` and later reclassified to
+  `design:feature/content-zone-segregation` when its own design reframed it from
+  adopt-the-edit to prevent-the-collision. Recorded as a `depends-on` blocker.
 - **Originating spike:** `nouvelle-france`, branch `spike/codex-authorship`, commit
   `a8aa7d5` (39 files, +1495). Worktree
   `/Users/orion/work/nouvelle-france-codex-authorship`.
