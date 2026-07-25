@@ -8,11 +8,18 @@
 // a bad source id (FR-018), invalid UTF-8, or a model rejection (FR-015b/016) all throw
 // before or instead of returning. It reports no validation verdict — acceptance is the
 // independent validator's job (FR-013).
+//
+// THREE COLLABORATORS, one concern each: src/grounding.mjs owns the fidelity step (shared
+// by every seam so it cannot be reimplemented), src/miner-batch.mjs owns the `selectBatch`
+// seam, and src/cache.mjs owns the per-source result cache that makes a killed run
+// resumable. This file owns orchestration, the per-source seam, and assembly.
 
 import { stringify } from 'yaml';
 import { buildSourceMap } from './validator.mjs';
-import { normalizeCandidates, buildQuote } from './corrections.mjs';
 import { mapWithConcurrency, resolveConcurrency } from './pool.mjs';
+import { openCache } from './cache.mjs';
+import { groundSource, decodeUtf8OrThrow, resolveModelIdentity } from './grounding.mjs';
+import { mineInBatches, replayCached, DEFAULT_CHUNK_SIZE } from './miner-batch.mjs';
 
 /**
  * Mine grounded quotes from a corpus of sources using an injected model.
@@ -69,10 +76,21 @@ import { mapWithConcurrency, resolveConcurrency } from './pool.mjs';
  * non-integer or `< 1` value throws naming it — and is validated on BOTH paths, so a
  * misconfigured environment surfaces rather than lurking until someone opts into batching.
  *
+ * RESUMABILITY (`cacheDir`, else `QUOTE_MINER_CACHE_DIR`, else OFF — see src/cache.mjs).
+ * Mining is atomic, so a killed run or one bad answer at source 59 used to discard every
+ * completed source. With a cache configured, each source's MODEL OUTPUT is persisted the
+ * instant that source completes, and a later run skips the model for anything already on
+ * disk. ONLY the model call is skipped: grounding, correction verification, and assembly run
+ * on the identical code path, so a cached candidate is verified against the current bytes
+ * exactly like a fresh one and the cache can never introduce an ungrounded quote. Ordering
+ * is unaffected — the bank and `report.per_source` stay in ORIGINAL source order whatever
+ * was cached.
+ *
  * @param {{
  *   sources: Array<{ id: string, path?: string, bytes: Buffer }>,
  *   model: {
  *     id: string,
+ *     resolvedId?: () => string,
  *     select?: (sourceId: string, sourceText: string) =>
  *       Promise<Array<string | { text: string, corrections?: Array<{ before: string, after: string }> }>>,
  *     selectBatch?: (sources: Array<{ id: string, path: string }>) =>
@@ -80,15 +98,17 @@ import { mapWithConcurrency, resolveConcurrency } from './pool.mjs';
  *   },
  *   concurrency?: number,
  *   chunkSize?: number,
+ *   cacheDir?: string,
  *   onProgress?: (event: {
  *     index: number, completed: number, total: number, id: string,
  *     selected: number, grounded: number, omitted: number,
- *     corrections_proposed: number, corrections_applied: number, corrections_dropped: number
+ *     corrections_proposed: number, corrections_applied: number, corrections_dropped: number,
+ *     from_cache: boolean
  *   }) => void
  * }} args
  * @returns {Promise<{ bank: object, report: object }>}
  */
-export async function mine({ sources, model, onProgress, concurrency, chunkSize }) {
+export async function mine({ sources, model, onProgress, concurrency, chunkSize, cacheDir }) {
   // FR-018: enforce the source-id mapping BEFORE processing any quote. A duplicate,
   // case-collision, or invalid (path/control-char) id fails the whole run loud.
   const { errors } = buildSourceMap(sources);
@@ -104,6 +124,10 @@ export async function mine({ sources, model, onProgress, concurrency, chunkSize 
     label: 'chunkSize'
   });
 
+  // `null` when no location was configured — the default, and byte-for-byte today's
+  // behaviour (no directory created, no file written, no entry read).
+  const cache = openCache({ cacheDir });
+
   const total = sources.length;
   let completed = 0;
 
@@ -112,22 +136,26 @@ export async function mine({ sources, model, onProgress, concurrency, chunkSize 
   // (its original 1-based position). Neither influences assembly below. It fires per
   // SOURCE on both paths — a batch reports its sources as the batch returns, never one
   // event per chunk, so the operator still sees per-source motion.
+  //
+  // `from_cache` rides on the event (not on `counts`) so `report.per_source` keeps EXACTLY
+  // the shape it has always had: a resumed run's per-source counts must be comparable to
+  // the original run's, and they would not be if a provenance flag were mixed into them.
   const emitProgress = (index, result) => {
     completed++;
     if (onProgress !== undefined) {
-      onProgress({ index: index + 1, completed, total, ...result.counts });
+      onProgress({ index: index + 1, completed, total, ...result.counts, from_cache: result.fromCache });
     }
   };
 
   const mined =
     typeof model.selectBatch === 'function'
-      ? await mineInBatches({ sources, model, limit, batchSize, emitProgress })
+      ? await mineInBatches({ sources, model, limit, batchSize, cache, emitProgress })
       : // The pool returns per-source results in ORIGINAL index order regardless of which
         // source finished first (src/pool.mjs), and it fails the whole run on the first
         // error without leaving in-flight work unhandled — preserving FR-015/FR-016
         // atomicity.
         await mapWithConcurrency(sources, limit, async (source, index) => {
-          const result = await mineSource(source, model);
+          const result = await mineSource(source, model, cache);
           emitProgress(index, result);
           return result;
         });
@@ -140,10 +168,26 @@ export async function mine({ sources, model, onProgress, concurrency, chunkSize 
   let totalApplied = 0;
   let totalDropped = 0;
 
+  // Which sources were served from the cache, and every model identity that contributed to
+  // this bank. Both are collected in original source order, so a resumed run's report is as
+  // deterministic as its bank.
+  const cachedSources = [];
+  const identities = new Set();
+  // Read the model's identity ONCE, AFTER mining (AUDIT-21/FR-020): an adapter only learns
+  // the real model from the CLI's response envelope, so an early read would record the
+  // command name and hide a model swap.
+  const freshIdentity = resolveModelIdentity(model);
+
   // DETERMINISTIC ASSEMBLY: walk the slots in original source order, never completion
   // order, so two runs over the same corpus with the same model responses are byte
   // identical.
   for (const result of mined) {
+    if (result.fromCache) {
+      cachedSources.push(result.counts.id);
+      identities.add(result.modelIdentity);
+    } else {
+      identities.add(freshIdentity);
+    }
     quotes.push(...result.quotes);
     totalSelected += result.counts.selected;
     totalGrounded += result.counts.grounded;
@@ -172,94 +216,26 @@ export async function mine({ sources, model, onProgress, concurrency, chunkSize 
     corrections_proposed: totalProposed,
     corrections_applied: totalApplied,
     corrections_dropped: totalDropped,
+    // RESUMPTION DISCLOSURE. A run that was mostly served from disk looks suspiciously fast
+    // and cheap; saying so is the difference between "resumed" and "silently did less".
+    // `cache_entries_ignored` counts entries that existed but were unusable (wrong protocol
+    // version, corrupt, unreadable) — a rotting cache is visible instead of merely slow.
+    sources_from_cache: cachedSources.length,
+    cached_sources: cachedSources,
+    cache_entries_ignored: cache === null ? 0 : cache.stats().ignored,
+    // PROVENANCE, NOT UNIFORMITY. A resumed run can legitimately mix models: sources cached
+    // under yesterday's model plus sources mined fresh under today's. Forbidding the mix
+    // would throw away exactly the completed work the cache exists to preserve, so the mix
+    // is allowed and DISCLOSED instead — every identity that contributed is listed, sorted
+    // for determinism, and callers stamping provenance must report the plurality rather
+    // than picking one and implying the bank came from a single model.
+    model_identities: [...identities].sort(),
     // Ordered by original source index (see the assembly loop above), not by which
     // source the pool happened to finish first.
     per_source: mined.map((result) => result.counts)
   };
 
   return { bank, report };
-}
-
-/** Sources per batch model call when neither the option nor the env var says otherwise. */
-const DEFAULT_CHUNK_SIZE = 10;
-
-/**
- * Mine every source through the BATCH seam: partition the corpus into chunks, ask the
- * model about one chunk per call, and ground each answer against the bytes WE loaded.
- *
- * Chunks are dispatched through the same bounded pool the per-source path uses, so the
- * concurrency bound now counts in-flight CHUNKS (each of which fans out internally). The
- * pool returns chunk results in original chunk order, and each chunk's results are in
- * source order within it, so flattening yields exactly the original source order — the
- * same determinism guarantee, one level up.
- *
- * @param {{
- *   sources: Array<{ id: string, path?: string, bytes: Buffer }>,
- *   model: { id: string, selectBatch: Function },
- *   limit: number,
- *   batchSize: number,
- *   emitProgress: (index: number, result: object) => void
- * }} args
- * @returns {Promise<Array<{ quotes: object[], counts: object }>>}
- */
-async function mineInBatches({ sources, model, limit, batchSize, emitProgress }) {
-  // A source with no path cannot be handed to a batch adapter (which gives paths to
-  // subagents rather than shipping text). Fail BEFORE any model call, naming it: quietly
-  // dropping it, or quietly falling back to the per-source seam, would silently change
-  // what the corpus contains.
-  const pathless = sources.filter((s) => typeof s.path !== 'string' || s.path.length === 0);
-  if (pathless.length > 0) {
-    throw new Error(
-      `miner: the model exposes selectBatch, which mines sources by path, but ` +
-        `${pathless.length} source(s) have no 'path': ${pathless.map((s) => s.id).join(', ')}`
-    );
-  }
-
-  const chunks = [];
-  for (let start = 0; start < sources.length; start += batchSize) {
-    chunks.push({ offset: start, items: sources.slice(start, start + batchSize) });
-  }
-
-  const minedChunks = await mapWithConcurrency(chunks, limit, async ({ offset, items }) => {
-    // Decode with FATAL first, exactly as the per-source path does: a non-UTF-8 source
-    // fails the run (FR-015b/016) rather than being sent to a model.
-    for (const source of items) {
-      decodeUtf8OrThrow(source.id, source.bytes);
-    }
-
-    // Impure step: ONE model call for the whole chunk. Only ids and paths cross this
-    // boundary — never bytes.
-    const answered = await model.selectBatch(items.map(({ id, path }) => ({ id, path })));
-    if (!(answered instanceof Map)) {
-      throw new Error(
-        `miner: model '${model.id}' selectBatch must resolve to a Map of source id -> candidates; ` +
-          `got ${Object.prototype.toString.call(answered)}`
-      );
-    }
-
-    const results = [];
-    for (let i = 0; i < items.length; i++) {
-      const source = items[i];
-      if (!answered.has(source.id)) {
-        // NOT "nothing quotable": an unanswered source is an unanswered question. Recording
-        // it as an empty result would be a false-clean (TASK-15).
-        throw new Error(
-          `miner: model '${model.id}' returned no answer for requested source '${source.id}'; ` +
-            'a missing answer is not the same as a source with nothing quotable'
-        );
-      }
-      const result = groundSource(
-        source,
-        answered.get(source.id),
-        `miner: model '${model.id}' on source '${source.id}'`
-      );
-      emitProgress(offset + i, result);
-      results.push(result);
-    }
-    return results;
-  });
-
-  return minedChunks.flat();
 }
 
 /**
@@ -270,91 +246,45 @@ async function mineInBatches({ sources, model, limit, batchSize, emitProgress })
  * unit: it touches no shared accumulator, so nothing here depends on the order sources are
  * processed in. Grounding semantics are unchanged (FR-014).
  *
+ * A CACHE HIT SKIPS THE MODEL CALL AND NOTHING ELSE. The decode still runs (a non-UTF-8
+ * source must fail whether or not someone once mined it) and grounding still runs against
+ * this source's current bytes, so a cached candidate is held to exactly the same standard
+ * as a fresh one.
+ *
  * @param {{ id: string, bytes: Buffer }} source
  * @param {{ id: string, select: Function }} model
- * @returns {Promise<{ quotes: object[], counts: object }>}
+ * @param {{ read: Function, write: Function } | null} cache
+ * @returns {Promise<{ quotes: object[], counts: object, fromCache: boolean }>}
  */
-async function mineSource(source, model) {
+async function mineSource(source, model, cache) {
   // Decode with FATAL so invalid UTF-8 throws. A non-UTF-8 source fails the run
   // (FR-015b/016) — no partial bank, no catch-and-continue.
   const text = decodeUtf8OrThrow(source.id, source.bytes);
+
+  const entry = cache === null ? null : cache.read(source);
+  if (entry !== null) return replayCached(source, entry);
 
   // Impure step: the model points at candidate passages (and may propose OCR
   // corrections for them). A model rejection propagates and fails the run.
   const candidates = await model.select(source.id, text);
 
-  return groundSource(source, candidates, `miner: model '${model.id}' on source '${source.id}'`);
-}
+  const result = groundSource(
+    source,
+    candidates,
+    `miner: model '${model.id}' on source '${source.id}'`
+  );
+  result.fromCache = false;
+  result.modelIdentity = null;
 
-/**
- * GROUND a source's candidates: the one place a passage becomes a quote, shared by BOTH
- * model seams so they cannot drift apart.
- *
- * THE FIDELITY INVARIANT LIVES HERE. Grounding is `bytes.indexOf` against the bytes the
- * CALLER loaded for this source — never against whatever the model, or a subagent that
- * read the file itself, claims the file says. A candidate that is not an exact byte
- * substring of those bytes is OMITTED (FR-014). That is why fanning selection out to
- * subagents changes nothing about fidelity: a subagent that misreads, paraphrases, or
- * hallucinates produces candidates that simply fail to ground, exactly as a hallucinating
- * single model's did.
- *
- * @param {{ id: string, bytes: Buffer }} source
- * @param {unknown[]} rawCandidates  whatever the model returned, unnormalized
- * @param {string} context  names the producer, for error messages
- * @returns {{ quotes: object[], counts: object }}
- */
-function groundSource({ id, bytes }, rawCandidates, context) {
-  const candidates = normalizeCandidates(rawCandidates, context);
-
-  const quotes = [];
-  let grounded = 0;
-  let omitted = 0;
-  let proposed = 0;
-  let applied = 0;
-  let dropped = 0;
-
-  for (const candidate of candidates) {
-    // Ground by copying EXACT bytes: is the candidate an exact byte substring of
-    // THIS source? (UTF-8 bytes, no normalization.)
-    const candBuf = Buffer.from(candidate.text, 'utf8');
-    if (bytes.indexOf(candBuf) >= 0) {
-      // The grounded source bytes are the span's `raw` — always, uncorrected. Any
-      // proposed correction is verified against those bytes, disclosed as an
-      // `ocr-fix`, and `text` is derived mechanically (src/corrections.mjs).
-      // Corrections are only counted for GROUNDED candidates: an omitted candidate
-      // has no `raw` to verify a correction against.
-      //
-      // The `<n>` in the id counts grounded quotes WITHIN this source, so ids stay
-      // stable no matter how many sources run at once.
-      const built = buildQuote({
-        id: `q-${id}-${grounded}`,
-        source: id,
-        raw: candidate.text,
-        corrections: candidate.corrections
-      });
-      quotes.push(built.quote);
-      proposed += built.proposed;
-      applied += built.applied;
-      dropped += built.dropped;
-      grounded++;
-    } else {
-      // Ungrounded: OMIT it (never emit an unverified passage — FR-014).
-      omitted++;
-    }
+  // Written the MOMENT this source completes — not at the end of the run. Writing at the
+  // end would cache nothing in the one case the cache exists for: a run that dies partway.
+  // Persisting only after grounding normalized the candidates keeps a model protocol
+  // violation from sticking to the corpus forever.
+  if (cache !== null) {
+    cache.write(source, { modelIdentity: resolveModelIdentity(model), candidates });
   }
 
-  return {
-    quotes,
-    counts: {
-      id,
-      selected: candidates.length,
-      grounded,
-      omitted,
-      corrections_proposed: proposed,
-      corrections_applied: applied,
-      corrections_dropped: dropped
-    }
-  };
+  return result;
 }
 
 /**
@@ -365,20 +295,4 @@ function groundSource({ id, bytes }, rawCandidates, context) {
  */
 export function serializeBank(bank) {
   return stringify(bank);
-}
-
-/**
- * Decode source bytes to UTF-8 text with FATAL decoding, throwing a named error if the
- * bytes are not valid UTF-8.
- *
- * @param {string} id
- * @param {Buffer} bytes
- * @returns {string}
- */
-function decodeUtf8OrThrow(id, bytes) {
-  try {
-    return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
-  } catch {
-    throw new Error(`source '${id}' is not valid UTF-8`);
-  }
 }

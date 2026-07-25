@@ -72,9 +72,21 @@ omitted_ungrounded: 12
 sources_processed: 5
 sources_skipped: 0
 sources_failed: 0
+sources_from_cache: 3
+cached_sources: lincoln-1863, douglass-1852, thoreau-1849
+cache_entries_ignored: 0
+model_identities: claude-opus-5
 ```
 
 A bank may pass fidelity while the report reveals weak selection — the two are separate.
+
+`sources_from_cache` and friends disclose a **resumed** run (`QUOTE_MINER_CACHE_DIR`, off by
+default): the miner persists each source's model output as that source completes, so a killed
+run's completed work survives it and the next run only pays for the misses. Only the model
+call is skipped — grounding always re-runs against the current bytes, so the cache can never
+introduce an ungrounded passage. If a resumed run mixes models, every contributing identity
+is listed, the report warns loudly, and `tool.version` becomes `0.1.0+mixed(<id>+<id>)` over
+the sorted list rather than claiming a single model produced the bank.
 
 ## Failure levels (FR-015/FR-016)
 
