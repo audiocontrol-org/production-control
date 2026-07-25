@@ -51,6 +51,19 @@ export const ArtifactRecordSchema = z.object({
     .object({
       state: z.enum(['passed', 'failed']),
       at: z.string().datetime({ offset: true }),
+      /**
+       * What the validator NAMED, verbatim (contract in `src/providers/contract.ts` §
+       * ValidateResponse). Recorded because `failed` is a durable claim and FR-007's rule —
+       * a state without a cause is not a report — does not stop applying once the terminal
+       * scrollback is gone: `pc status` says `failed` months later, and re-running the
+       * validator to find out why may be impossible (the tool moved, an input moved).
+       *
+       * OPTIONAL, and absent when the validator named nothing, for two reasons: every ledger
+       * written before this field existed must still parse (they are committed history), and
+       * an empty list would say something the validator did not say. A verdict REPLACES its
+       * predecessor whole (`recordVerdict`), so reasons never outlive the failure they explain.
+       */
+      errors: z.array(z.string()).optional(),
     })
     .optional(),
 });
