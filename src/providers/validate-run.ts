@@ -5,15 +5,25 @@ import {
   type ValidateResponse,
 } from '@/providers/contract.js';
 import type { ValidatorDecl } from '@/manifest/schema.js';
+import { collectStderr, type DiagnosticSink } from '@/providers/diagnostics.js';
 
 /**
  * Runs a validator (contract in `contract.ts` § ValidateRequest/Response). A validator is a
  * subprocess like a provider, but it JUDGES an existing artifact instead of producing one, so it
  * has its own request/response shape. Kept as an interface for the same reason the provider runner
  * is: a test substitutes a runner that spawns nothing.
+ *
+ * `onDiagnostic` receives the validator's stderr as it arrives, for the same reason the provider
+ * runner takes one (`diagnostics.ts`) — and with a sharper edge here: a validator that PASSES can
+ * still have a great deal to say, and a verdict is not a report. Optional; absent means
+ * accumulate-only, exactly as before it existed.
  */
 export interface ValidatorRunner {
-  run(request: ValidateRequest, decl: ValidatorDecl): Promise<ValidateResponse>;
+  run(
+    request: ValidateRequest,
+    decl: ValidatorDecl,
+    onDiagnostic?: DiagnosticSink
+  ): Promise<ValidateResponse>;
 }
 
 interface Invocation {
@@ -32,9 +42,13 @@ interface Invocation {
  */
 export function subprocessValidatorRunner(): ValidatorRunner {
   return {
-    async run(request: ValidateRequest, decl: ValidatorDecl): Promise<ValidateResponse> {
+    async run(
+      request: ValidateRequest,
+      decl: ValidatorDecl,
+      onDiagnostic?: DiagnosticSink
+    ): Promise<ValidateResponse> {
       const command = commandOf(decl);
-      const invocation = await invoke(command, decl.cmd.slice(1), request);
+      const invocation = await invoke(command, decl.cmd.slice(1), request, onDiagnostic);
 
       if (invocation.signal !== null) {
         throw new Error(
@@ -85,26 +99,33 @@ function commandOf(decl: ValidatorDecl): string {
   return command;
 }
 
+/**
+ * Spawns the validator and feeds it the request, teeing stderr to `onDiagnostic` as it arrives
+ * while still accumulating every byte for the failure message (see `run.ts`'s `invoke`, which
+ * this mirrors deliberately: the two runners must not drift into treating diagnostics differently).
+ */
 function invoke(
   command: string,
   args: readonly string[],
-  request: ValidateRequest
+  request: ValidateRequest,
+  onDiagnostic?: DiagnosticSink
 ): Promise<Invocation> {
   return new Promise<Invocation>((resolve, reject) => {
     const child = childProcess.spawn(command, [...args], { stdio: ['pipe', 'pipe', 'pipe'] });
 
     const stdout: Buffer[] = [];
-    const stderr: Buffer[] = [];
+    const stderr = collectStderr(onDiagnostic);
     child.stdout.on('data', (chunk: Buffer) => stdout.push(chunk));
-    child.stderr.on('data', (chunk: Buffer) => stderr.push(chunk));
+    child.stderr.on('data', (chunk: Buffer) => stderr.accept(chunk));
 
     child.on('error', (error: NodeJS.ErrnoException) => {
       reject(new Error(describeSpawnFailure(command, error), { cause: error }));
     });
     child.on('close', (code: number | null, signal: NodeJS.Signals | null) => {
+      stderr.flush();
       resolve({
         stdout: Buffer.concat(stdout).toString('utf8'),
-        stderr: Buffer.concat(stderr).toString('utf8'),
+        stderr: stderr.text(),
         code,
         signal,
       });

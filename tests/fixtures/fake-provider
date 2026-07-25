@@ -23,6 +23,8 @@
 //   undeclared  -> exit 0, but an extra file appears in output_dir the response never named
 //                  (Rule 5: "a provider MUST declare everything it produces")
 //   impure      -> declares impure + emits content that differs per run
+//   progress    -> streams per-item progress to stderr and then SUCCEEDS (the shape a long
+//                  build has: diagnostics on stderr, response on stdout, exit 0)
 //   (unset)     -> deterministic, honest behaviour (the default and the point of this fixture)
 
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -110,12 +112,20 @@ async function main() {
     return;
   }
 
-  if (!['', 'silent', 'undeclared', 'impure'].includes(mode)) {
+  if (!['', 'silent', 'undeclared', 'impure', 'progress'].includes(mode)) {
     throw new MalformedRequestError(`unknown FAKE_PROVIDER_MODE: ${mode}`);
   }
 
   mkdirSync(request.output_dir, { recursive: true });
   const outputName = `${request.target}.out`;
+
+  if (mode === 'progress') {
+    // A real provider streams progress to stderr precisely so a long run is observable. This
+    // mode then falls through to the honest default path -- the point being that these lines
+    // are emitted by a run that SUCCEEDS, which is the case production-control used to discard.
+    process.stderr.write('fake-provider: progress: 1/2 first-source\n');
+    process.stderr.write('fake-provider: progress: 2/2 second-source\n');
+  }
 
   if (mode === 'silent') {
     // Exit 0 with no outputs at all. The contract's Rule 7 calls this a failure that

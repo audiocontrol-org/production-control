@@ -33,9 +33,18 @@ import { subprocessValidatorRunner } from '@/providers/validate-run.js';
  * `pc build` is the path that records new bytes, because `pc build` records what it produced.
  */
 
-/** What the provider judged, and about which artifact. */
+/**
+ * What the provider judged, and about which artifact.
+ *
+ * `errors` is what the judgement NAMED — the validator's own prose, verbatim and in its order.
+ * A verdict word alone is nearly as unactionable as no verdict: the entire reason an independent
+ * deterministic validator exists is that it can say *which* quote, *which* span, *which* byte.
+ * Empty when nothing was named (a pass, or the producer self-report path, whose channel —
+ * `BuildValidation` — carries no errors at all).
+ */
 export interface Verdict {
   readonly state: 'passed' | 'failed';
+  readonly errors: readonly string[];
   readonly record: ArtifactRecord;
 }
 
@@ -81,6 +90,8 @@ export async function validateTarget(context: BuildContext, id: Identity): Promi
       target: id,
       inputs,
       outputDir,
+      // Spread-guarded for `exactOptionalPropertyTypes`, as in `build.ts`.
+      ...(context.onDiagnostic !== undefined ? { onDiagnostic: context.onDiagnostic } : {}),
     });
 
     if (output.hash !== existing.output.hash) {
@@ -103,8 +114,10 @@ export async function validateTarget(context: BuildContext, id: Identity): Promi
       );
     }
 
-    const record = await recordVerdict(context, id, existing, validation.state);
-    return { state: validation.state, record };
+    // The producer's self-report channel has no errors field (contract § BuildValidation), so
+    // there is nothing to name here. Its stderr is teed to the operator as it runs.
+    const record = await recordVerdict(context, id, existing, validation.state, []);
+    return { state: validation.state, errors: [], record };
   } finally {
     await fs.rm(outputDir, { recursive: true, force: true });
   }
@@ -158,9 +171,16 @@ async function validateWithDeclaredValidator(
     inputs,
   };
 
-  const response = await subprocessValidatorRunner().run(request, validator);
-  const record = await recordVerdict(context, id, existing, response.state);
-  return { state: response.state, record };
+  // The validator's own stderr is teed to the operator as it runs: a validator that passes can
+  // still report a great deal (weak selection, advisories, counts), and a verdict is not a report.
+  const response = await subprocessValidatorRunner().run(request, validator, context.onDiagnostic);
+
+  // Everything the validator named, carried through untouched. Absent `errors` is normalized to
+  // an empty list — "named nothing" is one fact, not two — and never to a stand-in message: the
+  // caller renders what the validator said, or says nothing on its behalf.
+  const errors = response.errors ?? [];
+  const record = await recordVerdict(context, id, existing, response.state, errors);
+  return { state: response.state, errors, record };
 }
 
 /**
@@ -171,14 +191,33 @@ async function validateWithDeclaredValidator(
  * rewrite `inputs`, `output`, `producer`, or `built_at`, or a gate would be quietly claiming to
  * have produced something. The ledger is re-read for the same reason `build.ts` re-reads it —
  * nothing else in it may be disturbed.
+ *
+ * The verdict's REASONS are recorded with it. A `failed` in the ledger is read long after the run
+ * that produced it — `pc status` reports it forever — and a durable claim of a defect that names
+ * no defect is the same unactionable report FR-007 forbids elsewhere. They are recorded in full
+ * rather than capped: a cap would drop findings, and a validator that names a great many is
+ * describing an artifact with a great many things wrong with it. `validation` is rebuilt whole on
+ * every verdict, so a later pass clears the earlier failure's reasons rather than leaving them to
+ * be read as current.
  */
 async function recordVerdict(
   context: BuildContext,
   id: Identity,
   existing: ArtifactRecord,
-  state: 'passed' | 'failed'
+  state: 'passed' | 'failed',
+  errors: readonly string[]
 ): Promise<ArtifactRecord> {
-  const updated: ArtifactRecord = { ...existing, validation: { state, at: context.at } };
+  const updated: ArtifactRecord = {
+    ...existing,
+    validation: {
+      state,
+      at: context.at,
+      // Spread-guarded for `exactOptionalPropertyTypes`: an absent `errors` is what every ledger
+      // written before this field existed looks like, and an empty array would claim the
+      // validator produced a list when it produced none.
+      ...(errors.length > 0 ? { errors: [...errors] } : {}),
+    },
+  };
 
   const current = await readLedger(context.episodeDir);
   await writeLedger(context.episodeDir, {

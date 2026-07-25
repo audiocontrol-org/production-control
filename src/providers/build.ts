@@ -8,6 +8,7 @@ import type { ArtifactRecord, Ledger } from '@/ledger/schema.js';
 import { readLedger, writeLedger } from '@/ledger/store.js';
 import type { Identity, ProviderDecl } from '@/manifest/schema.js';
 import type { BuildImpure, BuildInput, BuildResponse } from '@/providers/contract.js';
+import type { DiagnosticSink } from '@/providers/diagnostics.js';
 import { resolveInputs } from '@/providers/inputs.js';
 import { invokeProvider, type ProducedOutput } from '@/providers/invoke.js';
 import type { ProviderRunner } from '@/providers/run.js';
@@ -77,6 +78,16 @@ export interface BuildContext {
    * It is RECORDED and never read back by any decision: nothing in `src/state/` looks at it.
    */
   readonly at: string;
+  /**
+   * Where a spawned provider's or validator's stderr goes WHILE it runs (`diagnostics.ts`).
+   *
+   * A seam, not a stream: this layer must not know that an operator's terminal exists. The CLI
+   * binds one that writes to `process.stderr`; a test binds one that appends to an array; absent
+   * means accumulate-only, which is what everything got before this existed. It is on the CONTEXT
+   * rather than on the injected `runner` because the validator path spawns a second kind of
+   * subprocess this module does not construct, and both must reach the same operator.
+   */
+  readonly onDiagnostic?: DiagnosticSink;
 }
 
 /**
@@ -102,6 +113,9 @@ export async function buildTarget(context: BuildContext, id: Identity): Promise<
       target: id,
       inputs,
       outputDir,
+      // Spread-guarded: under `exactOptionalPropertyTypes` a present-but-undefined sink is a
+      // different thing from an absent one.
+      ...(context.onDiagnostic !== undefined ? { onDiagnostic: context.onDiagnostic } : {}),
     });
 
     // An IMPURE output is not reproducible: regenerating it yields different bytes, so it IS the

@@ -49,8 +49,18 @@ async function main() {
     process.exit(0);
   }
   if (mode === 'fail') {
+    // TWO errors, in the shape a real validator emits (specs/002-quote-bank/contracts/
+    // quote-validator.md): each one NAMES the defect. A single error would let a rendering that
+    // shows only the first pass, and "which of these did it show?" is the whole question here.
     process.stdout.write(
-      JSON.stringify({ version: 1, state: 'failed', errors: ['fake-validator: FAKE_VALIDATOR_MODE=fail'] })
+      JSON.stringify({
+        version: 1,
+        state: 'failed',
+        errors: [
+          "quote 'q-076-3' (source PB-P076): span 1 raw is not a substring of the source",
+          "quote 'q-081-2': reconstruction does not match recorded text; first difference at byte 42",
+        ],
+      })
     );
     process.exit(0);
   }
