@@ -17,12 +17,24 @@
 
 import { spawnSync } from 'node:child_process';
 import { basename } from 'node:path';
+import { normalizeCandidates } from './corrections.mjs';
 
 /**
  * Build a model object bound to the `claude` CLI (or an injected override).
  *
+ * `select()` resolves to candidates in the OBJECT shape
+ * `{ text, corrections: [{ before, after }] }` — `text` is the passage as it appears in
+ * the source (OCR damage included) and `corrections` are merely PROPOSED. The model
+ * never controls the emitted bytes: the miner verifies each proposal against the
+ * grounded source bytes and derives the presentation mechanically. A model that answers
+ * with plain strings (the legacy shape) is normalized to zero corrections.
+ *
  * @param {{ command?: string, args?: string[], spawnImpl?: typeof spawnSync, modelId?: string }} [options]
- * @returns {{ id: string, select(sourceId: string, sourceText: string): Promise<string[]> }}
+ * @returns {{
+ *   id: string,
+ *   select(sourceId: string, sourceText: string):
+ *     Promise<Array<{ text: string, corrections: Array<{ before: string, after: string }> }>>
+ * }}
  */
 export function claudeModel(options = {}) {
   const modelCmdOverride = process.env.QUOTE_MINER_MODEL_CMD;
@@ -77,8 +89,10 @@ export function claudeModel(options = {}) {
 }
 
 /**
- * Build the selection prompt: instructs the model to point at quotable passages and
- * return them EXACTLY as they appear in the source, as a bare JSON array of strings.
+ * Build the selection prompt: instructs the model to point at quotable passages,
+ * copy them EXACTLY as they appear in the source (OCR damage included), and — for
+ * evident OCR/typographic corruption only — POINT AT corrections it proposes. The
+ * response is a bare JSON array of `{ text, corrections }` objects.
  *
  * @param {string} sourceId
  * @param {string} sourceText
@@ -91,10 +105,18 @@ Source id: ${sourceId}
 
 Read the source text below (delimited by <<<SOURCE and SOURCE) and select the most quotable passages: memorable, self-contained, and representative statements.
 
-For each selected passage, copy it EXACTLY as it appears in the source — verbatim, byte-for-byte, character-for-character. Do NOT paraphrase. Do NOT summarize. Do NOT correct spelling, punctuation, or whitespace. Do NOT add or remove any characters. Copy the passage precisely as written in the source text below.
+For each selected passage, copy it EXACTLY as it appears in the source — verbatim, byte-for-byte, character-for-character, INCLUDING any OCR errors it contains. Do NOT paraphrase. Do NOT summarize. Do NOT correct spelling, punctuation, or whitespace in the passage itself. Do NOT add or remove any characters. Copy the passage precisely as written in the source text below.
 
-Output ONLY a JSON array of strings, with no prose, no explanation, no markdown code fence, and no commentary before or after it. The entire response must be valid JSON, for example:
-["first exact passage", "second exact passage"]
+The source may be OCR output and may contain scanning corruption. For each passage you may separately PROPOSE corrections for that corruption. A correction names the exact corrupt substring and its correct form; it does not change the passage you copied.
+
+Rules for corrections:
+- Propose a correction ONLY for evident OCR or typographic corruption: broken or run-together words, "m" that should be "in", "oi" that should be "of", "coiony" that should be "colony", mangled proper names, stray punctuation introduced by scanning.
+- NEVER paraphrase, modernize, translate, reorder, expand abbreviations, or change meaning. Original spelling, capitalization, and period style are NOT errors and MUST be left alone.
+- "before" MUST be copied exactly from the passage, character-for-character, and must be long enough to identify the corruption unambiguously.
+- The "corrections" array may be empty. When in doubt, leave the text uncorrected.
+
+Output ONLY a JSON array of objects, with no prose, no explanation, no markdown code fence, and no commentary before or after it. The entire response must be valid JSON, in exactly this form:
+[{"text": "the passage copied exactly from the source, including its OCR errors", "corrections": [{"before": "exact corrupt substring as it appears in the passage", "after": "the corrected form"}]}]
 
 If no passage is worth selecting, output an empty JSON array: []
 
@@ -104,14 +126,16 @@ SOURCE`;
 }
 
 /**
- * Parse the model's stdout into a JSON array of strings. Tries a strict parse first;
- * if that fails, tolerates stray wrapping text by extracting the substring from the
- * first '[' to the last ']' and parsing that. Throws (never fabricates/omits-as-empty)
- * if the result still cannot be parsed as an array of strings.
+ * Parse the model's stdout into candidate objects. Tries a strict parse first; if that
+ * fails, tolerates stray wrapping text by extracting the substring from the first '['
+ * to the last ']' and parsing that. Elements may be `{ text, corrections }` objects or
+ * plain strings (legacy shape, normalized to zero corrections), and the two may be
+ * mixed. Throws (never fabricates/omits-as-empty) if the result cannot be parsed as an
+ * array of candidates.
  *
  * @param {string} stdout
  * @param {string} command
- * @returns {string[]}
+ * @returns {Array<{ text: string, corrections: Array<{ before: string, after: string }> }>}
  */
 function parseCandidates(stdout, command) {
   const trimmed = stdout.trim();
@@ -137,11 +161,11 @@ function parseCandidates(stdout, command) {
     }
   }
 
-  if (!Array.isArray(parsed) || !parsed.every((item) => typeof item === 'string')) {
+  if (!Array.isArray(parsed)) {
     throw new Error(
-      `claude model adapter: '${command}' output was not a JSON array of strings: ${trimmed}`
+      `claude model adapter: '${command}' output was not a JSON array: ${trimmed}`
     );
   }
 
-  return parsed;
+  return normalizeCandidates(parsed, `claude model adapter: '${command}'`);
 }

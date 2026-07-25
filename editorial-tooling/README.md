@@ -45,7 +45,26 @@ The `ValidateRequest` specifies paths to the artifact (the quote bank YAML) and 
   echo '<BuildRequest>' | node bin/quote-miner.mjs
   ```
 
-The `BuildRequest` specifies paths to the sources directory and an output directory. Stdout is a `BuildResponse` (success/failure; never partial output on failure). Stderr carries the mining report (counts: selected, grounded, omitted_ungrounded, sources processed/skipped/failed, and per-source breakdowns).
+The `BuildRequest` specifies paths to the sources directory and an output directory. Stdout is a `BuildResponse` (success/failure; never partial output on failure). Stderr carries the mining report (counts: selected, grounded, omitted_ungrounded, sources processed/skipped/failed, and per-source breakdowns), plus a `progress: <n>/<total> <id> selected=… grounded=… omitted=…` line emitted as each source completes so a long run is observable while it runs.
+
+## Source Ids
+
+Both tools load the sources directory through one shared module (`src/sources.mjs`), so the miner and the validator always agree on which bytes carry which id.
+
+- **Manifest mode** — if the sources directory contains a `sources.yaml`, that file is the id carrier:
+
+  ```yaml
+  version: 1
+  sources:
+    PB-P001: newspapers/la-nouvelle-france/1879-07-15_x/issue.txt
+    PB-P023: newspapers/a-nobleman/issue.txt
+  ```
+
+  Each key is the stable source id (the id quotes cite); each value is a path relative to the sources directory, nesting allowed. This is what makes an archive whose every document is named `issue.txt` loadable. Paths must stay inside the sources directory — an absolute path or one escaping via `..` is refused.
+
+- **Fallback mode** — with no `sources.yaml`, the id of each regular file directly in the sources directory is its filename stem (the v1 rule, unchanged).
+
+A source that cannot be loaded is a hard failure, never a silent skip: an ambiguous id (duplicate, case-collision, path separator), a missing or non-regular declared path, an unreadable file, or a file that is not valid UTF-8. **Every** such problem is collected and named in a single refusal, so a large corpus can be fixed in one pass rather than one run per bad file. The id mapping is the only thing this affects; the fidelity model (byte-exact spans, reconstruction, validator verdicts) is unchanged.
 
 ## The Quote Bank Schema
 

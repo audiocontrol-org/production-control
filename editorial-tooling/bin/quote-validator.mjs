@@ -5,9 +5,9 @@
 // ESM, no production-control import — reads only, writes nothing but the
 // single ValidateResponse line on stdout.
 
-import { readFileSync, readdirSync, statSync } from 'node:fs';
-import { basename, extname, join } from 'node:path';
+import { readFileSync } from 'node:fs';
 import { parseBank } from '../src/schema.mjs';
+import { loadSources } from '../src/sources.mjs';
 import { buildSourceMap, validateBank } from '../src/validator.mjs';
 
 function fail(message) {
@@ -46,31 +46,20 @@ function main() {
     return;
   }
 
-  let entries;
+  // Shared loader (src/sources.mjs) — the SAME id->bytes mapping the miner used:
+  // manifest ids when `sources.yaml` is present, the v1 filename-stem rule otherwise.
+  // A refusal names every bad source at once. "No verdict" is never "passed" (FR-006b),
+  // so a load refusal exits non-zero with a diagnostic and NOTHING on stdout.
+  let files;
   try {
-    entries = readdirSync(sourcesPath);
+    files = loadSources(sourcesPath).files;
   } catch (err) {
-    fail(`cannot read sources directory at '${sourcesPath}': ${err.message}`);
+    fail(err.message);
     return;
   }
 
-  const files = [];
-  for (const name of entries) {
-    const fullPath = join(sourcesPath, name);
-    let stats;
-    try {
-      stats = statSync(fullPath);
-    } catch (err) {
-      fail(`cannot stat source entry '${fullPath}': ${err.message}`);
-      return;
-    }
-    if (!stats.isFile()) {
-      continue;
-    }
-    const bytes = readFileSync(fullPath);
-    files.push({ id: basename(name, extname(name)), bytes });
-  }
-
+  // Defense in depth: loadSources already refuses an ambiguous mapping, but the FR-018
+  // check stays here so the validator's verdict never depends on the loader alone.
   const { sources, errors: mapErrors } = buildSourceMap(files);
   if (mapErrors.length > 0) {
     fail(`ambiguous source mapping:\n${mapErrors.join('\n')}`);

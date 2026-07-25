@@ -7,14 +7,26 @@
 // atomically into output_dir. Never emits a partial or replaced artifact on
 // failure (FR-015/FR-016); never reports a validation verdict (FR-013).
 
-import { readFileSync, readdirSync, statSync, writeFileSync, renameSync } from 'node:fs';
-import { basename, extname, join } from 'node:path';
+import { readFileSync, writeFileSync, renameSync } from 'node:fs';
+import { join } from 'node:path';
 import { mine, serializeBank } from '../src/miner.mjs';
+import { loadSources } from '../src/sources.mjs';
 import { claudeModel } from '../src/claude.mjs';
 
 function fail(message) {
   process.stderr.write(`quote-miner: ${message}\n`);
   process.exit(1);
+}
+
+// Per-source progress (TASK-10), written to STDERR the moment a source completes so a
+// long run is observable while it runs. These are ADDITIONAL diagnostics: the final
+// mining report below is unchanged (FR-017), and stdout stays exactly one BuildResponse.
+function writeProgress(event) {
+  process.stderr.write(
+    `progress: ${event.index}/${event.total} ${event.id}` +
+      ` selected=${event.selected} grounded=${event.grounded} omitted=${event.omitted}` +
+      ` corrections=${event.corrections_applied}/${event.corrections_proposed}\n`
+  );
 }
 
 function writeMiningReport(report) {
@@ -25,9 +37,17 @@ function writeMiningReport(report) {
   lines.push(`sources_processed: ${report.sources_processed}`);
   lines.push(`sources_skipped: ${report.sources_skipped}`);
   lines.push(`sources_failed: ${report.sources_failed}`);
+  // Disclosed OCR corrections (TASK-9): proposed by the model, applied only after the
+  // tool verified `before` against the grounded source bytes, dropped otherwise.
+  lines.push(`corrections_proposed: ${report.corrections_proposed}`);
+  lines.push(`corrections_applied: ${report.corrections_applied}`);
+  lines.push(`corrections_dropped: ${report.corrections_dropped}`);
   for (const src of report.per_source ?? []) {
     lines.push(
-      `source ${src.id}: selected=${src.selected} grounded=${src.grounded} omitted=${src.omitted}`
+      `source ${src.id}: selected=${src.selected} grounded=${src.grounded} omitted=${src.omitted}` +
+        ` corrections_proposed=${src.corrections_proposed}` +
+        ` corrections_applied=${src.corrections_applied}` +
+        ` corrections_dropped=${src.corrections_dropped}`
     );
   }
   process.stderr.write(lines.join('\n') + '\n');
@@ -56,42 +76,22 @@ async function main() {
     return;
   }
 
-  let entries;
+  // Shared loader (src/sources.mjs): manifest ids when `sources.yaml` is present, the
+  // v1 filename-stem rule otherwise. A refusal names EVERY bad source at once, so a
+  // large corpus is fixable in one pass instead of one run per bad file.
+  let sources;
   try {
-    entries = readdirSync(sourcesPath);
+    sources = loadSources(sourcesPath).files;
   } catch (err) {
-    fail(`cannot read sources directory at '${sourcesPath}': ${err.message}`);
+    fail(err.message);
     return;
-  }
-
-  const sources = [];
-  for (const name of entries) {
-    const full = join(sourcesPath, name);
-    let stats;
-    try {
-      stats = statSync(full);
-    } catch (err) {
-      fail(`cannot stat source entry '${full}': ${err.message}`);
-      return;
-    }
-    if (!stats.isFile()) {
-      continue;
-    }
-    let bytes;
-    try {
-      bytes = readFileSync(full);
-    } catch (err) {
-      fail(`cannot read source file '${full}': ${err.message}`);
-      return;
-    }
-    sources.push({ id: basename(name, extname(name)), bytes });
   }
 
   const model = claudeModel();
 
   let result;
   try {
-    result = await mine({ sources, model });
+    result = await mine({ sources, model, onProgress: writeProgress });
   } catch (err) {
     process.stderr.write(`quote-miner: ${err.message}\n`);
     process.exit(1);
