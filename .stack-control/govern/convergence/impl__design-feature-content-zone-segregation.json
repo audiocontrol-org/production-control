@@ -1,0 +1,190 @@
+{
+  "version": 1,
+  "mode": "impl",
+  "item": "design:feature/content-zone-segregation",
+  "governedShaBase": "2c90a315d7228e759c0586df9b05d3289e4cad40",
+  "headSha": "48fd5e49d6eee257f603174b975643c575021407",
+  "chunkIds": [
+    "37e9a2f1d4777e95",
+    "43fb043b7200a9d5",
+    "4ce4625f67455553",
+    "4f99b83c979fa432",
+    "774b22fcc1ad5084",
+    "a8511fbd57b81464",
+    "cc1f24a95e8a8ebd",
+    "ecfb4e19fe0283f1"
+  ],
+  "rounds": 1,
+  "liftedFindings": [
+    {
+      "id": "37e9a2f1d4777e95::AUDIT-BARRAGE-claude-02",
+      "title": "A `..` segment classifies as `ai-permitted` — the escape direction fails open",
+      "severity": "high"
+    },
+    {
+      "id": "37e9a2f1d4777e95::AUDIT-BARRAGE-claude-03",
+      "title": "`.ai/` as the *committed* durable record has no gate proving it is actually tracked",
+      "severity": "high"
+    },
+    {
+      "id": "4ce4625f67455553::AUDIT-BARRAGE-claude-01+AUDIT-BARRAGE-codex-02",
+      "title": "Realpath containment resolves the output root itself, so a symlinked `dist/`/`.ai/` escapes the episode entirely",
+      "severity": "high"
+    },
+    {
+      "id": "4ce4625f67455553::AUDIT-BARRAGE-claude-02",
+      "title": "`ai-generated/` → `.ai/` relocation ships with no upgrade path for existing episodes",
+      "severity": "high"
+    },
+    {
+      "id": "4ce4625f67455553::AUDIT-BARRAGE-codex-01",
+      "title": "Escape refusal can create directories through an escaping symlink before it throws",
+      "severity": "high"
+    },
+    {
+      "id": "4f99b83c979fa432::AUDIT-BARRAGE-claude-01",
+      "title": "`classifyZone`'s \"above-root exclusion (FR-003)\" block asserts nothing that could fail if the guarantee were broken",
+      "severity": "high"
+    },
+    {
+      "id": "774b22fcc1ad5084::AUDIT-BARRAGE-claude-01",
+      "title": "Every impure integration path now requires a static `impure` declaration, so the decl-impure × response-pure state opened by that new field has no fixture anywhere in this chunk",
+      "severity": "high"
+    },
+    {
+      "id": "774b22fcc1ad5084::AUDIT-BARRAGE-claude-02",
+      "title": "`.ai/` is asserted only as a path string; nothing proves the \"committed, not gitignored\" property the comments claim, and the rename to a dot-directory is exactly what would break it",
+      "severity": "high"
+    },
+    {
+      "id": "ecfb4e19fe0283f1::AUDIT-BARRAGE-claude-01",
+      "title": "Audit lane degraded: chunk `ecfb4e19fe0283f1` was dispatched with an empty diff payload",
+      "severity": "high"
+    }
+  ],
+  "closedInLoopFindings": [],
+  "seamResult": {
+    "boundaryPairs": [
+      {
+        "a": "37e9a2f1d4777e95",
+        "b": "43fb043b7200a9d5"
+      },
+      {
+        "a": "37e9a2f1d4777e95",
+        "b": "4ce4625f67455553"
+      },
+      {
+        "a": "37e9a2f1d4777e95",
+        "b": "4f99b83c979fa432"
+      },
+      {
+        "a": "37e9a2f1d4777e95",
+        "b": "774b22fcc1ad5084"
+      },
+      {
+        "a": "37e9a2f1d4777e95",
+        "b": "a8511fbd57b81464"
+      },
+      {
+        "a": "37e9a2f1d4777e95",
+        "b": "cc1f24a95e8a8ebd"
+      },
+      {
+        "a": "37e9a2f1d4777e95",
+        "b": "ecfb4e19fe0283f1"
+      },
+      {
+        "a": "43fb043b7200a9d5",
+        "b": "4ce4625f67455553"
+      },
+      {
+        "a": "43fb043b7200a9d5",
+        "b": "4f99b83c979fa432"
+      },
+      {
+        "a": "43fb043b7200a9d5",
+        "b": "774b22fcc1ad5084"
+      },
+      {
+        "a": "43fb043b7200a9d5",
+        "b": "a8511fbd57b81464"
+      },
+      {
+        "a": "43fb043b7200a9d5",
+        "b": "cc1f24a95e8a8ebd"
+      },
+      {
+        "a": "43fb043b7200a9d5",
+        "b": "ecfb4e19fe0283f1"
+      },
+      {
+        "a": "4ce4625f67455553",
+        "b": "4f99b83c979fa432"
+      },
+      {
+        "a": "4ce4625f67455553",
+        "b": "774b22fcc1ad5084"
+      },
+      {
+        "a": "4ce4625f67455553",
+        "b": "a8511fbd57b81464"
+      },
+      {
+        "a": "4ce4625f67455553",
+        "b": "cc1f24a95e8a8ebd"
+      },
+      {
+        "a": "4ce4625f67455553",
+        "b": "ecfb4e19fe0283f1"
+      },
+      {
+        "a": "4f99b83c979fa432",
+        "b": "774b22fcc1ad5084"
+      },
+      {
+        "a": "4f99b83c979fa432",
+        "b": "a8511fbd57b81464"
+      },
+      {
+        "a": "4f99b83c979fa432",
+        "b": "cc1f24a95e8a8ebd"
+      },
+      {
+        "a": "4f99b83c979fa432",
+        "b": "ecfb4e19fe0283f1"
+      },
+      {
+        "a": "774b22fcc1ad5084",
+        "b": "a8511fbd57b81464"
+      },
+      {
+        "a": "774b22fcc1ad5084",
+        "b": "cc1f24a95e8a8ebd"
+      },
+      {
+        "a": "774b22fcc1ad5084",
+        "b": "ecfb4e19fe0283f1"
+      },
+      {
+        "a": "a8511fbd57b81464",
+        "b": "cc1f24a95e8a8ebd"
+      },
+      {
+        "a": "a8511fbd57b81464",
+        "b": "ecfb4e19fe0283f1"
+      },
+      {
+        "a": "cc1f24a95e8a8ebd",
+        "b": "ecfb4e19fe0283f1"
+      }
+    ],
+    "findings": [],
+    "suppressedCompatible": 0
+  },
+  "splitClusterRefs": [
+    "2f45167aa397516b",
+    "3a746d32a4cf8c18"
+  ],
+  "outcome": "override-eligible",
+  "anchorRoot": "/Users/orion/work/production-control-work/production-control-voice"
+}
