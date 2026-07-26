@@ -54,6 +54,7 @@ Generalize the quote bank into a metadata-rich, queryable store of production as
 
 ## design:feature/voice-editions
 - status: planned
+- analyze-clean: yes
 - spec: specs/004-voice-editions
 - design-approved: yes
 - depends-on: design:feature/content-zone-segregation
