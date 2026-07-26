@@ -1,4 +1,5 @@
 import * as fs from 'node:fs';
+import { createHash } from 'node:crypto';
 import { isRecord } from '@/util/is-record.ts';
 import { loadVoice } from '@/schema/voice.ts';
 import type { VoiceDocument } from '@/schema/voice.ts';
@@ -74,9 +75,10 @@ interface ReadEntry {
  * and voice inputs.
  *
  * @throws Error naming the specific cause for every refusal: a malformed
- *   wire shape, an unreadable input, invalid UTF-8, no voice candidate found,
- *   more than one voice candidate, no source candidate, or more than one
- *   non-voice candidate.
+ *   wire shape, an unreadable input, a declared hash that does not match the
+ *   bytes read off disk (AUDIT-20260726-12), invalid UTF-8, no voice
+ *   candidate found, more than one voice candidate, no source candidate, or
+ *   more than one non-voice candidate.
  */
 export function parseReviseRequest(raw: unknown): ParsedReviseRequest {
   const root = requireRecord(raw, 'BuildRequest');
@@ -186,7 +188,36 @@ function readEntry(identity: string, input: WireBuildInput): ReadEntry {
   } catch (cause) {
     return fail(`inputs.${identity}: could not read "${input.path}": ${describeError(cause)}`);
   }
+  verifyDeclaredHash(identity, input, bytes);
   return { identity, input, bytes };
+}
+
+/**
+ * AUDIT-20260726-12 (provenance/TOCTOU): confirm the bytes just read off disk
+ * are the exact bytes the `BuildRequest` declared for this input, BEFORE
+ * those bytes are used for anything (discrimination, voice parsing, etc.). An
+ * ignored integrity field is a fallback that hides a failure mode (a request
+ * declaring one file while a different one was substituted on disk between
+ * declaration and read) -- refuse loud rather than silently trust it.
+ *
+ * The declared value is normalized the same way `@/fidelity/check-source-hash.ts`
+ * does (a bare 64-hex value is treated the same as an already `sha256:`-prefixed
+ * one), since the wire does not guarantee every producer emits the prefix.
+ */
+function verifyDeclaredHash(identity: string, input: WireBuildInput, bytes: Buffer): void {
+  const declared = normalizeHash(input.hash);
+  const actual = `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
+  if (declared !== actual) {
+    fail(
+      `declared hash ${declared} for input ${identity} (${input.path}) does not match bytes ` +
+        `on disk ${actual}`,
+    );
+  }
+}
+
+/** Ensure a hash value carries the `sha256:` prefix, without double-prefixing. */
+function normalizeHash(hash: string): string {
+  return hash.startsWith('sha256:') ? hash : `sha256:${hash}`;
 }
 
 function decodeUtf8(bytes: Uint8Array, identity: string): string {

@@ -9,6 +9,7 @@
 
 import * as fs from 'node:fs';
 import { parse as parseYamlText } from 'yaml';
+import { isRecord } from '@/util/is-record.ts';
 import { runFidelity } from '@/fidelity/run.ts';
 import type { FidelityInput } from '@/fidelity/run.ts';
 
@@ -24,6 +25,71 @@ interface ValidateRequestWire {
   target: string;
   artifact: WireBuildInput;
   inputs: Record<string, WireBuildInput>;
+}
+
+/**
+ * AUDIT-20260726-21: `JSON.parse` only proves the stdin bytes are SOME valid
+ * JSON value -- it proves nothing about its SHAPE. Before this guard existed,
+ * a syntactically valid but shape-invalid request (`{}`, a request missing
+ * `inputs`/`artifact`, or a misspelled field) reached `request.inputs['source']`/
+ * `request.artifact.path` with no guard, throwing a raw, unnamed `TypeError`
+ * with empty stdout -- a fourth outcome outside the contract's three
+ * (passed / decided-failure / cannot-decide). Every field this validates is
+ * touched by `runFidelityCli` below; nothing downstream may read `request.*`
+ * before this guard has run.
+ */
+function isWireBuildInput(value: unknown): value is WireBuildInput {
+  return (
+    isRecord(value) &&
+    typeof value['path'] === 'string' &&
+    value['path'].trim().length > 0 &&
+    typeof value['hash'] === 'string' &&
+    value['hash'].trim().length > 0
+  );
+}
+
+function isValidateRequestWire(value: unknown): value is ValidateRequestWire {
+  return (
+    isRecord(value) &&
+    value['version'] === 1 &&
+    typeof value['target'] === 'string' &&
+    value['target'].trim().length > 0 &&
+    isWireBuildInput(value['artifact']) &&
+    isRecord(value['inputs']) &&
+    Object.values(value['inputs']).every(isWireBuildInput)
+  );
+}
+
+/**
+ * Describe the first field-path violation in a shape-invalid `ValidateRequest`,
+ * for the refusal message. Only ever called after `isValidateRequestWire` has
+ * already returned `false` -- this never needs to describe a valid shape.
+ */
+function describeRequestShapeError(value: unknown): string {
+  if (!isRecord(value)) {
+    return 'ValidateRequest must be a JSON object';
+  }
+  if (value['version'] !== 1) {
+    return `ValidateRequest.version must be the literal 1 (got ${JSON.stringify(value['version'])})`;
+  }
+  if (typeof value['target'] !== 'string' || value['target'].trim().length === 0) {
+    return 'ValidateRequest.target must be a non-empty string';
+  }
+  if (!isWireBuildInput(value['artifact'])) {
+    return 'ValidateRequest.artifact must be an object with non-empty string "path" and "hash" fields';
+  }
+  if (!isRecord(value['inputs'])) {
+    return 'ValidateRequest.inputs must be a JSON object';
+  }
+  for (const [key, wireInput] of Object.entries(value['inputs'])) {
+    if (!isWireBuildInput(wireInput)) {
+      return `ValidateRequest.inputs.${key} must be an object with non-empty string "path" and "hash" fields`;
+    }
+  }
+  // Unreachable given the checks above mirror isValidateRequestWire exactly;
+  // named rather than asserted so a future drift between the two still
+  // refuses loudly instead of silently returning a blank diagnostic.
+  return 'ValidateRequest: shape is invalid for an unrecognized reason';
 }
 
 /**
@@ -71,15 +137,21 @@ function describeError(cause: unknown): string {
 export async function runFidelityCli(): Promise<number> {
   const requestText = await readStdinText();
 
-  let request: ValidateRequestWire;
+  let requestRaw: unknown;
   try {
-    request = JSON.parse(requestText);
+    requestRaw = JSON.parse(requestText);
   } catch (cause) {
     process.stderr.write(
       `voice-fidelity: malformed ValidateRequest JSON on stdin: ${describeError(cause)}\n`,
     );
     return 1;
   }
+
+  if (!isValidateRequestWire(requestRaw)) {
+    process.stderr.write(`voice-fidelity: ${describeRequestShapeError(requestRaw)}\n`);
+    return 1;
+  }
+  const request = requestRaw;
 
   const sourceInput = request.inputs['source'];
   if (sourceInput === undefined) {

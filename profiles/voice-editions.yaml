@@ -1,21 +1,24 @@
 # A profile is a generic, reusable recipe binding targets to their inputs and producing tools.
 # It is subject-agnostic and describes roles and transformations, not content or specific stories.
 #
-# `edition`'s cmd is a PLACEHOLDER, mirroring `editorial-audio.yaml`'s existing convention
-# (`npx <name>-tooling <verb>`) — a name-only recipe an operator resolves, not an invocation this
-# repo's own tests ever execute (`pc status` never spawns a provider; see `offline.test.ts`
-# FR-010). Real per-episode wiring points `provider.cmd`/`validator.cmd` at the actual
-# `voice-tooling/bin/voice-revise.mjs` / `voice-tooling/bin/voice-fidelity.mjs` binaries, the way
-# `tests/integration/voice-revise.test.ts` (T018) does — that wiring is US2's task T020, not this
-# shared profile's job.
+# `edition`'s cmd points at the REAL in-repo binaries `voice-tooling` ships — `voice-tooling/bin/
+# voice-revise.mjs` and `voice-tooling/bin/voice-fidelity.mjs` (two bins; there is no
+# `voice-tooling` dispatcher executable) — the exact invocation
+# `tests/integration/voice-revise.test.ts` (T018/T020) exercises. Unlike `editorial-audio.yaml`'s
+# `npx <name>-tooling <verb>` convention (a name-only recipe an operator resolves against an
+# installed package), `npx voice-tooling …` here would resolve against an UNCLAIMED public npm
+# package name on any machine without this repo's local bin on its PATH — a dependency-confusion
+# risk, not merely an unresolved placeholder (AUDIT-20260726-07/-10). `pc status` never spawns a
+# provider either way (`offline.test.ts` FR-010), so this cmd is only ever exec'd by `pc build`/
+# `pc validate`.
 
 version: 1
 targets:
   edition:
     inputs: [source, voice]
     provider:
-      cmd: [npx, voice-tooling, revise]
+      cmd: [node, voice-tooling/bin/voice-revise.mjs]
       impure:
         reason: "model-produced edition; not reproducible byte-for-byte"
     validator:
-      cmd: [npx, voice-tooling, fidelity]
+      cmd: [node, voice-tooling/bin/voice-fidelity.mjs]

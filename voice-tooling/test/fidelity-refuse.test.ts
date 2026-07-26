@@ -19,6 +19,7 @@
 
 import test from 'node:test';
 import * as assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { runFidelity } from '@/fidelity/run.ts';
 import { readFixture } from './support.ts';
 
@@ -230,3 +231,62 @@ test('fidelity-refuse (US1, Acceptance Scenario 6, FR-030/SC-006): an unreadable
     'must not be reported the same way as a decided, named-obligation failure',
   );
 });
+
+test(
+  'fidelity-refuse (AUDIT-20260726-18): a malformed source citation_allowlist shape is a DECIDED ' +
+    'refusal, not a thrown exception -- even though source.hash still matches the (corrupted) bytes',
+  () => {
+    const { source, edition } = loadFaithfulFixture();
+
+    // Corrupt ONLY the source's frontmatter: `citation_allowlist` becomes a bare string instead of
+    // a list. `deriveUnits` strips the whole leading frontmatter block before deriving source
+    // units (src/units/derive.ts), so this changes NEITHER the derived units nor their hashes --
+    // only the full-file source.hash changes, which is why the ledger's declared hash below is
+    // recomputed rather than reused verbatim.
+    const corruptedSource = mustReplace(
+      source,
+      'citation_allowlist:\n  - "[^1]"',
+      'citation_allowlist: "not-a-list"',
+    );
+    const corruptedSourceHash = `sha256:${createHash('sha256').update(corruptedSource, 'utf8').digest('hex')}`;
+
+    // The ledger's declared source.hash MUST match the corrupted bytes -- this is the "source IS
+    // the declared one" precondition the fix's decided-vs-cannot-decide distinction turns on.
+    const patchedEdition = mustReplace(
+      edition,
+      'hash: sha256:7e76eae507dbe92c328efd7134f644aa2aa1819e87f8d77b77a887166c1ba503',
+      `hash: ${corruptedSourceHash}`,
+    );
+
+    // The point of this test: calling runFidelity must not throw and must not produce an
+    // unhandled rejection -- node:test would fail this test itself if it did.
+    const result = runFidelity({
+      source: corruptedSource,
+      sourceIdentity: SOURCE_IDENTITY,
+      edition: patchedEdition,
+    });
+
+    assert.equal(
+      result.decided,
+      true,
+      'a malformed source allow-list, once source.hash has confirmed these ARE the declared ' +
+        'bytes, is a decided refusal -- never cannot-decide and never a thrown exception',
+    );
+    assert.equal(result.passed, false, 'a malformed source citation allow-list must not pass');
+    assert.equal(result.report.verdict, undefined);
+    assert.equal(
+      result.report.checks.source_hash?.state,
+      'passed',
+      'source_hash must still pass first -- the corrupted bytes ARE what the ledger declared',
+    );
+    assert.equal(
+      result.report.checks.ledger_structure?.state,
+      'failed',
+      'the malformed source allow-list is folded into the ledger_structure check',
+    );
+    assert.ok(
+      result.failures.some((f: string) => /citation allow-list/i.test(f) && /malformed/i.test(f)),
+      `expected a failure naming the malformed source citation allow-list; got: ${JSON.stringify(result.failures)}`,
+    );
+  },
+);

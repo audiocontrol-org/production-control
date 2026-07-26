@@ -22,6 +22,7 @@ import {
   checkSourceCitationAllowlist,
   extractLedgerYaml,
   decodeText,
+  type CitationAllowlistCheckResult,
 } from '@/fidelity/check-ledger-structure.ts';
 import { checkUnitAccounting } from '@/fidelity/check-unit-accounting.ts';
 import { checkOpObligations } from '@/fidelity/check-op-obligations.ts';
@@ -168,7 +169,27 @@ export function runFidelity(input: FidelityInput): FidelityResult {
   // D13.4 (contract step 6, evaluated here as a ledger-adjacent precondition,
   // "before edition validation begins"): the SOURCE's own citation markers
   // must all resolve within the source's own declared allow-list.
-  const allowlistResult = checkSourceCitationAllowlist(input.source);
+  //
+  // AUDIT-20260726-18: `checkSourceCitationAllowlist` can THROW (rather than
+  // return `{ ok: false }`) on a malformed `citation_allowlist` shape -- not a
+  // list, or a list with a non-string entry. This point is only reached AFTER
+  // `source_hash` has already confirmed `input.source` IS the bytes the
+  // ledger declared, so a malformed allow-list shape here is a decided
+  // structural refusal of the source's own declaration (folded into
+  // `ledger_structure`, the check that already owns "the ledger/source pair
+  // is structurally sound") -- never an uncaught exception, and never
+  // cannot-decide (this is not an I/O-shaped inability to read the source;
+  // deriveUnits above already proved the bytes decode).
+  let allowlistResult: CitationAllowlistCheckResult;
+  try {
+    allowlistResult = checkSourceCitationAllowlist(input.source);
+  } catch (cause) {
+    const failure = `ledger structure: source citation allow-list is malformed: ${describeError(cause)}`;
+    checks['ledger_structure'] = failed(failure);
+    failures.push(failure);
+    markAborted(checks, AFTER_LEDGER_STRUCTURE, 'ledger_structure');
+    return finalize(checks, failures, true);
+  }
   if (!allowlistResult.ok) {
     const failure = allowlistResult.failure ?? 'source citation allow-list: violation';
     checks['ledger_structure'] = failed(failure);
@@ -233,7 +254,23 @@ export function runFidelity(input: FidelityInput): FidelityResult {
   const editionText = decodeText(input.edition);
   const sourceBody = stripFrontmatterBody(sourceText);
   const editionBody = stripFrontmatterBody(editionText);
-  const sourceAllowlist = parseSourceCitationAllowlist(sourceText);
+
+  // AUDIT-20260726-18: this is the SAME source frontmatter `citation_allowlist`
+  // the `checkSourceCitationAllowlist` call above already parsed successfully
+  // (same bytes, same extraction logic) -- unreachable in practice once that
+  // call has succeeded -- but guarded defensively for the same reason the
+  // `deriveUnits` re-derivation below is: a thrown parse error must never
+  // escape `runFidelity` uncaught, regardless of which call site produced it.
+  let sourceAllowlist: string[];
+  try {
+    sourceAllowlist = parseSourceCitationAllowlist(sourceText);
+  } catch (cause) {
+    const failure = `ledger structure: source citation allow-list is malformed: ${describeError(cause)}`;
+    checks['ledger_structure'] = failed(failure);
+    failures.push(failure);
+    markAborted(checks, AFTER_LEDGER_STRUCTURE, 'ledger_structure');
+    return finalize(checks, failures, true);
+  }
   const citationResult = checkCitations(sourceBody, editionBody, sourceAllowlist);
   failures.push(...citationResult.failures);
 

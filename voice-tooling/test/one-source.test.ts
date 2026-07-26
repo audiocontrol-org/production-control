@@ -18,6 +18,7 @@ import test from 'node:test';
 import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { createHash } from 'node:crypto';
 import { parseReviseRequest } from '@/revise/request.ts';
 import { withTempDir } from './support.ts';
 
@@ -45,21 +46,28 @@ function writeFile(dir: string, name: string, contents: string): string {
   return filePath;
 }
 
-function wireInput(filePath: string, hashByte: string): { path: string; hash: string } {
-  return { path: filePath, hash: `sha256:${hashByte.repeat(64)}` };
+/**
+ * AUDIT-20260726-12: `parseReviseRequest` verifies the declared hash against
+ * the bytes actually read off disk, so every wire input here must declare
+ * the REAL digest of `content` -- a fake placeholder hash is now correctly
+ * refused rather than silently trusted.
+ */
+function wireInput(filePath: string, content: string): { path: string; hash: string } {
+  return { path: filePath, hash: `sha256:${createHash('sha256').update(content, 'utf8').digest('hex')}` };
 }
 
 test('parseReviseRequest: (a) a well-formed request — exactly one source, one voice — parses cleanly', async () => {
   await withTempDir((dir) => {
-    const sourcePath = writeFile(dir, 'draft.md', 'The device completed its startup sequence.\n');
+    const sourceText = 'The device completed its startup sequence.\n';
+    const sourcePath = writeFile(dir, 'draft.md', sourceText);
     const voicePath = writeFile(dir, 'voice.yaml', VALID_VOICE_YAML);
 
     const parsed = parseReviseRequest({
       version: 1,
       target: TARGET,
       inputs: {
-        source: wireInput(sourcePath, 'a'),
-        voice: wireInput(voicePath, 'b'),
+        source: wireInput(sourcePath, sourceText),
+        voice: wireInput(voicePath, VALID_VOICE_YAML),
       },
       output_dir: dir,
     });
@@ -72,17 +80,19 @@ test('parseReviseRequest: (a) a well-formed request — exactly one source, one 
 
 test('parseReviseRequest: (b) TWO source-draft inputs are refused, naming the target and "exactly one source"', async () => {
   await withTempDir((dir) => {
-    const sourcePathA = writeFile(dir, 'draft-a.md', 'First candidate source draft.\n');
-    const sourcePathB = writeFile(dir, 'draft-b.md', 'Second candidate source draft.\n');
+    const sourceTextA = 'First candidate source draft.\n';
+    const sourceTextB = 'Second candidate source draft.\n';
+    const sourcePathA = writeFile(dir, 'draft-a.md', sourceTextA);
+    const sourcePathB = writeFile(dir, 'draft-b.md', sourceTextB);
     const voicePath = writeFile(dir, 'voice.yaml', VALID_VOICE_YAML);
 
     const raw = {
       version: 1,
       target: TARGET,
       inputs: {
-        'draft-a': wireInput(sourcePathA, 'a'),
-        'draft-b': wireInput(sourcePathB, 'b'),
-        voice: wireInput(voicePath, 'c'),
+        'draft-a': wireInput(sourcePathA, sourceTextA),
+        'draft-b': wireInput(sourcePathB, sourceTextB),
+        voice: wireInput(voicePath, VALID_VOICE_YAML),
       },
       output_dir: dir,
     };
@@ -110,7 +120,7 @@ test('parseReviseRequest: (c) ZERO source-draft inputs (only a voice) is refused
       version: 1,
       target: TARGET,
       inputs: {
-        voice: wireInput(voicePath, 'a'),
+        voice: wireInput(voicePath, VALID_VOICE_YAML),
       },
       output_dir: dir,
     };
@@ -137,7 +147,7 @@ test('parseReviseRequest: the target-naming refusal names a DIFFERENT target for
       version: 1,
       target: 'some-other-target',
       inputs: {
-        voice: wireInput(voicePath, 'a'),
+        voice: wireInput(voicePath, VALID_VOICE_YAML),
       },
       output_dir: dir,
     };

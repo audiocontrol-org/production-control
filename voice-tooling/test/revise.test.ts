@@ -9,9 +9,22 @@ import test from 'node:test';
 import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { createHash } from 'node:crypto';
 import { parseReviseRequest } from '@/revise/request.ts';
 import { emitEdition } from '@/revise/emit.ts';
 import { withTempDir } from './support.ts';
+
+/**
+ * AUDIT-20260726-12: `parseReviseRequest` now verifies each declared input
+ * hash against the bytes actually read off disk, so every fixture below must
+ * declare the REAL digest of the bytes it writes -- a fake placeholder hash
+ * (the fixtures used to use `'sha256:' + 'a'.repeat(64)`) is now correctly
+ * refused, which would break every test below that isn't the dedicated
+ * wrong-hash regression test.
+ */
+function sha256Of(text: string): string {
+  return `sha256:${createHash('sha256').update(text, 'utf8').digest('hex')}`;
+}
 
 const VALID_VOICE_YAML = `
 version: 1
@@ -30,6 +43,8 @@ avoid:
 `;
 
 const SOURCE_TEXT = 'The device completed its startup sequence without incident.\n';
+const SOURCE_HASH = sha256Of(SOURCE_TEXT);
+const VOICE_HASH = sha256Of(VALID_VOICE_YAML);
 
 function writeFile(dir: string, name: string, contents: string): string {
   const filePath = path.join(dir, name);
@@ -45,8 +60,8 @@ function buildRequest(
     version: 1,
     target: 'edition',
     inputs: {
-      source: { path: overrides.sourcePath, hash: 'sha256:' + 'a'.repeat(64) },
-      voice: { path: overrides.voicePath, hash: 'sha256:' + 'b'.repeat(64) },
+      source: { path: overrides.sourcePath, hash: SOURCE_HASH },
+      voice: { path: overrides.voicePath, hash: VOICE_HASH },
     },
     output_dir: dir,
     ...(overrides.extra ?? {}),
@@ -64,8 +79,8 @@ test('parseReviseRequest: discriminates source vs voice by TYPE, regardless of i
       version: 1,
       target: 'edition',
       inputs: {
-        draft: { path: sourcePath, hash: 'sha256:' + 'a'.repeat(64) },
-        style: { path: voicePath, hash: 'sha256:' + 'b'.repeat(64) },
+        draft: { path: sourcePath, hash: SOURCE_HASH },
+        style: { path: voicePath, hash: VOICE_HASH },
       },
       output_dir: dir,
     };
@@ -102,13 +117,14 @@ test('parseReviseRequest: reads an explicit model_cmd off the wire when present'
 test('parseReviseRequest: fails loud naming the cause when no input is a valid voice document', async () => {
   await withTempDir((dir) => {
     const sourcePath = writeFile(dir, 'draft.md', SOURCE_TEXT);
-    const otherPath = writeFile(dir, 'also-prose.md', 'Also just plain prose.\n');
+    const otherText = 'Also just plain prose.\n';
+    const otherPath = writeFile(dir, 'also-prose.md', otherText);
     const raw = {
       version: 1,
       target: 'edition',
       inputs: {
-        source: { path: sourcePath, hash: 'sha256:' + 'a'.repeat(64) },
-        other: { path: otherPath, hash: 'sha256:' + 'b'.repeat(64) },
+        source: { path: sourcePath, hash: SOURCE_HASH },
+        other: { path: otherPath, hash: sha256Of(otherText) },
       },
       output_dir: dir,
     };
@@ -128,7 +144,7 @@ test('parseReviseRequest: fails loud naming the cause when no non-voice (source)
       version: 1,
       target: 'edition',
       inputs: {
-        voice: { path: voicePath, hash: 'sha256:' + 'a'.repeat(64) },
+        voice: { path: voicePath, hash: VOICE_HASH },
       },
       output_dir: dir,
     };
@@ -143,18 +159,15 @@ test('parseReviseRequest: fails loud naming the cause when no non-voice (source)
 
 test('parseReviseRequest: fails loud when more than one declared input is a valid voice document', async () => {
   await withTempDir((dir) => {
+    const voiceTextB = VALID_VOICE_YAML.replace('test-voice', 'another-voice');
     const voicePathA = writeFile(dir, 'a.yaml', VALID_VOICE_YAML);
-    const voicePathB = writeFile(
-      dir,
-      'b.yaml',
-      VALID_VOICE_YAML.replace('test-voice', 'another-voice'),
-    );
+    const voicePathB = writeFile(dir, 'b.yaml', voiceTextB);
     const raw = {
       version: 1,
       target: 'edition',
       inputs: {
-        a: { path: voicePathA, hash: 'sha256:' + 'a'.repeat(64) },
-        b: { path: voicePathB, hash: 'sha256:' + 'b'.repeat(64) },
+        a: { path: voicePathA, hash: VOICE_HASH },
+        b: { path: voicePathB, hash: sha256Of(voiceTextB) },
       },
       output_dir: dir,
     };
@@ -171,6 +184,46 @@ test('parseReviseRequest: fails loud on a malformed BuildRequest shape (missing 
     () => parseReviseRequest({ target: 'edition', inputs: {}, output_dir: '/tmp' }),
     /version must be the literal 1/,
   );
+});
+
+test('parseReviseRequest (AUDIT-20260726-12): refuses, naming the input, when a declared hash does not match the bytes on disk', async () => {
+  await withTempDir((dir) => {
+    const sourcePath = writeFile(dir, 'draft.md', SOURCE_TEXT);
+    const voicePath = writeFile(dir, 'v.yaml', VALID_VOICE_YAML);
+    const wrongHash = 'sha256:' + 'f'.repeat(64);
+    assert.notEqual(wrongHash, SOURCE_HASH, 'the wrong hash must actually differ from the real one');
+
+    const raw = {
+      version: 1,
+      target: 'edition',
+      inputs: {
+        // The source's declared hash is deliberately wrong; the voice's is correct, so the
+        // failure must be attributable specifically to the "source" input, not a generic parse
+        // failure or the wrong entry.
+        source: { path: sourcePath, hash: wrongHash },
+        voice: { path: voicePath, hash: VOICE_HASH },
+      },
+      output_dir: dir,
+    };
+
+    assert.throws(
+      () => parseReviseRequest(raw),
+      (err: unknown) => {
+        assert.ok(err instanceof Error);
+        assert.match(err.message, /voice-revise: declared hash/);
+        assert.ok(err.message.includes(wrongHash), 'must name the declared (wrong) hash');
+        assert.ok(err.message.includes('source'), 'must name the offending input identity');
+        assert.ok(err.message.includes(sourcePath), 'must name the input path');
+        assert.ok(
+          err.message.includes(SOURCE_HASH),
+          'must name the actual hash of the bytes on disk',
+        );
+        return true;
+      },
+      'a wrong declared hash must be refused, naming the input identity, its path, the declared ' +
+        'hash, and the actual hash',
+    );
+  });
 });
 
 test('emit: writes the edition and returns an impure BuildResponse naming the target file, with no validation verdict', async () => {
