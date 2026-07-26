@@ -156,8 +156,10 @@ describe(
       );
       const message = failure instanceof Error ? failure.message : '';
       expect(message).toContain('.ai/');
-      // No bytes escaped, and the ledger recorded nothing for the target.
-      expect(await exists(path.join(outside, 'voiceover.out'))).toBe(false);
+      // No bytes escaped AT ALL (not just under this one name — AUDIT-10), and the ledger
+      // recorded nothing. A directory-emptiness assertion holds under every reading of where
+      // provider scratch lives, so a residual escape under any name still trips it.
+      expect(await fs.readdir(outside)).toEqual([]);
       expect((await readLedger(dir)).artifacts['voiceover']).toBeUndefined();
     });
 
@@ -216,7 +218,8 @@ describe(
       expect(failure).toBeInstanceOf(Error);
       const message = failure instanceof Error ? failure.message : '';
       expect(message).toContain('escape');
-      expect(await exists(path.join(humanSafe, 'voiceover.out'))).toBe(false);
+      // Nothing landed in the in-episode human-safe target dir (AUDIT-10: emptiness, not a probe).
+      expect(await fs.readdir(humanSafe)).toEqual([]);
       expect((await readLedger(dir)).artifacts['voiceover']).toBeUndefined();
     });
   }

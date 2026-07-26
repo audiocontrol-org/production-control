@@ -96,6 +96,11 @@ export async function buildTarget(context: BuildContext, id: Identity): Promise<
   // Inside `dist/` (already gitignored) and named for the target, so two builds cannot collide
   // and a crash leaves its debris somewhere obviously disposable rather than in the source tree.
   const outputDir = path.join(context.episodeDir, 'dist', `.pc-build-${id}`);
+  // The provider writes into `dist/.pc-build-<id>` BEFORE `stage()` runs, so a symlinked `dist/`
+  // would let provider scratch bytes land OUTSIDE the episode even though the build is ultimately
+  // refused. Refuse a symlinked scratch root up front, so nothing is ever written outside — not
+  // even transiently (AUDIT-03/AUDIT-10). `stage()` re-checks the FINAL root (`.ai`/`dist`) too.
+  await assertContainedRoot(context.episodeDir, pureOutputRoot());
   try {
     const { response, output } = await invokeProvider({
       runner: context.runner,
@@ -218,33 +223,12 @@ async function stage(
     );
   }
 
-  // Create ONLY the output root itself — a single segment directly under `episodeDir` — so it can
-  // be realpath-resolved below. We deliberately do NOT create `dirname(destination)` yet: its
-  // intermediate segments may traverse a symlink, and a `recursive` mkdir would FOLLOW that symlink
-  // and materialize directories OUTSIDE the real output root before containment has been proven
-  // (AUDIT-05). Nothing is created outside the real output root until (c0)/(c) pass. `recursive`
-  // is a no-op when `outputRoot` (or a symlink standing in for it) already exists.
-  await fs.mkdir(outputRoot, { recursive: true });
-
-  const realEpisodeDir = await fs.realpath(episodeDir);
-  const realOutputRoot = await fs.realpath(outputRoot);
-
-  // (c0) THE OUTPUT ROOT ITSELF must resolve to `<episode>/<root>` (AUDIT-03). `root` is a single
-  // posix segment (`.ai` or `dist`). If `<episode>/<root>` is a symlink, its real target could be
-  // anywhere — outside the episode entirely, or a human-safe directory inside it — and every
-  // containment check below would then be measured RELATIVE TO WHERE THE ROOT POINTS rather than
-  // the episode, so the destination would sit "inside" a root that has itself escaped. For PURE
-  // output there is no zoning guard (d) at all, so an unchecked symlinked `dist/` would be
-  // write-anywhere. Assert the real output root is the episode's own `<root>/` and refuse loudly,
-  // NAMING the symlinked target, before comparing the destination against it.
-  const rootReal = toPosix(path.relative(realEpisodeDir, realOutputRoot));
-  if (rootReal !== root) {
-    throw new Error(
-      `the ${root}/ output root resolves through a symlink to "${rootReal}", which is not the ` +
-        `episode's own ${root}/ directory — refusing to write build output outside ` +
-        `${realEpisodeDir}/${root} (FR-009).`
-    );
-  }
+  // (c0) THE OUTPUT ROOT ITSELF must resolve to `<episode>/<root>` (AUDIT-03) — creates ONLY the
+  // single-segment root (never `dirname(destination)` yet, whose intermediate segments could
+  // traverse an escaping symlink — AUDIT-05) so it can be realpath-resolved, and refuses a
+  // symlinked root that escapes the episode. Shared with the pre-invocation scratch-root guard in
+  // `buildTarget`. Nothing is created outside the real output root until (c0)/(c) pass.
+  const { realEpisodeDir, realOutputRoot } = await assertContainedRoot(episodeDir, root);
 
   // (c) REAL-PATH containment of the DESTINATION (FR-009/FR-010). The lexical guard cannot see
   // through a symlink BENEATH the root. Resolve the REAL destination WITHOUT creating anything:
@@ -290,6 +274,37 @@ async function stage(
 /** Episode-relative paths are recorded and classified POSIX-separated, regardless of host OS. */
 function toPosix(relativePath: string): string {
   return relativePath.split(path.sep).join('/');
+}
+
+/**
+ * Creates the single-segment output root `<episodeDir>/<root>` (`dist`/`.ai`) and asserts it is the
+ * episode's OWN directory, not a symlink whose real target escapes the episode (AUDIT-03). If
+ * `<episodeDir>/<root>` is a symlink, its real target could be anywhere — outside the episode, or a
+ * human-safe directory inside it — so any later containment check measured against it would be
+ * measured relative to where the root POINTS. Refuses loudly, naming the symlinked target. Returns
+ * the realpath-resolved episode dir and output root so the caller need not resolve them again.
+ *
+ * Called BOTH before invoking the provider (on the `dist/` scratch root, so provider bytes never
+ * land outside even transiently — AUDIT-10) and inside `stage()` (on the final `.ai/`|`dist/` root).
+ */
+async function assertContainedRoot(
+  episodeDir: string,
+  root: string
+): Promise<{ realEpisodeDir: string; realOutputRoot: string }> {
+  const outputRoot = path.join(episodeDir, root);
+  // `recursive` is a no-op when the root (or a symlink standing in for it) already exists.
+  await fs.mkdir(outputRoot, { recursive: true });
+  const realEpisodeDir = await fs.realpath(episodeDir);
+  const realOutputRoot = await fs.realpath(outputRoot);
+  const rootReal = toPosix(path.relative(realEpisodeDir, realOutputRoot));
+  if (rootReal !== root) {
+    throw new Error(
+      `the ${root}/ output root resolves through a symlink to "${rootReal}", which is not the ` +
+        `episode's own ${root}/ directory — refusing to write build output outside ` +
+        `${realEpisodeDir}/${root} (FR-009).`
+    );
+  }
+  return { realEpisodeDir, realOutputRoot };
 }
 
 /**
