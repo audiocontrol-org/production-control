@@ -74,6 +74,8 @@ export async function invokeProvider(request: InvokeRequest): Promise<Invocation
     request.onDiagnostic
   );
 
+  refuseImpurityContradiction(request.target, request.decl, response);
+
   const output = onlyOutput(request.target, response);
   const fullPath = path.resolve(request.outputDir, output.path);
 
@@ -84,6 +86,32 @@ export async function invokeProvider(request: InvokeRequest): Promise<Invocation
     response,
     output: { relPath: normalize(output.path), fullPath, hash: await hashFile(fullPath) },
   };
+}
+
+/**
+ * Refuses a PURE-declared provider that returned an IMPURE response, naming the target
+ * (FR-012). Runtime impurity may only CORROBORATE a statically-declared impure provider — both
+ * present, or the response confirming what the declaration already said — never INTRODUCE
+ * impurity a pure declaration lacked. `decl.impure` absent and `response.impure` present is
+ * exactly that: the static contract said "reproducible" and the actual run said otherwise, and
+ * that contradiction is contradictory provenance metadata, which fails loud rather than being
+ * silently reclassified (Constitution Principle V) — it is NOT the same case as an impure
+ * declaration going unconfirmed by the response, which `impurityOf` (`src/providers/build.ts`)
+ * still resolves by trusting the declaration.
+ */
+function refuseImpurityContradiction(
+  target: Identity,
+  decl: ProviderDecl,
+  response: BuildResponse
+): void {
+  if (decl.impure === undefined && response.impure !== undefined) {
+    throw new Error(
+      `provider for "${target}" is declared PURE (no \`impure\` on its ProviderDecl) but its ` +
+        `response reported impure: "${response.impure.reason}". A pure declaration cannot be ` +
+        `overridden by a runtime claim of impurity — contradictory pure/impure provenance is ` +
+        `refused rather than silently reclassified (FR-012).`
+    );
+  }
 }
 
 /**

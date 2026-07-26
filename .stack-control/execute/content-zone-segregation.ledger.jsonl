@@ -1,0 +1,25 @@
+{"id":"T001","tierLabel":"fast","model":"haiku","dispatchedModel":"sonnet","note":"scaffolding folded into classifier batch","commitRange":"ab4a5b9","reviewClean":true}
+{"id":"T003","tierLabel":"balanced","model":"sonnet","commitRange":"ab4a5b9","reviewClean":true}
+{"id":"T004","tierLabel":"balanced","model":"sonnet","commitRange":"ab4a5b9","reviewClean":true}
+{"id":"T005","tierLabel":"fast","model":"haiku","commitRange":"a58b0ff","reviewClean":true}
+{"id":"T002","tierLabel":"fast","model":"haiku","commitRange":"a58b0ff","reviewClean":true}
+{"id":"T006","tierLabel":"balanced","model":"sonnet","commitRange":"b063b07","reviewClean":true,"state":"RED-expected"}
+{"id":"T007","tierLabel":"balanced","model":"sonnet","commitRange":"b063b07","reviewClean":true,"state":"RED-expected"}
+{"id":"T008","tierLabel":"balanced","model":"sonnet","commitRange":"b063b07","reviewClean":true,"state":"RED-expected"}
+{"id":"T010","tierLabel":"balanced","model":"sonnet","commitRange":"b063b07","reviewClean":true,"state":"RED-expected"}
+{"id":"T011","tierLabel":"balanced","model":"sonnet","commitRange":"57a4db7","reviewClean":true}
+{"id":"T022","tierLabel":"balanced","model":"sonnet","commitRange":"57a4db7","reviewClean":true}
+{"id":"T009","tierLabel":"powerful","model":"opus","commitRange":"673681f","reviewClean":true}
+{"id":"T012","tierLabel":"powerful","model":"opus","commitRange":"673681f","reviewClean":true,"note":"parent-only realpath prevents write-through symlink; 6-channel red-team"}
+{"id":"T013","tierLabel":"powerful","model":"opus","commitRange":"673681f","reviewClean":true}
+{"id":"T014","tierLabel":"balanced","model":"sonnet","commitRange":"9659be6","reviewClean":true,"note":"also fixed 5 fixtures relying on old silent-coalesce"}
+{"id":"T016","tierLabel":"fast","model":"haiku","commitRange":"09852fb","reviewClean":true,"note":"legibility regression guards; green immediately"}
+{"id":"T015","tierLabel":"balanced","model":"sonnet","commitRange":"36e4af8","reviewClean":true,"state":"RED-expected","note":"authored-direction refusal; RED until T017"}
+{"id":"T017","tierLabel":"balanced","model":"sonnet","commitRange":"1e4c236","reviewClean":true,"note":"Rule 7 in validate.ts; local Error style, not FR-011 helper"}
+{"id":"T018","tierLabel":"fast","model":"haiku","commitRange":"a6ac15e","reviewClean":true,"note":"removed AI-generated overclaim from route.ts docstrings (FR-023)"}
+{"id":"T019","tierLabel":"balanced","model":"sonnet","commitRange":"ae0537c","reviewClean":true,"state":"RED-expected","note":"RED (unknown command); flagged realpath ambiguity -> resolved lexical per contract"}
+{"id":"T020","tierLabel":"balanced","model":"sonnet","commitRange":"86ba2b9","reviewClean":true,"note":"lexical audit; declared impurity; bypasses validateGraph to report not crash; no realpath"}
+{"id":"T021","tierLabel":"fast","model":"haiku","commitRange":"d77f62c","reviewClean":true,"note":"registered verb; all 4 audit-zones tests green; US3 complete"}
+{"id":"T023","tierLabel":"fast","model":"haiku","commitRange":"e8f01b0","reviewClean":true,"note":"FR-024/TASK-15 boundary; output-edited->modified; file at 500 lines"}
+{"id":"T025","tierLabel":"fast","model":"haiku","commitRange":"8b845e4","reviewClean":true,"note":"README .ai convention + audit-zones verb"}
+{"id":"T024","tierLabel":"powerful","model":"opus","commitRange":"3d10f65","reviewClean":true,"note":"whole-suite gate GREEN after lint fixes + restored dropped assertion; 448 pass 0 fail"}

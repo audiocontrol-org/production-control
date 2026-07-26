@@ -113,7 +113,7 @@ the contract:
 | Class | Verbs | Exit |
 |---|---|---|
 | **Read** | `status`, `next`, `explain <node>` | Always **0** — even when reporting problems |
-| **Gate** | `validate`, `release-check` | **0** if clean, **1** if not |
+| **Gate** | `validate`, `release-check`, `audit-zones` | **0** if clean, **1** if not |
 | **Act** | `build <target>`, `asset add <file>`, `review <node> --waive --reason` | **0** on success, **1** on failure |
 | **Any** | — | **2** on a usage error (bad flag, missing argument) |
 
@@ -147,6 +147,23 @@ production-control entirely with no credentials and no orchestrator present. The
 contract, including the exact request/response shapes and the failure rules a provider
 must be held to, is
 [specs/001-episode-production-contract/contracts/provider.md](specs/001-episode-production-contract/contracts/provider.md).
+
+## Build output and zone conventions
+
+production-control distinguishes output by impurity: **AI-permitted** (impure, from an AI-assisted provider) and **human-safe** (pure, from a deterministic tool). This distinction is enforced through a path-based zoning convention, readable at a glance from the path alone.
+
+**The zoning rule**: A path is **AI-permitted** if and only if at least one of its *directory* segments begins with `.` (dot-prefixed); otherwise it is **human-safe**. A dot-prefixed *filename* in a dot-free directory does not establish a zone — only directory names count. Examples:
+
+- `.ai/artifacts/output.txt` → AI-permitted (`.ai` segment)
+- `dist/output.txt` → human-safe (no dot segment)
+- `dist/.draft.md` → human-safe (the basename `.draft.md` does not count)
+- `dist/target/.ai/output.txt` → AI-permitted (`.ai` segment; all dot names are equivalent — `.ai`, `.cache`, `.tmp` all mean the same thing)
+
+**Routing and enforcement**: Impure output is routed to the `.ai/` directory (a top-level sibling of `dist/`); pure output goes to `dist/`. At build time, impure output that resolves to a human-safe path is refused, naming the path. Authored content aimed at an AI zone is also refused. These refusals hold regardless of provider misbehavior (symlinks, escape attempts), with escape violations caught before zoning is evaluated.
+
+**What the path does and does not say**: A dot-zoned path is *AI-permitted / not human-safe* — a location where an AI system may write — but does not prove the content is AI-generated. A dot-free path is human-safe. The path is a permission boundary for human legibility; the artifact graph's impurity flag is the authoritative provenance record. See [the specification](specs/003-content-zone-segregation/spec.md) for the full invariants and safety boundaries.
+
+**Audit before build**: `pc audit-zones [--episode <dir>] [--json]` audits the routing policy over the manifest, reporting any target whose declared output location violates the zoning invariant before a build runs. It exits 0 if clean, non-zero if violations found (gate semantics). Every audit run states that provider runtime filenames and escape are verified only at build time (`pc build`), not by the audit.
 
 ## Repository structure
 

@@ -13,9 +13,15 @@ test('miner cache: DISABLED unless asked for', async (t) => {
     const previous = process.env.QUOTE_MINER_CACHE_DIR;
     delete process.env.QUOTE_MINER_CACHE_DIR;
     const observed = tempDir('qm-nocache-');
+    const originalCwd = process.cwd();
     try {
       const sources = makeSources(3);
       const first = countingModel();
+      // Scope the runs' CWD to the empty `observed` dir. Checking a directory `mine()` was never
+      // told about would be vacuous — true for every implementation (AUDIT-11). Running under
+      // `observed` gives the assertion a real subject: if a regression made `mine()` invent a
+      // DEFAULT cwd-relative cache (e.g. ./.quote-miner-cache), it materializes here and goes red.
+      process.chdir(observed);
       const uncachedOne = await mine({ sources, model: first });
       const second = countingModel();
       const uncachedTwo = await mine({ sources, model: second });
@@ -25,8 +31,13 @@ test('miner cache: DISABLED unless asked for', async (t) => {
       assert.equal(uncachedTwo.report.sources_from_cache, 0);
       assert.equal(uncachedTwo.report.cache_entries_ignored, 0);
       assert.equal(serializeBank(uncachedTwo.bank), serializeBank(uncachedOne.bank));
-      assert.deepEqual(filesIn(observed), [], 'no cache directory is invented anywhere');
+      assert.deepEqual(
+        filesIn(observed),
+        [],
+        'no cache directory is invented anywhere (including a cwd-relative default)'
+      );
     } finally {
+      process.chdir(originalCwd);
       if (previous === undefined) delete process.env.QUOTE_MINER_CACHE_DIR;
       else process.env.QUOTE_MINER_CACHE_DIR = previous;
     }

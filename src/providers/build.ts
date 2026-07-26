@@ -12,6 +12,7 @@ import type { DiagnosticSink } from '@/providers/diagnostics.js';
 import { resolveInputs } from '@/providers/inputs.js';
 import { invokeProvider, type ProducedOutput } from '@/providers/invoke.js';
 import type { ProviderRunner } from '@/providers/run.js';
+import { classifyZone, impureOutputRoot, pureOutputRoot, zoningRefusal } from '@/zoning/index.js';
 
 /**
  * **Building an output and recording its origin, as ONE INDIVISIBLE ACT** (FR-014, T059/T060).
@@ -106,6 +107,11 @@ export async function buildTarget(context: BuildContext, id: Identity): Promise<
   // Inside `dist/` (already gitignored) and named for the target, so two builds cannot collide
   // and a crash leaves its debris somewhere obviously disposable rather than in the source tree.
   const outputDir = path.join(context.episodeDir, 'dist', `.pc-build-${id}`);
+  // The provider writes into `dist/.pc-build-<id>` BEFORE `stage()` runs, so a symlinked `dist/`
+  // would let provider scratch bytes land OUTSIDE the episode even though the build is ultimately
+  // refused. Refuse a symlinked scratch root up front, so nothing is ever written outside — not
+  // even transiently (AUDIT-03/AUDIT-10). `stage()` re-checks the FINAL root (`.ai`/`dist`) too.
+  await assertContainedRoot(context.episodeDir, pureOutputRoot());
   try {
     const { response, output } = await invokeProvider({
       runner: context.runner,
@@ -123,10 +129,11 @@ export async function buildTarget(context: BuildContext, id: Identity): Promise<
     // human-crafted, so nobody mistakes it for authored content. A PURE output is reproducible and
     // stays in gitignored `dist/`. production-control already knows which this is (the same
     // impurity it records), so the routing is principled, not a per-target flag.
-    const outputRoot = impurityOf(decl, response) !== undefined ? 'ai-generated' : 'dist';
+    const impure = impurityOf(decl, response) !== undefined;
+    const outputRoot = impure ? impureOutputRoot() : pureOutputRoot();
 
     // Step 4: stage the produced bytes to a temp sibling — NOT their final path yet.
-    const staged = await stage(context.episodeDir, outputRoot, output);
+    const staged = await stage(context.episodeDir, outputRoot, output, impure, id);
     try {
       // Step 5: write the record. If this throws, nothing visible has changed — the staged bytes
       // are off to the side and the `finally` below removes them, leaving the prior artifact intact.
@@ -209,17 +216,19 @@ interface StagedOutput {
 async function stage(
   episodeDir: string,
   root: string,
-  output: ProducedOutput
+  output: ProducedOutput,
+  impure: boolean,
+  target: Identity
 ): Promise<StagedOutput> {
   const recordedPath = path.posix.join(root, output.relPath);
   const destination = path.join(episodeDir, recordedPath);
-
-  // Defense in depth. `BuildOutputSchema.path` (RelativePathSchema) already refuses a traversing
-  // output on the wire, but this composition trusts `output.relPath`, and a future caller that
-  // builds a ProducedOutput another way must still not be able to write outside the output root
-  // (`dist/` for pure, `ai-generated/` for impure). The schema guards the wire; this guards the
-  // composition (FR-036).
   const outputRoot = path.join(episodeDir, root);
+
+  // (b) LEXICAL containment. Defense in depth: `BuildOutputSchema.path` (RelativePathSchema)
+  // already refuses a traversing output on the wire, but this composition trusts `output.relPath`,
+  // and a future caller that builds a ProducedOutput another way must still not be able to write
+  // outside the output root (`dist/` for pure, `.ai/` for impure). The schema guards the wire; this
+  // guards the composition (FR-036). This fires FIRST, before any filesystem is touched.
   const relToRoot = path.relative(outputRoot, destination);
   if (relToRoot === '..' || relToRoot.startsWith(`..${path.sep}`) || path.isAbsolute(relToRoot)) {
     throw new Error(
@@ -228,13 +237,129 @@ async function stage(
     );
   }
 
-  // `dirname(destination)` is at or under `outputRoot`, so this also creates `outputRoot`, where the
-  // temp sibling lands. Both the temp and its eventual destination are then within one filesystem.
+  // (c0) THE OUTPUT ROOT ITSELF must resolve to `<episode>/<root>` (AUDIT-03) — creates ONLY the
+  // single-segment root (never `dirname(destination)` yet, whose intermediate segments could
+  // traverse an escaping symlink — AUDIT-05) so it can be realpath-resolved, and refuses a
+  // symlinked root that escapes the episode. Shared with the pre-invocation scratch-root guard in
+  // `buildTarget`. Nothing is created outside the real output root until (c0)/(c) pass.
+  const { realEpisodeDir, realOutputRoot } = await assertContainedRoot(episodeDir, root);
+
+  // (c) REAL-PATH containment of the DESTINATION (FR-009/FR-010). The lexical guard cannot see
+  // through a symlink BENEATH the root. Resolve the REAL destination WITHOUT creating anything:
+  // realpath the deepest EXISTING ancestor of the destination's parent and re-append the not-yet-
+  // existing remainder (`realpathDeepest`), then append the basename — which the atomic `rename` in
+  // step 6 REPLACES rather than follows, so it must NOT itself be resolved. Confirm the result
+  // stays within the realpath-resolved output root BEFORE any nested directory is created (AUDIT-05).
+  const realParent = await realpathDeepest(path.dirname(destination));
+  const resolved = path.join(realParent, path.basename(destination));
+
+  const realRel = path.relative(realOutputRoot, resolved);
+  if (realRel === '..' || realRel.startsWith(`..${path.sep}`) || path.isAbsolute(realRel)) {
+    throw new Error(
+      `output.path "${output.relPath}" resolves through a symlink to ` +
+        `"${toPosix(path.relative(realEpisodeDir, resolved))}", which escapes the episode's ` +
+        `${root}/ directory — a build output must resolve within ${realOutputRoot} (FR-009).`
+    );
+  }
+
+  // (d) ZONING (FR-010/FR-011). An IMPURE output whose REAL destination classifies human-safe is
+  // refused, naming the resolved path. Impure output routes under `.ai/` by construction, so the
+  // only way its real destination lands human-safe is a symlink — which (c) has now resolved. Pure
+  // output legitimately lives under human-safe `dist/`, so this guard is impure-only.
+  const resolvedRel = toPosix(path.relative(realEpisodeDir, resolved));
+  if (impure && classifyZone(resolvedRel, 'file') === 'human-safe') {
+    throw zoningRefusal({ path: resolvedRel, target });
+  }
+
+  // Only NOW, with the resolved destination proven contained, create its parent directories. The
+  // deepest existing ancestor resolved inside the real output root, and the not-yet-existing
+  // remainder cannot be a symlink, so this `recursive` mkdir creates real directories inside the
+  // real output root only — never following an escaping symlink out of it (AUDIT-05).
   await fs.mkdir(path.dirname(destination), { recursive: true });
+
+  // (e) STAGE the bytes to a temp sibling under `outputRoot`. Both the temp and its eventual
+  // destination are then within one filesystem, so the caller's temp->destination rename is atomic.
   const tempPath = path.join(outputRoot, `.pc-ingest-${crypto.randomUUID()}`);
   await fs.copyFile(output.fullPath, tempPath);
 
   return { recordedPath, destination, tempPath };
+}
+
+/** Episode-relative paths are recorded and classified POSIX-separated, regardless of host OS. */
+function toPosix(relativePath: string): string {
+  return relativePath.split(path.sep).join('/');
+}
+
+/**
+ * Creates the single-segment output root `<episodeDir>/<root>` (`dist`/`.ai`) and asserts it is the
+ * episode's OWN directory, not a symlink whose real target escapes the episode (AUDIT-03). If
+ * `<episodeDir>/<root>` is a symlink, its real target could be anywhere — outside the episode, or a
+ * human-safe directory inside it — so any later containment check measured against it would be
+ * measured relative to where the root POINTS. Refuses loudly, naming the symlinked target. Returns
+ * the realpath-resolved episode dir and output root so the caller need not resolve them again.
+ *
+ * Called BOTH before invoking the provider (on the `dist/` scratch root, so provider bytes never
+ * land outside even transiently — AUDIT-10) and inside `stage()` (on the final `.ai/`|`dist/` root).
+ */
+async function assertContainedRoot(
+  episodeDir: string,
+  root: string
+): Promise<{ realEpisodeDir: string; realOutputRoot: string }> {
+  const outputRoot = path.join(episodeDir, root);
+  // `recursive` is a no-op when the root (or a symlink standing in for it) already exists.
+  await fs.mkdir(outputRoot, { recursive: true });
+  const realEpisodeDir = await fs.realpath(episodeDir);
+  const realOutputRoot = await fs.realpath(outputRoot);
+  const rootReal = toPosix(path.relative(realEpisodeDir, realOutputRoot));
+  if (rootReal !== root) {
+    throw new Error(
+      `the ${root}/ output root resolves through a symlink to "${rootReal}", which is not the ` +
+        `episode's own ${root}/ directory — refusing to write build output outside ` +
+        `${realEpisodeDir}/${root} (FR-009).`
+    );
+  }
+  return { realEpisodeDir, realOutputRoot };
+}
+
+/**
+ * Resolves `target` to its REAL location WITHOUT creating anything: realpaths the deepest existing
+ * ancestor and re-appends the not-yet-existing remainder (which, not existing, cannot be a symlink).
+ *
+ * This is what lets containment (guard (c)) be proven BEFORE `dirname(destination)` is created
+ * (AUDIT-05): `fs.realpath` needs its whole argument to exist, so realpathing `dirname(destination)`
+ * directly would force the escaping `mkdir` to run first. Walking up to the deepest existing ancestor
+ * — a symlink there is followed (an in-root symlink resolves inside the root and is allowed; an
+ * escaping one resolves outside and (c) refuses it) — and re-appending the purely-lexical remainder
+ * yields the real destination parent with no filesystem mutation at all.
+ */
+async function realpathDeepest(target: string): Promise<string> {
+  const remainder: string[] = [];
+  let current = target;
+  for (;;) {
+    const real = await realpathOrNull(current);
+    if (real !== null) {
+      return remainder.length === 0 ? real : path.join(real, ...remainder);
+    }
+    const parent = path.dirname(current);
+    if (parent === current) {
+      throw new Error(`no existing ancestor of "${target}" could be resolved.`);
+    }
+    remainder.unshift(path.basename(current));
+    current = parent;
+  }
+}
+
+/** `fs.realpath`, returning `null` for a path that does not exist (ENOENT, incl. a dangling
+ * symlink) and rethrowing every other I/O fault by name. */
+async function realpathOrNull(target: string): Promise<string | null> {
+  try {
+    return await fs.realpath(target);
+  } catch (error) {
+    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
+      return null;
+    }
+    throw error;
+  }
 }
 
 /**

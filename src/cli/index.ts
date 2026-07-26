@@ -3,6 +3,7 @@ import * as fs from 'node:fs';
 import * as process from 'node:process';
 import * as url from 'node:url';
 import { Command, CommanderError } from 'commander';
+import { auditZonesCommand, createAuditDeps } from '@/cli/audit-zones.js';
 import { explainCommand } from '@/cli/explain.js';
 import { nextCommand } from '@/cli/next.js';
 import { releaseCheckCommand } from '@/cli/release-check.js';
@@ -125,6 +126,17 @@ export function createProgram(deps: CliDeps): Command {
     .option(JSON_FLAG, JSON_HELP)
     .action(async (...args: unknown[]): Promise<void> => {
       setExitCode(await releaseCheckCommand(deps, readOptions(args[0])));
+    });
+
+  program
+    .command('audit-zones')
+    .description(
+      'Audit the routing policy over the manifest for zoning violations. Exits 0 if clean, 1 if violations found.'
+    )
+    .option(EPISODE_FLAG, EPISODE_HELP)
+    .option(JSON_FLAG, JSON_HELP)
+    .action(async (...args: unknown[]): Promise<void> => {
+      setExitCode(await auditZonesCommand(createAuditDeps(), readOptions(args[0])));
     });
 
   // `pc readme` — regenerate the per-episode README from the manifest + committed ledger. It only

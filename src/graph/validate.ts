@@ -1,4 +1,5 @@
 import { reachableTargets } from '@/graph/reachable.js';
+import { classifyZone } from '@/zoning/index.js';
 import type { EpisodeManifest, Profile, Identity } from '@/manifest/schema.js';
 
 /**
@@ -13,6 +14,9 @@ import type { EpisodeManifest, Profile, Identity } from '@/manifest/schema.js';
  *   4. A manifest target the profile does not produce.
  *   5. `follows` declared on a derived node.
  *   6. An identity that is both authored AND a profile target.
+ *   7. An authored node whose declared path classifies AI-permitted (dot-zoned) —
+ *      the authored direction of the segregation invariant (FR-006/D2b): a dot-zone
+ *      is not a supported authored workspace.
  *
  * **What is validated is the REACHABLE set, not the profile's catalogue**
  * (FR-004, see `reachable.ts`). A profile enumerates every target the recipe
@@ -74,6 +78,21 @@ export function validateGraph(manifest: EpisodeManifest, profile: Profile): void
     if (reached.has(id)) {
       throw new Error(
         `Identity "${id}" is declared both in authored and as a profile target — every node must be exactly one kind (authored or derived).`
+      );
+    }
+  }
+
+  // Rule 7 (FR-006/D2b): every authored node's declared path must classify human-safe. A
+  // dot-zone is AI-permitted (`classifyZone`), so an authored node routed there tells a human
+  // "safe to author in" while the path itself says the opposite — this is the authored direction
+  // of the segregation invariant (INV-3), independent of `reached`/the profile catalogue, since
+  // an authored node's path is a property of the node itself. Reuses `classifyZone` rather than
+  // reimplementing it, per FR-018.
+  for (const [id, decl] of Object.entries(manifest.authored)) {
+    if (classifyZone(decl.path, 'file') === 'ai-permitted') {
+      throw new Error(
+        `Authored node "${id}" declares path "${decl.path}", which classifies ai-permitted ` +
+          `(dot-zoned) — authored content must resolve to a human-safe path (FR-006).`
       );
     }
   }
