@@ -98,22 +98,34 @@ into a guarded structural boundary.
 Stated independently of enforcement so the philosophy is not read as an
 implementation detail:
 
-- **INV-1 — Structural segregation.** Human-authored, mechanically-generated, and
-  AI-generated content are kept structurally apart. AI (impure-provider) output may
-  never occupy a human-authored area.
-- **INV-2 — Human legibility at a glance.** A person MUST be able to tell a file's
-  zone from its **name alone** — in a file tree, a `git status`, a diff — with no
-  tooling, no manifest lookup, and no graph query. This is a first-class
-  requirement, not a convenience: the naming convention is the *human's* channel to
-  a file's provenance, co-equal with the machine's.
-- **INV-3 — The two channels may never diverge.** The human-readable name and the
-  machine-known provenance (the graph's `impure` flag) are two projections of one
-  truth and MUST agree: an impure node MUST sit at a name a human reads as AI. The
-  build refusal exists precisely to keep them in lockstep, so a name can never lie
-  about what produced the bytes.
+- **INV-1 — Structural segregation (bidirectional for the two hard classes).**
+  Human-authored content MUST reside in a human-safe path; impure-derived (AI)
+  content MUST reside in an AI-permitted path. Pure-derived content MAY reside in
+  either, according to workflow need (a generated README in a human area is
+  explicitly allowed). This is stronger than "keep AI out of human areas" — it also
+  keeps authored content out of AI zones, so all three classes stay apart (see D2b
+  for why the authored direction is enforced).
+- **INV-2 — Human legibility at a glance.** A person MUST be able to tell from a
+  path **alone** — in a file tree, a `git status`, a diff, with no tooling, no
+  manifest lookup, no graph query — **whether a location is human-safe or
+  AI-permitted.** This is a first-class requirement, not a convenience: the naming
+  convention is the *human's* channel, co-equal with the machine's. Note the
+  deliberate asymmetry (see D5b): a dot-zone means *AI-permitted / not human-safe*,
+  **not** "definitely AI" — pure or operational files may live there too. A non-dot
+  path, however, does prove the location holds no impure content.
+- **INV-3 — The two channels may never diverge.** The path (human channel) and the
+  graph's `impure` flag (machine channel) are two projections of one truth and MUST
+  agree, in both directions for the hard classes: an **impure** node may not resolve
+  into a human-safe path, and an **authored** node may not resolve into an
+  AI-permitted path. The path communicates *human-safe vs AI-permitted*; the graph
+  communicates *exact provenance*; the build refusal keeps them from contradicting
+  each other, so a location can never mislead a human about whether it is safe to
+  author in.
 - **INV-4 — No in-place editing of impure artifacts.** No supported workflow may
-  require a human to edit an AI-generated artifact in place. A human who wants to
-  work on the content authors a separate document in a human area (D6).
+  require or legitimize a human editing an AI-generated artifact in place; human
+  work creates a *separate authored node* (D6). This is a workflow guarantee, not a
+  claim that such an edit is mechanically impossible — a human can still open the
+  file (see D7 and TASK-15).
 
 Directory zoning (below) is how v1 realizes these — but INV-2 constrains any future
 mechanism: a replacement that made a file's zone unreadable from its name (a
@@ -208,18 +220,57 @@ every fixture and the quickstart for no gain.
 **D1 — Zoning is read from the directory name, any-dot-wins — and the name is a human authority, not just a rule.**
 A path is AI-permitted iff at least one of its directory segments begins with `.`.
 A path with no dot-prefixed segment is human-safe. The rule is evaluated on the
-episode-relative path, is total (every path resolves to exactly one zone), and
-requires no configuration. The name is chosen as the carrier because a human reads
-it at a glance (INV-2); provenance (the `impure` flag) is the machine's authority
-for the same fact, and INV-3 binds the two to agree. "Directory name as authority"
-means the *human's* authority — it is not subordinate to provenance, it is the other
-projection of it.
+production-root-relative path (see D1a), is total (every path resolves to exactly
+one zone), and requires no configuration. The name is chosen as the carrier because
+a human reads it at a glance (INV-2); provenance (the `impure` flag) is the
+machine's authority for the same fact, and INV-3 binds the two to agree. "Directory
+name as authority" means the *human's* authority — it is not subordinate to
+provenance, it is the other projection of it.
 
-**D2 — The invariant: impure output may never be written to a human-safe path.**
-An impure-provider (`ProviderDecl.impure` present, or `BuildResponse.impure`
-present) artifact MUST resolve to an AI-permitted (dot-zoned) path. Pure output has
-no such restriction and MAY be written to human-safe paths (a generated README, a
-YAML) — this is the (a)-may, (b)-must-not asymmetry the operator specified.
+**D1a — Normative zoning root and basename exclusion.**
+Zoning is evaluated **only over path segments relative to the production root**
+supplied to production-control (the episode/output root). Segments of the absolute
+filesystem path *above* that root — a repository's `.git/`, `.github/`, a
+dot-prefixed home directory — do NOT participate; a dotted ancestor outside the
+production root never classifies content inside it. Within that scope, **only
+directory segments establish the zone; the basename does not.** A dot-prefixed
+*file* in a non-dot directory (`dist/.draft.md`) is human-safe, not AI-zoned — the
+basename and extension may signal artifact *type* to a human, but they do not change
+the *zone*. Normative rule: *a path is AI-permitted iff at least one of its parent
+directory segments, relative to the production root, begins with `.`.*
+
+**D2 — Impure output may never be written to a human-safe path.**
+An impure-provider artifact MUST resolve to an AI-permitted (dot-zoned) path. Pure
+output has no such restriction and MAY be written to human-safe paths (a generated
+README, a YAML) — the (a)-may, (b)-must-not asymmetry the operator specified.
+
+**D2a — Impurity cannot be introduced at runtime (closes a false-safe path).**
+Routing (D5.1) must choose an impure target's output location from the *static*
+`ProviderDecl.impure`, because it runs before the provider does. But
+`src/providers/build.ts:285` currently records impurity as
+`response.impure ?? decl.impure` — so a provider **declared pure** that returns
+`impure` in its `BuildResponse` is accepted as impure *after* its bytes have already
+been staged into the human-safe location routing chose for a pure target. That is a
+false-safe path: impure bytes in a human area, discovered too late to move them.
+Therefore: **a provider declared pure MUST NOT return an impure result.**
+`BuildResponse.impure` may corroborate or explain a statically-declared impurity; it
+may never *introduce* impurity a pure declaration did not have. A build that sees
+runtime impurity on a pure declaration MUST refuse. (If runtime discovery of
+impurity is ever genuinely needed, all output would have to stage in a neutral/AI
+location until classification completes — much more complex and, on present
+evidence, unnecessary.)
+
+**D2b — Authored content must reside in a human-safe path (the authored direction of INV-1/INV-3).**
+The impure→dot rule alone is one-way: it keeps AI out of human areas but does not
+stop an *authored* node from pointing into a dot-zone, which would be the reverse
+divergence INV-3 exists to prevent — a human reads the location as not-human-safe
+while the graph calls it authored. So an **authored node MUST resolve to a human-safe
+path**; a dot-zone is reserved for generated and operational artifacts and is not a
+supported authored workspace. This is the one place this revision *extends* the
+operator's stated rule (which named only "AI must never be in human areas"); it is
+adopted because "strict segregation between the three classes" and INV-3's
+two-direction agreement both require it. Flagged for operator veto. Pure-derived
+nodes remain deliberately free to live in either zone.
 
 **D3 — `dist/` stays the build root; impure output is dot-zoned within it.**
 The build root is unchanged. Impure targets are routed to a dot-prefixed
@@ -234,17 +285,46 @@ leaves it protected, never exposed.
 
 **D5 — Enforcement keeps the human name and the machine provenance in agreement (INV-3).**
 The name is the human's authority (D1); this is the machinery that guarantees it
-never diverges from the `impure` flag. Defense-in-depth:
+never diverges from the `impure` flag. Defense-in-depth, in a **fixed order** so
+zoning is never the only defense against a provider escape:
+
 1. **Routing** — production-control assigns an impure target's output location
-   inside a dot-zone, so the common path is correct — and human-legible — by
-   construction.
-2. **Build-time refusal** — if an impure provider declares an output that resolves
-   to a dot-free (human-safe) path, the build refuses, naming the path, in the same
-   layer where `run.ts` already refuses traversal (FR-036 shape). This is the point
-   where INV-3 is enforced: it is what stops a name from lying about provenance.
-3. **Standalone audit verb** — a read-only check over the whole manifest/graph that
-   reports any impure target whose intended output is not dot-zoned, so a violation
-   is caught before a build rather than at build time.
+   inside a dot-zone (and an authored node's under a human-safe path, D2b), so the
+   common path is correct — and human-legible — by construction.
+2. **Path resolution and containment first, then zoning.** For each declared output
+   the build MUST, in this order: (a) resolve the path; (b) reject traversal/escape;
+   (c) **confirm the resolved real path is contained within the assigned
+   `output_dir`** — evaluated on the *symlink-resolved* destination, not the lexical
+   path (D5c); (d) evaluate zoning; (e) stage. A provider returning `../../x.md` is a
+   general contract violation caught at (b)/(c) *regardless of impurity* — it is not
+   a zoning failure. `run.ts:229` today does (a)/(b) lexically; the containment and
+   real-path steps are additions this feature depends on.
+3. **Zoning refusal** — once contained, an impure output resolving to a dot-free
+   (human-safe) path is refused, naming the path (FR-036 shape). This is where INV-3
+   is enforced: it stops a name from lying about provenance.
+4. **Routing audit verb** — a read-only check that audits **routing policy**, not
+   output artifacts (it cannot know a runtime filename or a runtime escape). It
+   establishes that every impure target *would be assigned* a dot-zoned `output_dir`,
+   every authored node a human-safe one (D2b), and no configured target routing
+   violates zoning — and it reports plainly that provider filenames and escapes are
+   checked only at build time. See open question 3.
+
+**D5b — A dot-zone means "AI-permitted / not human-safe," not "definitely AI."**
+Under any-dot-wins, `dist/.cache/`, `dist/.tmp/`, and `dist/.ai/` are all
+AI-permitted and treated identically; `.ai` is *conventional, not special*. So the
+human semantics are asymmetric and must be documented and taught as such:
+`dot-zoned → possibly AI-generated, not human-safe`; `non-dot → not impure,
+human-safe`. A dot path does not *prove* a file is AI-generated (a pure or temporary
+file may sit there); a non-dot path *does* prove the location holds no impure
+content. INV-2 is about *safety legibility* (is it safe to author here?), which the
+name answers exactly; exact provenance remains the graph's to state.
+
+**D5c — Zoning is evaluated on the resolved destination, not the lexical path.**
+A symlink whose lexical path is dot-zoned but whose real target is human-safe
+(`dist/.ai/out -> ../../manuscript/ch01.md`) would satisfy a name-only check while
+writing into a human area. Zoning (and the containment check, D5.2c) MUST therefore
+run against the `realpath`-resolved destination. `run.ts` is lexical today; resolving
+the real path before classification is a required property, with a dedicated test.
 
 **D5a — File naming is part of the human-legibility layer, not a separate undefined mechanism.**
 An earlier draft named a vague "file-type / role" check as a redundant secondary
@@ -287,12 +367,16 @@ existence of a companion; it is simply never the thing a human hand-edits.
 **D7 — Mechanical (pure) output retains the `modified` protection; AI output does not need it.**
 The `modified` state and its release block are correct for a pure output a human
 edited by mistake (the bytes are reproducible; the system should not silently
-rebuild over an edit without the human's say-so). For AI output the situation
-should not arise under D6 — an impure artifact lives in a dot-zone a human does not
-treat as their working area — so the missing `resolve-edit` verb is not on this
-feature's critical path. Whether pure outputs still need a `resolve-edit` resolution
-is deferred (open question 1); it is a smaller, separable matter now that the AI
-class is handled by prevention.
+rebuild over an edit without the human's say-so). For AI output, a `modified` state
+represents an **unsupported out-of-band edit**, not a normal editorial transition —
+zoning prevents any *supported workflow* from depending on such an edit (INV-4), but
+it does not make the edit mechanically impossible: a human can still open
+`dist/.ai/…/ch01.md` in an editor, and the node will still become `modified`.
+**Zoning does not supersede TASK-15 for impure artifacts.** TASK-15's
+stale-over-modified precedence — which silently erases a hand edit when an input
+also changes — affects *all* derived nodes, impure ones included. So this feature
+makes in-place editing unsupported and conspicuous; it does not by itself protect
+those bytes from silent loss. See the safety-dependency note under Dependencies.
 
 **D8 — This feature adds enforcement, not a new node kind.**
 The three classes are the existing authored / pure-derived / impure-derived
@@ -323,31 +407,59 @@ provider outputs that already carry impurity provenance.
    assign a dot-zoned `output_dir` for impure targets, but the precise scheme is a
    plan-level decision.
 
-3. **Can the audit verb know an impure target's output path statically?** Output
-   paths are reported by the provider in `BuildResponse`, not declared in the
-   manifest, so a pre-build audit can only check the *routing rule* (the assigned
-   `output_dir` is dot-zoned), not the provider's eventual filename. The build-time
-   refusal (D5.2) is what covers a provider that escapes its `output_dir`. Whether
-   the audit should also assert something stronger is open.
+3. **The audit verb audits routing policy, not output artifacts.** Output paths are
+   reported by the provider in `BuildResponse`, not declared in the manifest, so the
+   audit can establish that every impure target *would be assigned* a dot-zoned
+   `output_dir` and every authored node a human-safe one, and that no configured
+   routing violates zoning — but it *cannot* know the runtime filename, whether the
+   provider will escape, or (given D2a) whether a declaration is honest. Those are
+   the build's job (D5.2/D5.3/D2a). The audit must report this scope honestly rather
+   than implying it verified the artifacts themselves. Naming it a *routing audit*
+   is the accurate contract.
 
-4. **File-type / role as the secondary signal — what is it, concretely?** D5 names
-   it as a redundant check but does not define it. Is it an extension allow-list per
-   zone, a role attribute on the node, or something else? Left open because the
-   directory-name authority stands on its own; the secondary layer can be specified
-   in the plan or a follow-on.
+   *(The former open question 4 — "what is the file-type secondary signal?" — is
+   removed: D5a settles it. v1 has no separate file-type/role enforcement; naming
+   plus provenance are the two channels; extension/role validation is deferred until
+   a concrete need names it.)*
 
-5. **The `dist/` migration surface.** Routing impure outputs under a dot-zone
+4. **The `dist/` migration surface.** Routing impure outputs under a dot-zone
    changes paths that fixtures, the quickstart (TASK-2), and existing tests assume.
    This is mechanical but real, and it interacts with `design:feature/directory-
    outputs` (a directory-valued impure output would be a dot-zoned *tree*). Scope of
    the migration is a plan concern; flagged here so it is not discovered late.
 
-6. **Does the invariant apply to non-`dist/` derived outputs?** If a future pure
+5. **Does the invariant apply to non-`dist/` derived outputs?** If a future pure
    provider is *permitted* to write a README into a human-safe area (as the operator
    allowed), the zoning check must let pure output through anywhere while still
    refusing impure output outside a dot-zone. The rule as stated (D2) already does
    this — the check keys on impurity, not on being under `dist/` — but it should be
    verified against any provider that writes outside `dist/`.
+
+## Testing strategy (for the spec/plan)
+
+The zoning decision and its refusals are small and adversarial by nature; the
+following cases are normative and belong in the plan:
+
+- impure → `dist/.ai/target/output.md` **passes**; impure → `dist/target/.ai/out.md`
+  **passes** (any-dot-wins); impure → `dist/target/output.md` **fails**.
+- pure → a human-safe path **passes**; pure → a dot-zone **passes**.
+- authored node in a human-safe path **passes**; authored node in a dot-zone
+  **fails** (D2b).
+- an absolute path with a dotted ancestor *above* the production root does **not**
+  affect zoning (D1a).
+- a dot-prefixed **filename** in a non-dot directory (`dist/.draft.md`) does **not**
+  establish a zone (D1a).
+- `.cache`, `.tmp`, `.preview`, `.ai` are all treated **identically** (D5b).
+- a provider **declared pure that returns `impure`** is **refused** (D2a).
+- provider output **escaping** the assigned directory is rejected **before** zoning
+  (D5.2), regardless of impurity.
+- a **symlink** whose lexical path is dot-zoned but whose real target is human-safe
+  is refused — zoning runs on the resolved destination (D5c).
+- a **directory-valued** impure output is classified from its root and all contained
+  files inherit the zone (interacts with `design:feature/directory-outputs`).
+- an accidental edit to an impure artifact still produces `modified`; the feature
+  neither erases nor reinterprets that state (D7), and the stale-over-modified case
+  still loses bytes until TASK-15 is fixed.
 
 ## Provenance
 
@@ -360,8 +472,14 @@ provider outputs that already carry impurity provenance.
   orders before voice-editions).
 - **Backlog captured during exploration:** **TASK-15**
   (`build-destroys-hand-edits-without-refusing`) — `pc build` has no state guard and
-  the stale-over-modified precedence makes one data-loss path silent. Separable from
-  this design.
+  the stale-over-modified precedence makes one data-loss path silent.
+- **Feature dependency vs safety dependency on TASK-15.** Zoning does not *require*
+  TASK-15 to function — the two are architecturally separable. But the repository
+  MUST NOT claim that derived edits are protected until TASK-15 is fixed: an
+  accidental in-place edit of a dot-zoned impure artifact still becomes `modified`
+  and can still be silently erased by a rebuild when an input also changes (D7).
+  Zoning makes such editing unsupported and conspicuous; it does not protect the
+  bytes. State this distinction wherever the feature's safety story is described.
 - **production-control sources consulted:** `src/state/frontier.ts`,
   `src/state/resolve.ts`, `src/state/release.ts`, `src/cli/review.ts`,
   `src/cli/build.ts`, `src/cli/index.ts`, `src/providers/contract.ts`,
@@ -382,6 +500,10 @@ provider outputs that already carry impurity provenance.
   naming convention is CRITICAL and for HUMANS**: humans read names at a glance, so
   the name is a first-class human-facing authority, not a swappable enforcement
   detail subordinate to provenance (this drove INV-2/INV-3 and the D1/D5 reframing).
+  The operator's phrase "file type" as one of the three mechanisms is realized as the
+  naming-legibility surface (extensions a human reads) plus a reserved future
+  type/role check (D5a); v1 does **not** define a standalone file-type enforcement
+  layer.
 
 ### Third-party review disposition (2026-07-25)
 
@@ -405,3 +527,34 @@ reserved-and-unspecified future type check (D5a). The reviewer's open-question-1
 instinct (refuse-with-acknowledgment over a new state) is recorded against TASK-15.
 Pushed back on: the swappable-mechanism premise (above), and the companion-supersedes
 claim (D6/D6a).
+
+**Second review round (2026-07-25), "approve after two small corrections."**
+Both required corrections and both strongly-recommended decisions are incorporated,
+plus several clarifications — and two of the reviewer's catches were verified against
+the code as real holes before acceptance:
+
+- **D2a (verified):** `src/providers/build.ts:285` is `response.impure ?? decl.impure`,
+  so a provider *declared pure* that returns impure is accepted after its bytes are
+  already staged in the human-safe location routing chose — a false-safe path. A pure
+  declaration may not return impure; the build must refuse.
+- **D5c (verified):** `src/providers/run.ts:229` resolves output paths *lexically*, so
+  a symlink whose lexical path is dot-zoned but whose real target is human-safe would
+  pass a name-only check. Zoning must run on the `realpath`-resolved destination.
+- **D1a:** normative zoning root (segments relative to the production root only;
+  dotted ancestors above it don't classify) and basename exclusion (a dotted *file*
+  in a non-dot dir is human-safe).
+- **D2b (extends the operator's rule — flagged for veto):** authored content must
+  resolve to a human-safe path, making INV-1/INV-3 bidirectional for the two hard
+  classes. Adopted as the faithful reading of "strict segregation between the three
+  classes"; the operator can veto.
+- **D5b:** a dot-zone means *AI-permitted / not human-safe*, not "definitely AI"
+  (`.cache`/`.tmp`/`.ai` are identical; `.ai` is conventional). INV-2 is safety
+  legibility, not exact-provenance legibility.
+- **D5.2 ordering:** resolve → reject escape → confirm containment → zone → stage,
+  so zoning is never the sole defense against a provider escape (a general contract
+  violation, impure or not).
+- **D5.4 / OQ3:** the audit is a *routing* audit and must report its scope honestly.
+- **D7 tightened + TASK-15 safety-dependency** recorded (zoning does not protect the
+  bytes of an out-of-band edit; TASK-15 must still be fixed).
+- Stale **open question 4 removed** (D5a settles it); provenance wording corrected so
+  v1 claims no standalone file-type layer; a **normative test list** added.
