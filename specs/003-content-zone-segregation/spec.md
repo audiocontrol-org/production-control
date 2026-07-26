@@ -28,6 +28,18 @@ impurity flag; enforcement keeps the two views from ever contradicting each othe
 The feature adds only **routing, build-time enforcement, and an audit verb**. It
 introduces no new node kind and does not change the graph (Constitution Principle VI).
 
+**Existing behavior this refines (verified in code).** production-control **already**
+routes output by impurity: `src/providers/build.ts` chooses the output root **after** the
+provider responds — `impurityOf(decl, response)` — sending impure output to a distinct
+`ai-generated/` directory and pure output to `dist/`. Two facts follow, and they correct
+the earlier design framing: (a) because routing is post-response, impure bytes do **not**
+reach a human-safe path via a mis-declared provider — the "false-safe" hole described in
+an earlier draft does not exist (see FR-012); (b) the existing impure root `ai-generated/`
+is **not** dot-prefixed, so under this feature's own zoning rule it would classify as
+*human-safe* — a violation. The feature's concrete core change is therefore to **dot-zone
+the impure root** (rename `ai-generated/` → a top-level `.ai/` sibling of `dist/`) and add
+the classifier, the authored-direction check, real-path/containment ordering, and the audit.
+
 ## The four invariants (the principle, above the mechanism)
 
 - **INV-1 — Structural segregation (bidirectional for the two hard classes).** Human-authored
@@ -172,14 +184,18 @@ what it did not check.
   be permitted in either zone (a mechanically-generated file MAY live in a human-safe area).
 - **FR-006**: Authored content MUST resolve to a human-safe path; a dot-zone MUST NOT be a supported
   authored workspace (INV-1/INV-3, both directions for the two hard classes).
-- **FR-007**: The build root `dist/` MUST remain usable as-is; impure artifacts MUST be written to a
-  dot-prefixed subdirectory somewhere under it. No rename of `dist/` is required or performed.
+- **FR-007**: The impure output root MUST be **dot-zoned**. production-control currently routes impure
+  output to a non-dot `ai-generated/` directory (a sibling of `dist/`); this feature MUST rename that
+  root to a top-level **`.ai/`** sibling of `dist/` so it is AI-permitted under FR-001. `dist/` MUST
+  remain the pure-output root, unchanged and un-renamed. (Pure output in `dist/` sits in a human-safe
+  zone, which is permitted for pure output per FR-005.)
 
 ### Enforcement (fixed order; defense-in-depth)
 
-- **FR-008**: The system MUST **route** an impure target's assigned output location into a dot-zone,
-  and an authored node's into a human-safe path, so the correct — and human-legible — placement is
-  achieved by construction.
+- **FR-008**: The system MUST **route** an impure target's output into the dot-zoned root (FR-007) and
+  an authored node into a human-safe path, so correct — and human-legible — placement is achieved by
+  construction. This refines the existing impurity-based routing (`build.ts`, `impurityOf(decl, response)`);
+  the change is the dot-zoned destination name, not the introduction of routing.
 - **FR-009**: For each declared output the build MUST, in this order: (a) resolve the path; (b) reject
   traversal/escape; (c) confirm the **symlink-resolved** destination is **contained** within the
   assigned output directory; (d) evaluate zoning; (e) stage. A path escaping the assigned directory
@@ -189,11 +205,13 @@ what it did not check.
   symlink whose lexical path is dot-zoned but whose real target is human-safe MUST be refused.
 - **FR-011**: A contained impure output resolving to a dot-free (human-safe) path MUST be refused, and
   the refusal MUST name the offending path (Constitution Principle V — fail loud, name the cause).
-- **FR-012**: A provider **declared pure** MUST NOT return an impure result. Runtime impurity metadata
-  MAY corroborate a statically-declared impure provider, but MUST NOT introduce impurity a pure
-  declaration lacked; a build that sees runtime-introduced impurity on a pure declaration MUST refuse.
-  (This closes the false-safe path where a pure declaration is routed to a human-safe location and the
-  provider only then announces impurity.)
+- **FR-012**: A provider **declared pure** that returns an impure `BuildResponse` MUST be refused,
+  naming the target — contradictory provenance metadata fails loud (Constitution Principle V) rather
+  than being silently reclassified. This is an **integrity / fail-loud** rule, **not** a false-safe
+  closure: because routing is post-response (FR-008), an impure response already routes to the AI zone,
+  so impure bytes do not reach a human-safe path. Today `impurityOf(decl, response)` coalesces the two
+  (`response.impure ?? decl.impure`) and silently accepts the contradiction; this feature makes it a
+  named refusal. Runtime impurity metadata MAY corroborate a *statically-declared* impure provider.
 
 ### The audit verb
 
@@ -267,7 +285,7 @@ what it did not check.
   (FR-001–FR-003) including the basename, above-root, and identical-dot-name cases.
 - **SC-003**: **Zero** authored nodes come to rest in an AI-permitted path — each such routing is refused.
 - **SC-004**: A provider declared pure that returns an impure result is refused in **100%** of cases,
-  before its bytes are accepted into any human-safe location.
+  naming the target (fail-loud on contradictory provenance metadata; FR-012).
 - **SC-005**: A symlinked output whose real target is human-safe is refused in **100%** of cases; zoning is
   never satisfied by a lexical path alone.
 - **SC-006**: The routing audit detects **every** routing-policy violation present in a manifest (no
@@ -286,6 +304,9 @@ what it did not check.
 - Pure providers may legitimately write into human-safe areas (a generated README, a YAML), as the operator
   affirmed; the asymmetry is intentional (FR-005).
 - The existing atomic stage-then-commit build path is retained; enforcement runs before staging (FR-009).
+- Impurity-based routing already exists (`build.ts`, `impurityOf(decl, response)`, post-response); this
+  feature renames the impure root to a dot-zone and adds the classifier/checks/audit rather than
+  introducing routing from scratch.
 
 ## Dependencies
 

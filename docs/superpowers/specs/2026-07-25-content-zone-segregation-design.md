@@ -150,9 +150,10 @@ the graph's `impure` flag is how the machine knows a node is AI; the dot-name is
 a human knows, at a glance. Neither is subordinate — INV-3 requires them to agree,
 and the build refusal is what guarantees it.
 
-`dist/` remains the build root. Impure artifacts are routed into a dot-prefixed
-subdirectory under it (`dist/.ai/…`); pure artifacts may sit anywhere, including
-human-safe areas. Enforcement is defense-in-depth: production-control routes impure
+`dist/` remains the pure-output root. Impure artifacts are routed into a dot-zoned
+root — a top-level **`.ai/`** sibling of `dist/` (the rename of the existing
+`ai-generated/` root; see D3); pure artifacts may sit anywhere, including human-safe
+areas. Enforcement is defense-in-depth: production-control routes impure
 output to a dot-zoned location AND refuses at build if an impure output resolves to
 a dot-free path, plus a standalone audit verb over the manifest.
 
@@ -244,21 +245,26 @@ An impure-provider artifact MUST resolve to an AI-permitted (dot-zoned) path. Pu
 output has no such restriction and MAY be written to human-safe paths (a generated
 README, a YAML) — the (a)-may, (b)-must-not asymmetry the operator specified.
 
-**D2a — Impurity cannot be introduced at runtime (closes a false-safe path).**
-Routing (D5.1) must choose an impure target's output location from the *static*
-`ProviderDecl.impure`, because it runs before the provider does. But
-`src/providers/build.ts:285` currently records impurity as
-`response.impure ?? decl.impure` — so a provider **declared pure** that returns
-`impure` in its `BuildResponse` is accepted as impure *after* its bytes have already
-been staged into the human-safe location routing chose for a pure target. That is a
-false-safe path: impure bytes in a human area, discovered too late to move them.
-Therefore: **a provider declared pure MUST NOT return an impure result.**
-`BuildResponse.impure` may corroborate or explain a statically-declared impurity; it
-may never *introduce* impurity a pure declaration did not have. A build that sees
-runtime impurity on a pure declaration MUST refuse. (If runtime discovery of
-impurity is ever genuinely needed, all output would have to stage in a neutral/AI
-location until classification completes — much more complex and, on present
-evidence, unnecessary.)
+**D2a — A pure declaration may not return impure (fail-loud on contradictory metadata).**
+**Correction (2026-07-25, during /speckit-plan):** an earlier version of this decision
+claimed a *false-safe path* — that routing picks the output location from the static
+`ProviderDecl.impure` before the provider runs, so a pure-declared/impure-returned output
+lands in a human area. A fuller reading of the build path shows that is **wrong**.
+`src/providers/build.ts:112` chooses the output root **after** the response:
+`outputRoot = impurityOf(decl, response) !== undefined ? 'ai-generated' : 'dist'`, and
+`impurityOf` is `response.impure ?? decl.impure` (build.ts:285). So an impure *response*
+already routes to the AI directory — impure bytes do **not** reach a human-safe path. The
+false-safe path does not exist; the earlier "verified" claim verified the wrong half of the
+code (it read `impurityOf` but not the post-response routing at line 112).
+
+The rule **survives on different grounds**: a provider **declared pure** that returns an
+impure `BuildResponse` is *contradictory provenance metadata*, and today `impurityOf`
+silently coalesces it (`response.impure ?? decl.impure`) and reclassifies. That is a
+silent reclassification, which sits badly with Principle V (fail loud, never false-clean).
+So: **a pure declaration returning impure MUST be refused, naming the target** — as an
+integrity/fail-loud rule, not a false-safe closure. `BuildResponse.impure` may corroborate
+a *statically-declared* impure provider; it may not introduce impurity a pure declaration
+lacked. (Operator-ratified 2026-07-25.)
 
 **D2b — Authored content must reside in a human-safe path (the authored direction of INV-1/INV-3).**
 The impure→dot rule alone is one-way: it keeps AI out of human areas but does not
@@ -273,11 +279,17 @@ two-direction agreement both require it. Flagged for operator veto. Pure-derived
 nodes remain deliberately free to live in either zone. **Ratified by the operator
 2026-07-25** — D2b stands; segregation is bidirectional for the two hard classes.
 
-**D3 — `dist/` stays the build root; impure output is dot-zoned within it.**
-The build root is unchanged. Impure targets are routed to a dot-prefixed
-subdirectory under `dist/` (conventionally `dist/.ai/<target>/`, exact layout
-settled in the plan). Pure targets keep their current non-dot locations. No rename
-of `dist/`.
+**D3 — The impure output root becomes a dot-zoned `.ai/` sibling of `dist/`.**
+**Correction (2026-07-25, during /speckit-plan):** impurity-based routing already
+exists. `build.ts:112` sends impure output to a top-level **`ai-generated/`** directory
+(a sibling of `dist/`, per `stage()`), pure output to `dist/`. `ai-generated/` is *not*
+dot-prefixed, so under this feature's own rule it classifies as human-safe — a violation.
+The change is therefore a **rename of the existing impure root** `ai-generated/` →
+**`.ai/`** (kept as a top-level sibling of `dist/`; operator decision 2026-07-25), which
+makes it AI-permitted with a one-token routing change plus a fixture/quickstart migration.
+`dist/` stays the pure-output root, unchanged. (The earlier wording "a dot-prefixed
+subdirectory under `dist/`" was written before the existing sibling routing was found; the
+operator chose the sibling rename over moving impure output into `dist/.ai/`.)
 
 **D4 — Fail-safe by default.**
 Because non-dot is human-safe, an area is protected unless it is explicitly dotted.
@@ -400,13 +412,11 @@ provider outputs that already carry impurity provenance.
    reproducible; rebuilding discards your edits; proceed?" acknowledgment. Recorded
    as the leaning; the decision stays with TASK-15.
 
-2. **Where exactly do impure outputs land under `dist/`, and who decides the
-   subpath?** D3 fixes the dot-zone requirement but not the layout
-   (`dist/.ai/<target>/` vs `dist/<target>/.ai/` vs a single `dist/.ai/` tree). The
-   provider currently chooses its output filename within a production-control-
-   assigned `output_dir`; the cleanest enforcement is for production-control to
-   assign a dot-zoned `output_dir` for impure targets, but the precise scheme is a
-   plan-level decision.
+2. **Impure output layout — SETTLED (2026-07-25).** production-control already routes
+   impure output to a top-level `ai-generated/` root (`build.ts:112`, `stage()`); the
+   operator chose to **rename that root to `.ai/`** (a top-level sibling of `dist/`)
+   rather than move impure output into `dist/.ai/`. The per-target subpath within `.ai/`
+   is unchanged from today's `ai-generated/<…>` layout. See the corrected D3.
 
 3. **The audit verb audits routing policy, not output artifacts.** Output paths are
    reported by the provider in `BuildResponse`, not declared in the manifest, so the
@@ -534,10 +544,13 @@ Both required corrections and both strongly-recommended decisions are incorporat
 plus several clarifications — and two of the reviewer's catches were verified against
 the code as real holes before acceptance:
 
-- **D2a (verified):** `src/providers/build.ts:285` is `response.impure ?? decl.impure`,
-  so a provider *declared pure* that returns impure is accepted after its bytes are
-  already staged in the human-safe location routing chose — a false-safe path. A pure
-  declaration may not return impure; the build must refuse.
+- **D2a (CORRECTED 2026-07-25 during /speckit-plan):** the "false-safe path" claim here
+  was **wrong** — it read `impurityOf` (build.ts:285) but not the post-response routing at
+  `build.ts:112`, which chooses the output root *after* the response and sends any impure
+  result to the AI directory. So impure bytes never reach a human-safe path; there is no
+  false-safe. The rule survives only as a **fail-loud** rule: a pure declaration returning
+  impure is contradictory metadata that `impurityOf` silently coalesces, so the build must
+  refuse rather than reclassify. See the corrected D2a and D3.
 - **D5c (verified):** `src/providers/run.ts:229` resolves output paths *lexically*, so
   a symlink whose lexical path is dot-zoned but whose real target is human-safe would
   pass a name-only check. Zoning must run on the `realpath`-resolved destination.
