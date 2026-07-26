@@ -18,19 +18,14 @@ import { resolveStatus } from '@/state/resolve.js';
 import { cleanupFixtureCopies, copyFixture, FIXTURES, REPO_ROOT, pc } from './support.js';
 
 /**
- * Content zone segregation — User Story 1 (T006, T007, T010; specs/003-content-zone-segregation).
+ * Content zone segregation — User Story 1 (specs/003-content-zone-segregation);
+ * FR-007..FR-012, quickstart Scenarios 1/2/5. The impure output root is `.ai/`.
  *
- * These tests describe the POST-implementation behavior and are RED until the feature lands:
- *   - T011 renames the impure output root `ai-generated/` -> `.ai/` (build.ts).
- *   - T012/T013 add realpath-resolved containment and the zoning refusal itself.
- * See spec.md FR-007..FR-012 and quickstart.md Scenarios 1/2/5.
- *
- * T006 drives the real, built `pc` binary (mirrors `build.test.ts`'s impure-provider coverage,
- * but asserts the post-rename `.ai/` root). T007 and T010 build a `BuildContext` directly with a
- * fake `ProviderRunner` — the same idiom `path-safety.test.ts` uses to bypass the provider
- * contract's own wire-level schema refusals, which is required here because the scenarios under
- * test (an escaping path, a response the schema would otherwise reject before it ever reaches
- * production-control) cannot be produced by a real, schema-honest subprocess.
+ * T006 drives the real, built `pc` binary (mirrors `build.test.ts`'s impure-provider
+ * coverage). T007/T010 build a `BuildContext` directly with a fake `ProviderRunner` — the
+ * `path-safety.test.ts` idiom that bypasses the provider contract's wire-level schema
+ * refusals, required because the scenarios under test (an escaping path, a schema-rejected
+ * response) cannot be produced by a real, schema-honest subprocess.
  */
 
 const FAKE_PROVIDER = path.join(FIXTURES, 'fake-provider');
