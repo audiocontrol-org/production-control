@@ -3,62 +3,39 @@
   "mode": "impl",
   "item": "design:feature/content-zone-segregation",
   "governedShaBase": "2c90a315d7228e759c0586df9b05d3289e4cad40",
-  "headSha": "48fd5e49d6eee257f603174b975643c575021407",
+  "headSha": "45405671533b7a633322be14d07a27f7ec08e053",
   "chunkIds": [
-    "37e9a2f1d4777e95",
+    "35a25a79fbbf4380",
+    "432428dbd2cb380a",
     "43fb043b7200a9d5",
-    "4ce4625f67455553",
     "4f99b83c979fa432",
-    "774b22fcc1ad5084",
+    "9c18fbd661c311bc",
     "a8511fbd57b81464",
     "cc1f24a95e8a8ebd",
-    "ecfb4e19fe0283f1"
+    "ecfb4e19fe0283f1",
+    "f33b7594b22b2dea",
+    "f4649b03d8299c11"
   ],
   "rounds": 1,
   "liftedFindings": [
     {
-      "id": "37e9a2f1d4777e95::AUDIT-BARRAGE-claude-02",
-      "title": "A `..` segment classifies as `ai-permitted` — the escape direction fails open",
+      "id": "9c18fbd661c311bc::AUDIT-BARRAGE-claude-01",
+      "title": "\"No bytes written outside\" is asserted at exactly one filename, so a residual escape through the scratch path would still ship green",
       "severity": "high"
     },
     {
-      "id": "37e9a2f1d4777e95::AUDIT-BARRAGE-claude-03",
-      "title": "`.ai/` as the *committed* durable record has no gate proving it is actually tracked",
-      "severity": "high"
-    },
-    {
-      "id": "4ce4625f67455553::AUDIT-BARRAGE-claude-01+AUDIT-BARRAGE-codex-02",
-      "title": "Realpath containment resolves the output root itself, so a symlinked `dist/`/`.ai/` escapes the episode entirely",
-      "severity": "high"
-    },
-    {
-      "id": "4ce4625f67455553::AUDIT-BARRAGE-claude-02",
-      "title": "`ai-generated/` → `.ai/` relocation ships with no upgrade path for existing episodes",
-      "severity": "high"
-    },
-    {
-      "id": "4ce4625f67455553::AUDIT-BARRAGE-codex-01",
-      "title": "Escape refusal can create directories through an escaping symlink before it throws",
-      "severity": "high"
-    },
-    {
-      "id": "4f99b83c979fa432::AUDIT-BARRAGE-claude-01",
-      "title": "`classifyZone`'s \"above-root exclusion (FR-003)\" block asserts nothing that could fail if the guarantee were broken",
-      "severity": "high"
-    },
-    {
-      "id": "774b22fcc1ad5084::AUDIT-BARRAGE-claude-01",
-      "title": "Every impure integration path now requires a static `impure` declaration, so the decl-impure × response-pure state opened by that new field has no fixture anywhere in this chunk",
-      "severity": "high"
-    },
-    {
-      "id": "774b22fcc1ad5084::AUDIT-BARRAGE-claude-02",
-      "title": "`.ai/` is asserted only as a path string; nothing proves the \"committed, not gitignored\" property the comments claim, and the rename to a dot-directory is exactly what would break it",
+      "id": "a8511fbd57b81464::AUDIT-BARRAGE-claude-01",
+      "title": "The \"no cache directory is invented anywhere\" assertion is vacuous — it checks a directory the miner was never told about",
       "severity": "high"
     },
     {
       "id": "ecfb4e19fe0283f1::AUDIT-BARRAGE-claude-01",
-      "title": "Audit lane degraded: chunk `ecfb4e19fe0283f1` was dispatched with an empty diff payload",
+      "title": "Chunk ecfb4e19fe0283f1 dispatched with an empty diff body — this lane produced no coverage of `tests/integration/zoning.test.ts`",
+      "severity": "high"
+    },
+    {
+      "id": "f4649b03d8299c11::AUDIT-BARRAGE-claude-01",
+      "title": "`.gitignore` regression gate probes repo-root paths, not the nested paths artifacts actually occupy — a nested ignore rule breaks the guarantee with the gate still green",
       "severity": "high"
     }
   ],
@@ -66,36 +43,72 @@
   "seamResult": {
     "boundaryPairs": [
       {
-        "a": "37e9a2f1d4777e95",
+        "a": "35a25a79fbbf4380",
+        "b": "432428dbd2cb380a"
+      },
+      {
+        "a": "35a25a79fbbf4380",
         "b": "43fb043b7200a9d5"
       },
       {
-        "a": "37e9a2f1d4777e95",
-        "b": "4ce4625f67455553"
-      },
-      {
-        "a": "37e9a2f1d4777e95",
+        "a": "35a25a79fbbf4380",
         "b": "4f99b83c979fa432"
       },
       {
-        "a": "37e9a2f1d4777e95",
-        "b": "774b22fcc1ad5084"
+        "a": "35a25a79fbbf4380",
+        "b": "9c18fbd661c311bc"
       },
       {
-        "a": "37e9a2f1d4777e95",
+        "a": "35a25a79fbbf4380",
         "b": "a8511fbd57b81464"
       },
       {
-        "a": "37e9a2f1d4777e95",
+        "a": "35a25a79fbbf4380",
         "b": "cc1f24a95e8a8ebd"
       },
       {
-        "a": "37e9a2f1d4777e95",
+        "a": "35a25a79fbbf4380",
         "b": "ecfb4e19fe0283f1"
       },
       {
-        "a": "43fb043b7200a9d5",
-        "b": "4ce4625f67455553"
+        "a": "35a25a79fbbf4380",
+        "b": "f33b7594b22b2dea"
+      },
+      {
+        "a": "35a25a79fbbf4380",
+        "b": "f4649b03d8299c11"
+      },
+      {
+        "a": "432428dbd2cb380a",
+        "b": "43fb043b7200a9d5"
+      },
+      {
+        "a": "432428dbd2cb380a",
+        "b": "4f99b83c979fa432"
+      },
+      {
+        "a": "432428dbd2cb380a",
+        "b": "9c18fbd661c311bc"
+      },
+      {
+        "a": "432428dbd2cb380a",
+        "b": "a8511fbd57b81464"
+      },
+      {
+        "a": "432428dbd2cb380a",
+        "b": "cc1f24a95e8a8ebd"
+      },
+      {
+        "a": "432428dbd2cb380a",
+        "b": "ecfb4e19fe0283f1"
+      },
+      {
+        "a": "432428dbd2cb380a",
+        "b": "f33b7594b22b2dea"
+      },
+      {
+        "a": "432428dbd2cb380a",
+        "b": "f4649b03d8299c11"
       },
       {
         "a": "43fb043b7200a9d5",
@@ -103,7 +116,7 @@
       },
       {
         "a": "43fb043b7200a9d5",
-        "b": "774b22fcc1ad5084"
+        "b": "9c18fbd661c311bc"
       },
       {
         "a": "43fb043b7200a9d5",
@@ -118,28 +131,16 @@
         "b": "ecfb4e19fe0283f1"
       },
       {
-        "a": "4ce4625f67455553",
-        "b": "4f99b83c979fa432"
+        "a": "43fb043b7200a9d5",
+        "b": "f33b7594b22b2dea"
       },
       {
-        "a": "4ce4625f67455553",
-        "b": "774b22fcc1ad5084"
-      },
-      {
-        "a": "4ce4625f67455553",
-        "b": "a8511fbd57b81464"
-      },
-      {
-        "a": "4ce4625f67455553",
-        "b": "cc1f24a95e8a8ebd"
-      },
-      {
-        "a": "4ce4625f67455553",
-        "b": "ecfb4e19fe0283f1"
+        "a": "43fb043b7200a9d5",
+        "b": "f4649b03d8299c11"
       },
       {
         "a": "4f99b83c979fa432",
-        "b": "774b22fcc1ad5084"
+        "b": "9c18fbd661c311bc"
       },
       {
         "a": "4f99b83c979fa432",
@@ -154,16 +155,32 @@
         "b": "ecfb4e19fe0283f1"
       },
       {
-        "a": "774b22fcc1ad5084",
+        "a": "4f99b83c979fa432",
+        "b": "f33b7594b22b2dea"
+      },
+      {
+        "a": "4f99b83c979fa432",
+        "b": "f4649b03d8299c11"
+      },
+      {
+        "a": "9c18fbd661c311bc",
         "b": "a8511fbd57b81464"
       },
       {
-        "a": "774b22fcc1ad5084",
+        "a": "9c18fbd661c311bc",
         "b": "cc1f24a95e8a8ebd"
       },
       {
-        "a": "774b22fcc1ad5084",
+        "a": "9c18fbd661c311bc",
         "b": "ecfb4e19fe0283f1"
+      },
+      {
+        "a": "9c18fbd661c311bc",
+        "b": "f33b7594b22b2dea"
+      },
+      {
+        "a": "9c18fbd661c311bc",
+        "b": "f4649b03d8299c11"
       },
       {
         "a": "a8511fbd57b81464",
@@ -172,17 +189,45 @@
       {
         "a": "a8511fbd57b81464",
         "b": "ecfb4e19fe0283f1"
+      },
+      {
+        "a": "a8511fbd57b81464",
+        "b": "f33b7594b22b2dea"
+      },
+      {
+        "a": "a8511fbd57b81464",
+        "b": "f4649b03d8299c11"
       },
       {
         "a": "cc1f24a95e8a8ebd",
         "b": "ecfb4e19fe0283f1"
+      },
+      {
+        "a": "cc1f24a95e8a8ebd",
+        "b": "f33b7594b22b2dea"
+      },
+      {
+        "a": "cc1f24a95e8a8ebd",
+        "b": "f4649b03d8299c11"
+      },
+      {
+        "a": "ecfb4e19fe0283f1",
+        "b": "f33b7594b22b2dea"
+      },
+      {
+        "a": "ecfb4e19fe0283f1",
+        "b": "f4649b03d8299c11"
+      },
+      {
+        "a": "f33b7594b22b2dea",
+        "b": "f4649b03d8299c11"
       }
     ],
     "findings": [],
     "suppressedCompatible": 0
   },
   "splitClusterRefs": [
-    "2f45167aa397516b",
+    "07ab09f987489c67",
     "3a746d32a4cf8c18"
   ],
   "outcome": "override-eligible",

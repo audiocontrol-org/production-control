@@ -145,3 +145,67 @@ The prompt declares `Files in scope: tests/integration/zoning.test.ts` and then 
 The blast radius is on the operator's triage, not on adopters: an audit lane that returns nothing looks identical to a lane that returned nothing *because the code is clean*. Per the fleet-degradation pricing driver, a round's "0 HIGH" computed over a fleet containing a zero-payload lane is weaker cross-model agreement than the count suggests, and `tests/integration/zoning.test.ts` is the single file carrying the end-to-end proof for all three user stories in this feature — the highest-value surface in the range to leave unreviewed. If this lane is counted as a clean pass, the feature converges with its primary integration-test surface unaudited by this model.
 
 A reasonable fix is on the dispatch side: (1) have the chunker fail loud when a chunk's rendered diff body is empty rather than dispatching it — an empty body is a chunking bug (likely a path/rename mismatch between the chunk manifest and `git diff 2c90a315...`), not a legitimate "no changes" state, since the chunk would not exist if the file were unchanged; and (2) mark the lane `degraded` in the run record so the convergence tally prices it as a missing model rather than a quiet one. Re-dispatch this chunk with the populated diff before treating round results as converged.
+
+## 2026-07-26 — audit-barrage lift (end-govern-after_implement)
+
+### AUDIT-20260726-10 — "No bytes written outside" is asserted at exactly one filename, so a residual escape through the scratch path would still ship green
+
+Finding-ID: AUDIT-20260726-10
+Status:     open
+Severity:   high
+Per-lane:   claude=high
+Decision:   single-model (gate-counted high)
+Surface:    tests/integration/zoning-symlink-containment.test.ts:160, :187, :216
+
+The AUDIT-03 describe title claims refusal happens "with no bytes written outside" (line 130-131), but each test verifies that claim with a single point probe: `expect(await exists(path.join(outside, 'voiceover.out'))).toBe(false)` (line 160), the same at line 187, and `path.join(humanSafe, 'voiceover.out')` at line 216. Nothing asserts that the escaped-to directory is *empty*. Any byte or directory that lands outside the root under a different name passes unnoticed.
+
+That is not hypothetical for the PURE case. The test's own comment at lines 174-175 states "`dist/` is created by the build's scratch step; plant the symlink up front so the real `dist/` is never a plain directory" — i.e. the author's model is that the build materializes scratch state under `dist/`. `runnerEmitting` (lines 68-71) unconditionally does `fs.mkdir(dirname(full), {recursive: true})` and `fs.writeFile(full, ...)` against `request.output_dir` *before* returning, so if `output_dir` is scratch beneath the symlinked `dist/`, the fake provider's bytes land at `<outside>/<scratch>/voiceover.out` and the assertion at line 187 — which only looks at `<outside>/voiceover.out` — is green while the invariant the test exists to protect is violated. I cannot confirm which reading of `output_dir` is true without reading `src/providers/build.ts`, and that is precisely the point: the assertion is written so that either reading passes, so it does not discriminate.
+
+Blast radius: this is the regression guard for AUDIT-03, an escape that writes bytes outside the episode. As written, a future refactor that reintroduces write-before-containment (or moves scratch under the output root) leaves the test suite green, so the guard's protection is weaker than the commit message asserts. Fix: replace the point probes with a directory-emptiness assertion — `expect(await fs.readdir(outside)).toEqual([])` for lines 160/187, and the equivalent (excluding pre-created entries) at line 216. That assertion holds under every reading of where scratch lives.
+
+---
+
+### AUDIT-20260726-11 — The "no cache directory is invented anywhere" assertion is vacuous — it checks a directory the miner was never told about
+
+Finding-ID: AUDIT-20260726-11
+Status:     open
+Severity:   high
+Per-lane:   claude=high
+Decision:   single-model (gate-counted high)
+Surface:    editorial-tooling/test/miner-cache-fidelity.test.mjs:18-31
+
+Line 18 creates `const observed = tempDir('qm-nocache-')` and then never passes it to anything — `mine({ sources, model: first })` at lines 22/24 receives no `cacheDir`, and `QUOTE_MINER_CACHE_DIR` was deleted at line 17. So `observed` is a directory `mkdtemp` just created, that no production code has any way to name. `assert.deepEqual(filesIn(observed), [], 'no cache directory is invented anywhere')` (line 31) is therefore true by construction and will remain true for every possible implementation of `mine()`.
+
+The assertion's stated contract is the load-bearing half of this whole `test()` block: "miner cache: DISABLED unless asked for". If a regression made `mine()` fall back to a default cache location — `process.cwd()/.quote-miner-cache`, `os.tmpdir()`, `~/.cache/...` — every other assertion in this subtest still passes (both runs re-mine only if the fallback cache is cold; a *stale* fallback cache would trip lines 26-27, but a cold-then-warm fallback within one run would not, and cross-run persistence would break the *next* run, not this one), and line 31 would still pass because the invented directory is not `observed`. Blast radius: an opt-in-only caching guarantee — the thing that keeps un-asked-for state off an adopter's disk and out of a supposedly deterministic run — is guarded by an assertion that cannot fail. This file is also exactly where split-induced fidelity loss already happened once (`b3d8e48 test(editorial-tooling): restore no-cache determinism assertion dropped in the split`), so the "the sibling file covers it" reading is not available.
+
+A fix has to give the assertion a real subject: chdir into (or otherwise scope the run to) `observed` and assert the whole subtree is empty afterward, and additionally snapshot a known default-fallback candidate (cwd and `os.homedir()`-relative cache paths) before/after the two `mine()` calls and assert no new entries appeared. Whatever surface is chosen, the test must be able to fail — the current one cannot.
+
+### AUDIT-20260726-12 — Chunk ecfb4e19fe0283f1 dispatched with an empty diff body — this lane produced no coverage of `tests/integration/zoning.test.ts`
+
+Finding-ID: AUDIT-20260726-12
+Status:     open
+Severity:   high
+Per-lane:   claude=high
+Decision:   single-model (gate-counted high)
+Surface:    the audit dispatch itself — chunk `ecfb4e19fe0283f1`, declared scope `tests/integration/zoning.test.ts`
+
+The prompt declares `Files in scope: tests/integration/zoning.test.ts` and then presents a `## Diffs` heading with no content beneath it. Every other chunk in the manifest (`35a25a79…`, `432428db…`, `f4649b03…`, etc.) is listed only as a file-list for cross-file context, which is expected; but this chunk is the one I was assigned to audit, and its diff body is empty. The session also exposes no `Read`, `Grep`, `Glob`, or `Bash` tool — I searched the deferred-tool registry for all four and got only MCP/task/cron/monitor tools back — so I could not recover the file contents out-of-band either. There is therefore no evidence surface in front of me: no hunks to walk, no line numbers to anchor to, and no way to check the integration test against the routing code it exercises.
+
+This matters because of the fleet-degradation pricing driver in the process controls. `tests/integration/zoning.test.ts` is the US1 integration surface for impure-output routing, refusal, and escape containment — the tests that pin the feature's central safety claim. If this lane is tallied as a participating model and it silently contributed zero coverage of that file, the round's cross-model agreement over the zoning integration tests is computed over a smaller fleet than the operator thinks it is. Concretely: a "0 HIGH on the integration tests" conclusion drawn from this round would be resting on however many siblings actually received the hunks, minus one. A quiet lane and a clean lane are indistinguishable in the triage table unless the degradation is recorded, which is precisely the failure mode US2 observability exists to prevent.
+
+A reasonable fix is on the dispatch side, in two parts. First, the chunker should refuse to emit a chunk whose declared file list is non-empty while its rendered diff body is empty — that combination is always a bug (an over-aggressive hunk filter, a path that resolved to no changes against the `2c90a315` base, or a truncated render), and failing loud beats shipping a model a blank page. Second, the triage step should treat a zero-hunk chunk as a degraded lane rather than a participating one, so the round's convergence claim is priced over the fleet that actually saw content. Until the diff for `tests/integration/zoning.test.ts` is re-dispatched with hunks present, this file should be treated as **unaudited by claude in this round**, not as clean.
+
+### AUDIT-20260726-13 — `.gitignore` regression gate probes repo-root paths, not the nested paths artifacts actually occupy — a nested ignore rule breaks the guarantee with the gate still green
+
+Finding-ID: AUDIT-20260726-13
+Status:     open
+Severity:   high
+Per-lane:   claude=high
+Decision:   single-model (gate-counted high)
+Surface:    tests/integration/ai-zone-tracked.test.ts:69-71, 84-97
+
+Both probes are built by joining the root name onto a bare filename and are resolved against the repo root: `path.posix.join(impureOutputRoot(), 'probe.out')` → `.ai/probe.out`, and `path.posix.join(pureOutputRoot(), 'probe.out')` → `dist/probe.out`. But an impure artifact never lands at `<repo>/.ai/...` — it lands at `<episode-dir>/.ai/<target>.out`, which the sibling test in this same chunk pins directly (`tests/integration/build.test.ts:176-177`: `record.output.path === '.ai/voiceover.out'`, resolved as `path.join(dir, '.ai/voiceover.out')` where `dir` is an episode directory). Gitignore patterns are position-sensitive in exactly the way this gap exploits: a future rule such as `content/**/.ai/` or `episodes/*/.ai` would ignore every real impure artifact while leaving the root-level `.ai/probe.out` probe unignored, so the assertion on line 90 (`.toBe(1)`) still passes. The failure the header names — "the durable record silently becomes data loss with no test ever going red" — is precisely the failure this construction cannot see.
+
+The same hole exists in the sibling direction and is arguably easier to trip: if `.gitignore` carries an anchored `/dist` rather than `dist/`, the root probe is ignored (exit 0, test green) while `<episode>/dist/…` build output is *not* ignored, so reproducible output starts getting committed. The test's own non-vacuity argument on lines 84-89 is therefore also anchored at the wrong depth.
+
+Blast radius: test-efficacy only, and only conditional on a future `.gitignore` edit — but this test is the *sole* automated guard for the feature's central claim ("impure bytes are the durable, committed record"), and its failure mode is silent, unbounded loss of unreproducible artifacts, discovered only when someone looks for bytes that were never committed. A reasonable fix: derive the probe from a realistic episode-relative location as well as the root — e.g. probe both `${impureOutputRoot()}/probe.out` and `${<fixture or configured content dir>}/ep/${impureOutputRoot()}/probe.out` — and assert on both, so a positionally-anchored rule cannot pass. If the content-root location is not knowable from `src/zoning/route.ts` alone, at minimum probe one nested depth (`a/b/${impureOutputRoot()}/probe.out`), which is what distinguishes `.ai/` from `/.ai/`.
