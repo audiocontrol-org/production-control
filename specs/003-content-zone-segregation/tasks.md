@@ -24,8 +24,8 @@ Single TypeScript package: `src/` and `tests/` at repository root; `@/` import a
 
 ## Phase 1: Setup
 
-- [ ] T001 [tier:fast] Create the `src/zoning/` module directory and an `index.ts` barrel that re-exports the classifier and router (empty stubs to start), following the existing `src/<domain>/` layout.
-- [ ] T002 [P] [tier:fast] Create the test directory `tests/unit/zoning/` and an integration test file placeholder `tests/integration/zoning.test.ts` wired to the existing fake-provider/in-memory harness (see `tests/integration/support.ts`).
+- [x] T001 [tier:fast] Create the `src/zoning/` module directory and an `index.ts` barrel that re-exports the classifier and router (empty stubs to start), following the existing `src/<domain>/` layout.
+- [x] T002 [P] [tier:fast] Create the test directory `tests/unit/zoning/` and an integration test file placeholder `tests/integration/zoning.test.ts` wired to the existing fake-provider/in-memory harness (see `tests/integration/support.ts`).
 
 ---
 
@@ -33,9 +33,9 @@ Single TypeScript package: `src/` and `tests/` at repository root; `@/` import a
 
 **Purpose**: the pure classifier and the shared refusal helper that every user story depends on. No story can be enforced before the classifier exists.
 
-- [ ] T003 [US-none] [tier:balanced] Write RED golden-case tests for `classifyZone` in `tests/unit/zoning/classify.test.ts` covering every row of `contracts/zone-classifier.md` (basename-only `dist/.draft.md` → human-safe; nested dot `dist/target/.ai/out.md` → ai-permitted; `.cache`/`.tmp`/`.ai` identical; empty/no-dot → human-safe). Tests fail (no impl yet).
-- [ ] T004 [tier:balanced] Implement `classifyZone(relPath)` in `src/zoning/classify.ts` per `contracts/zone-classifier.md` (any-dot-wins over parent directory segments; basename excluded; total; no I/O; no config). Make T003 green. Keep under 500 lines (it is tiny).
-- [ ] T005 [P] [tier:fast] Add a shared, named-refusal error helper for zoning violations (message names the offending path/target, FR-022) in `src/zoning/errors.ts`, mirroring the existing FR-036 refusal style in `src/providers/run.ts`.
+- [x] T003 [US-none] [tier:balanced] Write RED golden-case tests for `classifyZone` in `tests/unit/zoning/classify.test.ts` covering every row of `contracts/zone-classifier.md` (basename-only `dist/.draft.md` → human-safe; nested dot `dist/target/.ai/out.md` → ai-permitted; `.cache`/`.tmp`/`.ai` identical; empty/no-dot → human-safe). Tests fail (no impl yet).
+- [x] T004 [tier:balanced] Implement `classifyZone(relPath)` in `src/zoning/classify.ts` per `contracts/zone-classifier.md` (any-dot-wins over parent directory segments; basename excluded; total; no I/O; no config). Make T003 green. Keep under 500 lines (it is tiny).
+- [x] T005 [P] [tier:fast] Add a shared, named-refusal error helper for zoning violations (message names the offending path/target, FR-022) in `src/zoning/errors.ts`, mirroring the existing FR-036 refusal style in `src/providers/run.ts`.
 
 **Checkpoint**: `classifyZone` is proven by golden tests; the refusal helper exists.
 
@@ -49,18 +49,18 @@ Single TypeScript package: `src/` and `tests/` at repository root; `@/` import a
 
 ### Tests (RED first)
 
-- [ ] T006 [P] [US1] [tier:balanced] Integration test in `tests/integration/zoning.test.ts`: an impure target's artifact is committed under `.ai/…` (NOT `ai-generated/`, NOT `dist/`) and its path classifies `ai-permitted`. (quickstart S1)
-- [ ] T007 [P] [US1] [tier:balanced] Integration test: an impure output whose resolved path is dot-free (human-safe) is refused, message names the path; no bytes committed. (quickstart S2, FR-011)
-- [ ] T008 [P] [US1] [tier:balanced] Unit test in `tests/unit/providers/invoke-impurity.test.ts`: a provider **declared pure** that returns `impure` is refused, naming the target. (quickstart S3, FR-012)
-- [ ] T009 [P] [US1] [tier:powerful] Integration test: a symlinked impure output whose lexical path is dot-zoned but whose real target resolves human-safe is refused (realpath, not lexical). (quickstart S4, FR-010/D5c)
-- [ ] T010 [P] [US1] [tier:balanced] Integration test: a provider output escaping its assigned output dir is rejected as a containment/escape violation **before** zoning, regardless of impurity. (quickstart S5, FR-009)
+- [x] T006 [P] [US1] [tier:balanced] Integration test in `tests/integration/zoning.test.ts`: an impure target's artifact is committed under `.ai/…` (NOT `ai-generated/`, NOT `dist/`) and its path classifies `ai-permitted`. (quickstart S1)
+- [x] T007 [P] [US1] [tier:balanced] Integration test: an impure output whose resolved path is dot-free (human-safe) is refused, message names the path; no bytes committed. (quickstart S2, FR-011)
+- [x] T008 [P] [US1] [tier:balanced] Unit test in `tests/unit/providers/invoke-impurity.test.ts`: a provider **declared pure** that returns `impure` is refused, naming the target. (quickstart S3, FR-012)
+- [x] T009 [P] [US1] [tier:powerful] Integration test: a symlinked impure output whose lexical path is dot-zoned but whose real target resolves human-safe is refused (realpath, not lexical). (quickstart S4, FR-010/D5c)
+- [x] T010 [P] [US1] [tier:balanced] Integration test: a provider output escaping its assigned output dir is rejected as a containment/escape violation **before** zoning, regardless of impurity. (quickstart S5, FR-009)
 
 ### Implementation (make the above green)
 
-- [ ] T011 [US1] [tier:balanced] Add `routeOutputRoot(class)` in `src/zoning/route.ts` returning the dot-zoned impure root and the pure root, and **rename the impure root string** from `ai-generated` to `.ai` at its source in `src/providers/build.ts:112` and the `stage()` guard/comment (build.ts ~200-214). Impure → `<episodeDir>/.ai/…`, pure → `dist/`.
-- [ ] T012 [US1] [tier:powerful] In `src/providers/run.ts` (declared-output loop, ~229), implement the fixed ordering (FR-009/010): resolve → reject traversal/escape → `fs.realpath` the destination → confirm containment on the resolved path → then hand off to zoning. Do not let a symlink pass a lexical check.
-- [ ] T013 [US1] [tier:powerful] Wire the **zoning refusal** into the build path: after containment, `classifyZone` the resolved destination and refuse an impure output resolving to `human-safe`, naming the path (FR-011). Refusal happens before staging (build.ts step 4).
-- [ ] T014 [US1] [tier:balanced] In `src/providers/invoke.ts` (or `impurityOf` in `build.ts:284`), make a **pure declaration + impure response** a named refusal instead of the current `response.impure ?? decl.impure` coalesce (FR-012). Runtime impurity may only corroborate a static impure declaration.
+- [x] T011 [US1] [tier:balanced] Add `routeOutputRoot(class)` in `src/zoning/route.ts` returning the dot-zoned impure root and the pure root, and **rename the impure root string** from `ai-generated` to `.ai` at its source in `src/providers/build.ts:112` and the `stage()` guard/comment (build.ts ~200-214). Impure → `<episodeDir>/.ai/…`, pure → `dist/`.
+- [x] T012 [US1] [tier:powerful] In `src/providers/run.ts` (declared-output loop, ~229), implement the fixed ordering (FR-009/010): resolve → reject traversal/escape → `fs.realpath` the destination → confirm containment on the resolved path → then hand off to zoning. Do not let a symlink pass a lexical check.
+- [x] T013 [US1] [tier:powerful] Wire the **zoning refusal** into the build path: after containment, `classifyZone` the resolved destination and refuse an impure output resolving to `human-safe`, naming the path (FR-011). Refusal happens before staging (build.ts step 4).
+- [x] T014 [US1] [tier:balanced] In `src/providers/invoke.ts` (or `impurityOf` in `build.ts:284`), make a **pure declaration + impure response** a named refusal instead of the current `response.impure ?? decl.impure` coalesce (FR-012). Runtime impurity may only corroborate a static impure declaration.
 
 **Checkpoint**: US1 tests green — the safety MVP holds independently of US2/US3.
 
@@ -74,13 +74,13 @@ Single TypeScript package: `src/` and `tests/` at repository root; `@/` import a
 
 ### Tests (RED first)
 
-- [ ] T015 [P] [US2] [tier:balanced] Unit test in `tests/unit/graph/authored-zone.test.ts`: an authored node whose declared path is under a dot-zone fails graph validation, naming it; an authored node under a human-safe path passes. (quickstart S7, FR-006/D2b)
-- [ ] T016 [P] [US2] [tier:fast] Unit test asserting `.cache`/`.tmp`/`.ai` classify identically, a dot **basename** does not zone, and the **above-root exclusion** case — a dotted ancestor *above* the production root does not zone content inside it (FR-003) — as a legibility regression guard co-located in `tests/unit/zoning/classify.test.ts` (extends T003 if simpler). (quickstart S6, FR-002/FR-003/FR-016)
+- [x] T015 [P] [US2] [tier:balanced] Unit test in `tests/unit/graph/authored-zone.test.ts`: an authored node whose declared path is under a dot-zone fails graph validation, naming it; an authored node under a human-safe path passes. (quickstart S7, FR-006/D2b)
+- [x] T016 [P] [US2] [tier:fast] Unit test asserting `.cache`/`.tmp`/`.ai` classify identically, a dot **basename** does not zone, and the **above-root exclusion** case — a dotted ancestor *above* the production root does not zone content inside it (FR-003) — as a legibility regression guard co-located in `tests/unit/zoning/classify.test.ts` (extends T003 if simpler). (quickstart S6, FR-002/FR-003/FR-016)
 
 ### Implementation
 
-- [ ] T017 [US2] [tier:balanced] Add the authored-direction check in `src/graph/validate.ts`: every `authored` node's declared path MUST classify `human-safe`; else refuse, naming the node (FR-006/D2b). Reuse `classifyZone`; no new node kind (FR-018).
-- [ ] T018 [P] [US2] [tier:fast] Ensure refusal messages across zoning/build/graph convey the asymmetric semantics (*dot-zoned → AI-permitted / not human-safe*; *non-dot → human-safe*) and never claim a path proves exact provenance (FR-016/FR-023).
+- [x] T017 [US2] [tier:balanced] Add the authored-direction check in `src/graph/validate.ts`: every `authored` node's declared path MUST classify `human-safe`; else refuse, naming the node (FR-006/D2b). Reuse `classifyZone`; no new node kind (FR-018).
+- [x] T018 [P] [US2] [tier:fast] Ensure refusal messages across zoning/build/graph convey the asymmetric semantics (*dot-zoned → AI-permitted / not human-safe*; *non-dot → human-safe*) and never claim a path proves exact provenance (FR-016/FR-023).
 
 **Checkpoint**: US2 green — bidirectional agreement and legibility semantics enforced.
 
@@ -94,12 +94,12 @@ Single TypeScript package: `src/` and `tests/` at repository root; `@/` import a
 
 ### Tests (RED first)
 
-- [ ] T019 [P] [US3] [tier:balanced] Integration test in `tests/integration/audit-zones.test.ts`: clean manifest exits 0 with `--json`; a mis-routed impure target and an authored-in-dot-zone are each reported, named, non-zero exit; the scope statement (runtime filenames/escape checked only at build time) appears in every run. (quickstart S8, FR-013/014/015)
+- [x] T019 [P] [US3] [tier:balanced] Integration test in `tests/integration/audit-zones.test.ts`: clean manifest exits 0 with `--json`; a mis-routed impure target and an authored-in-dot-zone are each reported, named, non-zero exit; the scope statement (runtime filenames/escape checked only at build time) appears in every run. (quickstart S8, FR-013/014/015)
 
 ### Implementation
 
-- [ ] T020 [US3] [tier:balanced] Implement the read-only routing-audit verb in `src/cli/audit-zones.ts` per `contracts/audit-verb.md`: iterate manifest targets/nodes, apply the class↔zone rule via `routeOutputRoot`/`classifyZone`, emit the `AuditReport` (`--json`), exit 0 clean / non-zero on violation, always print the scope note.
-- [ ] T021 [US3] [tier:fast] Register the audit verb in `src/cli/index.ts` following the existing verb-registration pattern (`--json`, `--episode`).
+- [x] T020 [US3] [tier:balanced] Implement the read-only routing-audit verb in `src/cli/audit-zones.ts` per `contracts/audit-verb.md`: iterate manifest targets/nodes, apply the class↔zone rule via `routeOutputRoot`/`classifyZone`, emit the `AuditReport` (`--json`), exit 0 clean / non-zero on violation, always print the scope note.
+- [x] T021 [US3] [tier:fast] Register the audit verb in `src/cli/index.ts` following the existing verb-registration pattern (`--json`, `--episode`).
 
 **Checkpoint**: US3 green — pre-build detection with an honest contract.
 
@@ -107,10 +107,10 @@ Single TypeScript package: `src/` and `tests/` at repository root; `@/` import a
 
 ## Phase 6: Polish & cross-cutting
 
-- [ ] T022 [P] [tier:balanced] Migrate fixtures and existing quickstarts from `ai-generated/` to `.ai/`: grep the repo for `ai-generated` (fixtures under `tests/`, `examples/`, specs 001/002 quickstarts) and update expectations; confirm no test still asserts `ai-generated/`.
-- [ ] T023 [P] [tier:fast] Add a regression test asserting an accidental in-place edit to a `.ai/` artifact still reports `modified` and that this feature does NOT protect those bytes (FR-024; documents the TASK-15 boundary), in `tests/integration/zoning.test.ts`.
-- [ ] T024 [tier:powerful] Full-suite verification: `npm test` and `npm run typecheck` green; no file exceeds 500 lines (check `src/zoning/*`, edited `run.ts`/`build.ts`/`invoke.ts`/`validate.ts`, `src/cli/audit-zones.ts`); no `any`/`as`/`@ts-ignore` introduced; every new refusal names its cause (spot-check against FR-022).
-- [ ] T025 [P] [tier:fast] Update `README.md`/relevant docs to describe the `.ai/` convention and the *dot-zoned = AI-permitted / not human-safe* semantics (INV-2/FR-016), and note the routing-audit verb.
+- [x] T022 [P] [tier:balanced] Migrate fixtures and existing quickstarts from `ai-generated/` to `.ai/`: grep the repo for `ai-generated` (fixtures under `tests/`, `examples/`, specs 001/002 quickstarts) and update expectations; confirm no test still asserts `ai-generated/`.
+- [x] T023 [P] [tier:fast] Add a regression test asserting an accidental in-place edit to a `.ai/` artifact still reports `modified` and that this feature does NOT protect those bytes (FR-024; documents the TASK-15 boundary), in `tests/integration/zoning.test.ts`.
+- [x] T024 [tier:powerful] Full-suite verification: `npm test` and `npm run typecheck` green; no file exceeds 500 lines (check `src/zoning/*`, edited `run.ts`/`build.ts`/`invoke.ts`/`validate.ts`, `src/cli/audit-zones.ts`); no `any`/`as`/`@ts-ignore` introduced; every new refusal names its cause (spot-check against FR-022).
+- [x] T025 [P] [tier:fast] Update `README.md`/relevant docs to describe the `.ai/` convention and the *dot-zoned = AI-permitted / not human-safe* semantics (INV-2/FR-016), and note the routing-audit verb.
 
 ---
 
