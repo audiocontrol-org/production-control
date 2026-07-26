@@ -1,0 +1,5 @@
+# Fixtures are byte-exact oracles for the D6 source-unit derivation (SC-007):
+# CRLF, trailing whitespace, tab-only separators, and missing final terminators
+# are load-bearing. Disable all EOL/text normalization so a checkout on any
+# platform reproduces the exact bytes the tests assert. (AUDIT-20260726-01)
+test/fixtures/** -text
