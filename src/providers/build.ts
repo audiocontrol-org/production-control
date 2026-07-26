@@ -11,7 +11,7 @@ import type { BuildImpure, BuildInput, BuildResponse } from '@/providers/contrac
 import { resolveInputs } from '@/providers/inputs.js';
 import { invokeProvider, type ProducedOutput } from '@/providers/invoke.js';
 import type { ProviderRunner } from '@/providers/run.js';
-import { impureOutputRoot, pureOutputRoot } from '@/zoning/route.js';
+import { classifyZone, impureOutputRoot, pureOutputRoot, zoningRefusal } from '@/zoning/index.js';
 
 /**
  * **Building an output and recording its origin, as ONE INDIVISIBLE ACT** (FR-014, T059/T060).
@@ -110,11 +110,11 @@ export async function buildTarget(context: BuildContext, id: Identity): Promise<
     // human-crafted, so nobody mistakes it for authored content. A PURE output is reproducible and
     // stays in gitignored `dist/`. production-control already knows which this is (the same
     // impurity it records), so the routing is principled, not a per-target flag.
-    const outputRoot =
-      impurityOf(decl, response) !== undefined ? impureOutputRoot() : pureOutputRoot();
+    const impure = impurityOf(decl, response) !== undefined;
+    const outputRoot = impure ? impureOutputRoot() : pureOutputRoot();
 
     // Step 4: stage the produced bytes to a temp sibling — NOT their final path yet.
-    const staged = await stage(context.episodeDir, outputRoot, output);
+    const staged = await stage(context.episodeDir, outputRoot, output, impure, id);
     try {
       // Step 5: write the record. If this throws, nothing visible has changed — the staged bytes
       // are off to the side and the `finally` below removes them, leaving the prior artifact intact.
@@ -197,17 +197,19 @@ interface StagedOutput {
 async function stage(
   episodeDir: string,
   root: string,
-  output: ProducedOutput
+  output: ProducedOutput,
+  impure: boolean,
+  target: Identity
 ): Promise<StagedOutput> {
   const recordedPath = path.posix.join(root, output.relPath);
   const destination = path.join(episodeDir, recordedPath);
-
-  // Defense in depth. `BuildOutputSchema.path` (RelativePathSchema) already refuses a traversing
-  // output on the wire, but this composition trusts `output.relPath`, and a future caller that
-  // builds a ProducedOutput another way must still not be able to write outside the output root
-  // (`dist/` for pure, `.ai/` for impure). The schema guards the wire; this guards the
-  // composition (FR-036).
   const outputRoot = path.join(episodeDir, root);
+
+  // (b) LEXICAL containment. Defense in depth: `BuildOutputSchema.path` (RelativePathSchema)
+  // already refuses a traversing output on the wire, but this composition trusts `output.relPath`,
+  // and a future caller that builds a ProducedOutput another way must still not be able to write
+  // outside the output root (`dist/` for pure, `.ai/` for impure). The schema guards the wire; this
+  // guards the composition (FR-036). This fires FIRST, before any filesystem is touched.
   const relToRoot = path.relative(outputRoot, destination);
   if (relToRoot === '..' || relToRoot.startsWith(`..${path.sep}`) || path.isAbsolute(relToRoot)) {
     throw new Error(
@@ -216,13 +218,52 @@ async function stage(
     );
   }
 
-  // `dirname(destination)` is at or under `outputRoot`, so this also creates `outputRoot`, where the
-  // temp sibling lands. Both the temp and its eventual destination are then within one filesystem.
+  // `dirname(destination)` is at or under `outputRoot`, so this also creates `outputRoot` — both
+  // where the temp sibling lands AND what the realpath resolution below needs to exist. `recursive`
+  // is a no-op when a (possibly symlinked) component already exists.
   await fs.mkdir(path.dirname(destination), { recursive: true });
+
+  // (c) REAL-PATH containment (FR-009/FR-010). The lexical guard cannot see through a symlink: a
+  // path that is lexically inside `${root}/` may, once symlinks are resolved, point somewhere
+  // else entirely (a symlinked component, or the root itself being a symlink). Resolve the REAL
+  // destination — realpath the PARENT (which the atomic `rename` in step 6 follows) and append the
+  // basename (which `rename` REPLACES rather than follows, so it must NOT itself be resolved) — and
+  // confirm it stays within the assigned, realpath-resolved output root. Episode dir and root are
+  // realpath-resolved too so the comparison is symlink-consistent (e.g. /tmp -> /private/tmp).
+  const realEpisodeDir = await fs.realpath(episodeDir);
+  const realOutputRoot = await fs.realpath(outputRoot);
+  const realParent = await fs.realpath(path.dirname(destination));
+  const resolved = path.join(realParent, path.basename(destination));
+
+  const realRel = path.relative(realOutputRoot, resolved);
+  if (realRel === '..' || realRel.startsWith(`..${path.sep}`) || path.isAbsolute(realRel)) {
+    throw new Error(
+      `output.path "${output.relPath}" resolves through a symlink to ` +
+        `"${toPosix(path.relative(realEpisodeDir, resolved))}", which escapes the episode's ` +
+        `${root}/ directory — a build output must resolve within ${realOutputRoot} (FR-009).`
+    );
+  }
+
+  // (d) ZONING (FR-010/FR-011). An IMPURE output whose REAL destination classifies human-safe is
+  // refused, naming the resolved path. Impure output routes under `.ai/` by construction, so the
+  // only way its real destination lands human-safe is a symlink — which (c) has now resolved. Pure
+  // output legitimately lives under human-safe `dist/`, so this guard is impure-only.
+  const resolvedRel = toPosix(path.relative(realEpisodeDir, resolved));
+  if (impure && classifyZone(resolvedRel) === 'human-safe') {
+    throw zoningRefusal({ path: resolvedRel, target });
+  }
+
+  // (e) STAGE the bytes to a temp sibling under `outputRoot`. Both the temp and its eventual
+  // destination are then within one filesystem, so the caller's temp->destination rename is atomic.
   const tempPath = path.join(outputRoot, `.pc-ingest-${crypto.randomUUID()}`);
   await fs.copyFile(output.fullPath, tempPath);
 
   return { recordedPath, destination, tempPath };
+}
+
+/** Episode-relative paths are recorded and classified POSIX-separated, regardless of host OS. */
+function toPosix(relativePath: string): string {
+  return relativePath.split(path.sep).join('/');
 }
 
 /**

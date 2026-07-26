@@ -308,3 +308,159 @@ describe(
     });
   }
 );
+
+// ---------------------------------------------------------------------------
+// T009 — a per-FILE symlink whose REAL target escapes the assigned `.ai/` root (into a human-safe
+// path) is refused by realpath-resolved containment; distinct from T007's ROOT-level symlink
+// (quickstart S2, FR-009/FR-010/FR-011).
+// ---------------------------------------------------------------------------
+
+describe(
+  'T009 [US1]: an impure output whose lexical path is dot-zoned (`.ai/…`) but which resolves ' +
+    'through a per-file symlink to a human-safe REAL target is refused (FR-009/FR-010/FR-011)',
+  () => {
+    /**
+     * Distinct from T007: there the ASSIGNED ROOT (`.ai`) is itself the symlink, so the resolved
+     * destination stays contained within the resolved (human-safe) root and ZONING (FR-011) is
+     * what refuses it. HERE `.ai` is a real directory and a symlink BENEATH it (`.ai/link`) points
+     * at a human-safe real directory OUTSIDE `.ai`. A lexically dot-zoned declared path
+     * (`link/out.bin` → `.ai/link/out.bin`) therefore resolves, through the symlink, to
+     * `<episode>/human/out.bin` — which ESCAPES the assigned `.ai/` root (FR-009 containment) and
+     * is human-safe. The lexical guard cannot see this; only realpath-resolved containment can.
+     *
+     * RED before T012: the pre-realpath pipeline resolves `link/out.bin` lexically to
+     * `.ai/link/out.bin`, judges it contained, writes the record, and RENAMEs onto it — following
+     * the `.ai/link` symlink and depositing an AI artifact in the human-safe `human/` directory.
+     */
+    it('is refused: the resolved real destination escapes `.ai/` into a human-safe directory', async () => {
+      const dir = await copyFixture('chain');
+
+      // A real, human-safe directory OUTSIDE `.ai/`, reached only through a symlink beneath `.ai/`.
+      const humanSafeReal = path.join(dir, 'human');
+      await fs.mkdir(humanSafeReal, { recursive: true });
+      // `.ai/` is a REAL directory here (unlike T007) — the escape is a per-file symlink under it.
+      await fs.mkdir(path.join(dir, '.ai'), { recursive: true });
+      await fs.symlink(humanSafeReal, path.join(dir, '.ai', 'link'));
+
+      const decl: ProviderDecl = {
+        cmd: ['unused'],
+        impure: { reason: 'declared impure for this test' },
+      };
+      const runner = runnerEmitting('link/out.bin', { reason: 'emits a per-run nonce' });
+      const context = await contextOver(dir, decl, runner);
+
+      const failure = await buildTarget(context, 'voiceover').then(
+        () => null,
+        (error: unknown) => error
+      );
+
+      expect(
+        failure,
+        'an impure output resolving (via a per-file symlink) outside `.ai/` to a human-safe ' +
+          'path was accepted rather than refused — realpath containment (FR-009) does not exist yet'
+      ).toBeInstanceOf(Error);
+      const message = failure instanceof Error ? failure.message : '';
+      // The refusal names the resolved, escaping human-safe path.
+      expect(message).toContain('human');
+
+      // The AI artifact was NOT deposited in the human-safe directory, and nothing was recorded.
+      expect(await exists(path.join(humanSafeReal, 'out.bin'))).toBe(false);
+      expect((await readLedger(dir)).artifacts['voiceover']).toBeUndefined();
+    });
+
+    /**
+     * Non-vacuity / channel (symlink to another dot-zone = allowed): a symlink BENEATH `.ai/` that
+     * points to another location STILL WITHIN `.ai/` is legitimate — the resolved destination stays
+     * contained and dot-zoned — so the build SUCCEEDS. This proves the new realpath checks refuse
+     * ESCAPES, not symlinks as such.
+     */
+    it('allows a symlink beneath `.ai/` whose real target is also within `.ai/`', async () => {
+      const dir = await copyFixture('chain');
+
+      await fs.mkdir(path.join(dir, '.ai', 'nested'), { recursive: true });
+      // `.ai/link` -> `.ai/nested`: resolves to a location still inside the dot-zoned root.
+      await fs.symlink(path.join(dir, '.ai', 'nested'), path.join(dir, '.ai', 'link'));
+
+      const decl: ProviderDecl = {
+        cmd: ['unused'],
+        impure: { reason: 'declared impure for this test' },
+      };
+      const runner = runnerEmitting('link/out.bin', { reason: 'emits a per-run nonce' });
+      const context = await contextOver(dir, decl, runner);
+
+      const record = await buildTarget(context, 'voiceover');
+
+      // Recorded under the lexical dot-zoned path; the bytes land through the symlink inside `.ai/`.
+      expect(record.output.path).toBe('.ai/link/out.bin');
+      expect(classifyZone(record.output.path)).toBe('ai-permitted');
+      expect(await exists(path.join(dir, '.ai', 'nested', 'out.bin'))).toBe(true);
+      expect((await readLedger(dir)).artifacts['voiceover']).toBeDefined();
+    });
+
+    /**
+     * Channel (broken symlink): a symlink beneath `.ai/` whose target does not exist cannot yield a
+     * valid artifact — it is refused and nothing is recorded. The guarantee under test is "refused,
+     * no artifact", not the exact wording of the underlying resolution failure.
+     */
+    it('refuses a broken symlink beneath `.ai/`, recording nothing', async () => {
+      const dir = await copyFixture('chain');
+
+      await fs.mkdir(path.join(dir, '.ai'), { recursive: true });
+      await fs.symlink(path.join(dir, 'does-not-exist'), path.join(dir, '.ai', 'link'));
+
+      const decl: ProviderDecl = {
+        cmd: ['unused'],
+        impure: { reason: 'declared impure for this test' },
+      };
+      const runner = runnerEmitting('link/out.bin', { reason: 'emits a per-run nonce' });
+      const context = await contextOver(dir, decl, runner);
+
+      const failure = await buildTarget(context, 'voiceover').then(
+        () => null,
+        (error: unknown) => error
+      );
+
+      expect(failure, 'a broken symlink beneath `.ai/` was not refused').toBeInstanceOf(Error);
+      expect((await readLedger(dir)).artifacts['voiceover']).toBeUndefined();
+    });
+
+    /**
+     * Channel + security property (final-component symlink): containment realpath-resolves the
+     * destination's PARENT and appends the basename — it deliberately does NOT resolve the final
+     * component, because the atomic `rename` in step 6 REPLACES a symlink at the destination path
+     * rather than following it. So a pre-planted symlink AT the destination (`.ai/voiceover.out` ->
+     * a human-safe file) is overwritten in place with a real file under `.ai/`; the AI bytes are
+     * NEVER written through the link to its human-safe target. This locks that behavior against a
+     * future refactor that naively realpaths the whole destination (which would either misclassify
+     * or write through the link).
+     */
+    it('replaces a final-component symlink in place rather than writing through it', async () => {
+      const dir = await copyFixture('chain');
+
+      await fs.mkdir(path.join(dir, '.ai'), { recursive: true });
+      // A human-safe authored file the destination symlink points at; it must remain UNTOUCHED.
+      const authored = path.join(dir, 'human-file.txt');
+      await fs.writeFile(authored, 'AUTHORED\n', 'utf8');
+      // `.ai/voiceover.out` is itself a symlink to the authored human-safe file.
+      await fs.symlink(authored, path.join(dir, '.ai', 'voiceover.out'));
+
+      const decl: ProviderDecl = {
+        cmd: ['unused'],
+        impure: { reason: 'declared impure for this test' },
+      };
+      const runner = runnerEmitting('voiceover.out', { reason: 'emits a per-run nonce' });
+      const context = await contextOver(dir, decl, runner);
+
+      const record = await buildTarget(context, 'voiceover');
+
+      // Recorded under `.ai/`, and the destination is now a REAL file (the link was replaced).
+      expect(record.output.path).toBe('.ai/voiceover.out');
+      const destLstat = await fs.lstat(path.join(dir, '.ai', 'voiceover.out'));
+      expect(destLstat.isSymbolicLink(), 'the destination symlink was followed, not replaced').toBe(
+        false
+      );
+      // The human-safe target was NEVER written through: its authored bytes are intact.
+      expect(await fs.readFile(authored, 'utf8')).toBe('AUTHORED\n');
+    });
+  }
+);

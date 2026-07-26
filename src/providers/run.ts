@@ -224,13 +224,21 @@ async function assertOutputsAgreeWithDisk(
 ): Promise<void> {
   const declared = new Set(response.outputs.map((output) => normalize(output.path)));
 
+  // Resolved LAZILY, and only once, for the real-path containment below: `output_dir` itself may
+  // sit under a symlinked prefix (e.g. /tmp -> /private/tmp on macOS), so both sides of the
+  // comparison must be realpath-resolved or an ordinary output would look like an escape. It is
+  // resolved only when a declared output actually EXISTS to check — a run whose declared outputs
+  // are all missing (or whose `output_dir` was never created) must still reach the "declared
+  // output does not exist" refusal below rather than fail on an ENOENT from realpath (FR-033).
+  let realOutputDir: string | undefined;
+
   const missing: string[] = [];
   for (const output of response.outputs) {
     const absolute = path.resolve(request.output_dir, output.path);
-    // Defense in depth. `BuildOutputSchema.path` already refuses a traversing declaration, but
-    // the undeclared-file walk below only covers `output_dir`, so an escaped file would pass the
-    // existence check unseen. Assert the declared output resolves inside `output_dir` before
-    // hashing or comparing it (FR-036).
+    // (b) LEXICAL containment. Defense in depth: `BuildOutputSchema.path` already refuses a
+    // traversing declaration, but the undeclared-file walk below only covers `output_dir`, so an
+    // escaped file would pass the existence check unseen. Assert the declared output resolves inside
+    // `output_dir` before hashing or comparing it (FR-036).
     const relFromDir = path.relative(request.output_dir, absolute);
     if (
       relFromDir === '..' ||
@@ -244,6 +252,24 @@ async function assertOutputsAgreeWithDisk(
     }
     if (!(await isFile(absolute))) {
       missing.push(output.path);
+      continue;
+    }
+    // (c) REAL-PATH containment (FR-009). The declared file exists here (the provider wrote it), so
+    // it can be resolved directly — unlike the not-yet-existing destination in `build.ts`. A
+    // provider that declares a lexically-contained path which is (or lies under) a symlink escaping
+    // `output_dir` must be refused before its bytes are hashed and ingested — the lexical guard
+    // above cannot see through the link.
+    if (realOutputDir === undefined) {
+      realOutputDir = await fs.realpath(request.output_dir);
+    }
+    const realAbsolute = await fs.realpath(absolute);
+    const realRel = path.relative(realOutputDir, realAbsolute);
+    if (realRel === '..' || realRel.startsWith(`..${path.sep}`) || path.isAbsolute(realRel)) {
+      throw new Error(
+        `provider "${command}" declared output.path "${output.path}" that resolves, through a ` +
+          `symlink, outside output_dir (${request.output_dir}). A declared output must be ` +
+          `contained within it (FR-009).`
+      );
     }
   }
   if (missing.length > 0) {
