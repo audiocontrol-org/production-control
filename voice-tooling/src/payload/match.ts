@@ -12,6 +12,9 @@ import type { UnitPayload } from '@/payload/extract.ts';
 /** The four payload kinds, matched independently. */
 type PayloadKind = 'quotes' | 'citations' | 'numerics' | 'lexiconTerms';
 
+/** The four payload kinds in fixed order, for iterating a whole payload. */
+const PAYLOAD_KINDS: readonly PayloadKind[] = ['quotes', 'citations', 'numerics', 'lexiconTerms'];
+
 /**
  * MULTISET containment: does `dest` contain every element of `source` with at
  * least the same multiplicity?
@@ -71,28 +74,84 @@ export function unionPayload(payloads: readonly UnitPayload[]): UnitPayload {
 }
 
 /**
- * Run `survivesMultiset` per payload kind and aggregate. `ok` is true only when
- * every kind survives; `missingByKind` names the shortfall for each kind (empty
- * arrays where that kind survived).
+ * A MUTABLE per-kind frequency map of destination supply still available to
+ * discharge source obligations. Built ONCE per shared-destination group (see
+ * `buildRemaining`) and decremented as each member entry's source payload is
+ * matched against it (see `consumeAgainstRemaining`) — this is what makes one
+ * destination occurrence dischargeable by at most ONE source occurrence ACROSS
+ * a whole group, closing the cross-unit false-clean (AUDIT-20260726-17).
+ */
+export type RemainingSupply = Record<PayloadKind, Map<string, number>>;
+
+/**
+ * Build a shared `RemainingSupply` from the UNION of a group's destination-unit
+ * payloads, per kind (order is irrelevant to a frequency map; multiplicity is
+ * preserved). The caller passes each UNIQUE destination unit's payload exactly
+ * once so a destination referenced by several entries in the group contributes
+ * its supply only once.
+ */
+export function buildRemaining(destPayloads: readonly UnitPayload[]): RemainingSupply {
+  const remaining: RemainingSupply = {
+    quotes: new Map(),
+    citations: new Map(),
+    numerics: new Map(),
+    lexiconTerms: new Map(),
+  };
+  for (const payload of destPayloads) {
+    for (const kind of PAYLOAD_KINDS) {
+      for (const item of payload[kind]) {
+        remaining[kind].set(item, (remaining[kind].get(item) ?? 0) + 1);
+      }
+    }
+  }
+  return remaining;
+}
+
+/**
+ * Decrement one source unit's payload against the SHARED `remaining` supply,
+ * MUTATING it, and return the per-kind shortfall (source items with no remaining
+ * supply, in source document order — an item short by k copies appears k times).
+ * Because `remaining` is shared across a group and mutated in place, a later
+ * member entry sees only the supply earlier members did not consume.
+ */
+export function consumeAgainstRemaining(
+  remaining: RemainingSupply,
+  sourcePayload: UnitPayload,
+): Record<PayloadKind, string[]> {
+  const missing: Record<PayloadKind, string[]> = {
+    quotes: [],
+    citations: [],
+    numerics: [],
+    lexiconTerms: [],
+  };
+  for (const kind of PAYLOAD_KINDS) {
+    for (const item of sourcePayload[kind]) {
+      const count = remaining[kind].get(item) ?? 0;
+      if (count > 0) {
+        remaining[kind].set(item, count - 1);
+      } else {
+        missing[kind].push(item);
+      }
+    }
+  }
+  return missing;
+}
+
+/**
+ * Run multiset survival per payload kind against a destination union and
+ * aggregate. `ok` is true only when every kind survives; `missingByKind` names
+ * the shortfall for each kind (empty arrays where that kind survived).
+ *
+ * Expressed in terms of `buildRemaining`/`consumeAgainstRemaining` so the
+ * single-destination case is literally the singleton-group case of the shared
+ * consumption path — ONE multiset-survival source of truth (AUDIT-20260726-17).
  */
 export function payloadSurvives(
   sourcePayload: UnitPayload,
   destUnion: UnitPayload,
 ): { ok: boolean; missingByKind: Record<PayloadKind, string[]> } {
-  const quotes = survivesMultiset(sourcePayload.quotes, destUnion.quotes);
-  const citations = survivesMultiset(sourcePayload.citations, destUnion.citations);
-  const numerics = survivesMultiset(sourcePayload.numerics, destUnion.numerics);
-  const lexiconTerms = survivesMultiset(
-    sourcePayload.lexiconTerms,
-    destUnion.lexiconTerms,
-  );
-  return {
-    ok: quotes.ok && citations.ok && numerics.ok && lexiconTerms.ok,
-    missingByKind: {
-      quotes: quotes.missing,
-      citations: citations.missing,
-      numerics: numerics.missing,
-      lexiconTerms: lexiconTerms.missing,
-    },
-  };
+  const remaining = buildRemaining([destUnion]);
+  const missingByKind = consumeAgainstRemaining(remaining, sourcePayload);
+  const ok = PAYLOAD_KINDS.every((kind) => missingByKind[kind].length === 0);
+  return { ok, missingByKind };
 }

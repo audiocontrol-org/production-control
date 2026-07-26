@@ -24,6 +24,20 @@ test('citations: footnote markers extracted verbatim with multiplicity', () => {
   assert.deepEqual(payload.citations, ['[^1]', '[^1]', '[^PB-P076]']);
 });
 
+test('AUDIT-20260726-08 (FIX 2): a bare citation marker yields a citation ONLY, never a numeric', () => {
+  // `[^1]`'s digit label must not be double-booked as a free-standing numeral.
+  const payload = extractPayload('The design endured[^1].');
+  assert.deepEqual(payload.citations, ['[^1]']);
+  assert.deepEqual(payload.numerics, []);
+});
+
+test('AUDIT-20260726-08 (FIX 2): a prose numeral beside a digit-labeled citation is still extracted, the marker digit is not', () => {
+  // "1978" is a genuine prose numeral; the "1" inside "[^1]" is not.
+  const payload = extractPayload('Built in 1978[^1].');
+  assert.deepEqual(payload.numerics, ['1978']);
+  assert.deepEqual(payload.citations, ['[^1]']);
+});
+
 test('quotes: one entry per blockquote line, remainder byte-exact', () => {
   const content = '> First quoted line\n> Second quoted line\nplain text\n';
   const payload = extractPayload(content);

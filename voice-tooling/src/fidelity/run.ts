@@ -39,18 +39,13 @@ import {
 import {
   readDeclaredSourceHash,
   indexSourceUnits,
-  countProseNumerics,
   countUncorroboratedUnits,
   stripFrontmatterBody,
   parseSourceCitationAllowlist,
 } from '@/fidelity/run-support.ts';
 import {
   findUnresolvedDestinationChecks,
-  VERBATIM_BYTE_MISMATCH_FAILURE,
-  QUOTE_SURVIVAL_FAILURE,
-  CITATION_FAILURE,
-  NUMERIC_FAILURE,
-  LEXICON_FAILURE,
+  classifyOpFailures,
 } from '@/fidelity/classify-op-failures.ts';
 
 /** Input to a single deterministic fidelity run (contract "Input"). */
@@ -209,16 +204,18 @@ export function runFidelity(input: FidelityInput): FidelityResult {
   }
 
   const opResult = checkOpObligations(ledger, sourceUnits, editionUnits, input.lexicon);
-  failures.push(...opResult.failures);
+  failures.push(...opResult.failures.map((f) => f.message));
 
   const sourceByKey = indexSourceUnits(sourceUnits);
   const editionByKey = indexSourceUnits(editionUnits);
 
-  // A declared destination that no longer resolves in the edition (e.g. a
-  // byte-level edit changed its content-derived identity) carries no kind
-  // label in checkOpObligations's own failure string -- classify it here by
-  // inspecting the entry's own op and source payload, and surface a
-  // clarifying, kind-specific diagnostic into `failures` alongside the raw one.
+  // AUDIT-20260726-23: bucket op-obligation failures under their named checks
+  // by their STRUCTURED kind (never by regex over the human message). A
+  // declared destination that no longer resolves in the edition carries no
+  // payload kind, so it is classified per-entry (by the entry's own op and
+  // source payload) and a clarifying, kind-specific diagnostic is surfaced
+  // into `failures` alongside the raw one.
+  const opFailureChecks = classifyOpFailures(opResult.failures);
   const unresolvedDestinationChecks = findUnresolvedDestinationChecks(
     ledger,
     sourceByKey,
@@ -226,6 +223,10 @@ export function runFidelity(input: FidelityInput): FidelityResult {
     input.lexicon,
     failures,
   );
+  const affectedChecks = new Set<'verbatim_quotes' | 'citations' | 'numeric_literals' | 'lexicon'>([
+    ...opFailureChecks,
+    ...unresolvedDestinationChecks,
+  ]);
 
   const sourceText = decodeText(input.source);
   const editionText = decodeText(input.edition);
@@ -239,32 +240,26 @@ export function runFidelity(input: FidelityInput): FidelityResult {
   // payload that fails to survive, or an unresolved destination affecting a
   // quote/verbatim entry, all surface here (there is no separate named
   // "verbatim" check in the ten-check report).
-  const verbatimOrQuoteFailed =
-    opResult.failures.some(
-      (f) => VERBATIM_BYTE_MISMATCH_FAILURE.test(f) || QUOTE_SURVIVAL_FAILURE.test(f),
-    ) || unresolvedDestinationChecks.has('verbatim_quotes');
+  const verbatimOrQuoteFailed = affectedChecks.has('verbatim_quotes');
   checks['verbatim_quotes'] = verbatimOrQuoteFailed
     ? failed('one or more verbatim/quote obligations were not satisfied; see failures[]')
     : passed({ checked: opResult.payloadChecked.quotes });
 
-  // numeric_literals: `checked` deliberately does NOT reuse
-  // `opResult.payloadChecked.numerics` as-is — see `countProseNumerics`'s doc
-  // comment (in `run-support.ts`) for the citation-marker-digit double-count
-  // this corrects.
-  const numericFailed =
-    opResult.failures.some((f) => NUMERIC_FAILURE.test(f)) ||
-    unresolvedDestinationChecks.has('numeric_literals');
+  // numeric_literals: `checked` reads `opResult.payloadChecked.numerics`
+  // directly. As of AUDIT-20260726-08/-11 the extractor itself excludes a
+  // citation marker's own digits (see `@/payload/extract.ts`), so this count
+  // is already the free-standing-prose numeral count -- no display-only
+  // recomputation is needed and there is no longer a second source of truth.
+  const numericFailed = affectedChecks.has('numeric_literals');
   checks['numeric_literals'] = numericFailed
     ? failed('one or more numeric literals did not survive into declared destinations; see failures[]')
-    : passed({ checked: countProseNumerics(ledger, sourceByKey, input.lexicon) });
+    : passed({ checked: opResult.payloadChecked.numerics });
 
   // citations: EITHER a source citation fails to survive its declared
   // destinations (op obligation, including an unresolved destination) OR the
   // edition fabricates/mis-allow-lists a citation (document-level
   // `checkCitations`) fails this check.
-  const citationOpFailed =
-    opResult.failures.some((f) => CITATION_FAILURE.test(f)) ||
-    unresolvedDestinationChecks.has('citations');
+  const citationOpFailed = affectedChecks.has('citations');
   checks['citations'] =
     citationOpFailed || !citationResult.ok
       ? failed('one or more citation obligations were not satisfied; see failures[]')
@@ -275,9 +270,7 @@ export function runFidelity(input: FidelityInput): FidelityResult {
   if (!opResult.lexiconApplicable) {
     checks['lexicon'] = notRun('no lexicon declared');
   } else {
-    const lexiconFailed =
-      opResult.failures.some((f) => LEXICON_FAILURE.test(f)) ||
-      unresolvedDestinationChecks.has('lexicon');
+    const lexiconFailed = affectedChecks.has('lexicon');
     checks['lexicon'] = lexiconFailed
       ? failed('one or more declared-lexicon terms did not survive into declared destinations; see failures[]')
       : passed({ checked: opResult.payloadChecked.lexiconTerms });

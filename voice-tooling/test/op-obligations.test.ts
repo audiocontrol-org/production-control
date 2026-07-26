@@ -106,6 +106,11 @@ test('checkOpObligations: a faithful set is ok with correct counts', () => {
   assert.equal(result.ok, true, `unexpected failures: ${result.failures.join(' | ')}`);
   assert.deepEqual(result.failures, []);
   assert.deepEqual(result.opCounts, { verbatim: 1, represented: 2, merged: 2, cut: 1 });
+  // AUDIT-20260726-08: this fixture uses LETTER-labeled citations ([^a]..[^d],
+  // no digits), so the citation-marker-digit exclusion added to extractPayload
+  // does not change its numeric count -- the two numerics are the genuine prose
+  // numerals "1978" (Beta unit) and "42" (Gamma-one unit), neither from a
+  // citation marker. The corrected count is therefore 2, unchanged.
   assert.deepEqual(result.payloadChecked, {
     quotes: 1,
     citations: 4,
@@ -138,9 +143,11 @@ test('checkOpObligations: a verbatim destination off by one byte fails, naming i
   assert.equal(result.ok, false);
   const s0 = src[0];
   assert.ok(s0);
-  assert.deepEqual(result.failures, [
+  assert.deepEqual(result.failures.map((f) => f.message), [
     `op obligation: entry for source unit (sha256:${s0.contentHash}, occurrence 0), op=verbatim: destination bytes differ from source unit bytes`,
   ]);
+  // AUDIT-20260726-23: the failure carries a STRUCTURED kind (not a prose regex).
+  assert.deepEqual(result.failures.map((f) => f.kind), ['verbatim']);
 });
 
 test('checkOpObligations: a represented entry whose source citation is dropped fails, naming the payload', () => {
@@ -158,9 +165,12 @@ test('checkOpObligations: a represented entry whose source citation is dropped f
   assert.equal(result.ok, false);
   const s1 = src[1];
   assert.ok(s1);
-  assert.deepEqual(result.failures, [
+  assert.deepEqual(result.failures.map((f) => f.message), [
     `op obligation: entry for source unit (sha256:${s1.contentHash}, occurrence 0), op=represented: citation [^b] does not survive into declared destinations`,
   ]);
+  // AUDIT-20260726-23: a citation shortfall is kind 'citation', regardless of
+  // any word inside the interpolated marker text.
+  assert.deepEqual(result.failures.map((f) => f.kind), ['citation']);
 });
 
 test('checkOpObligations: a represented whose source yields no payload passes but is uncorroborated', () => {
@@ -205,7 +215,7 @@ test('checkOpObligations: a merged sharing no destination fails (defensive branc
   );
 
   assert.equal(result.ok, false);
-  assert.deepEqual(result.failures, [
+  assert.deepEqual(result.failures.map((f) => f.message), [
     `op obligation: op=merged entry for (sha256:${s0.contentHash}, occurrence 0) shares no destination with another entry`,
   ]);
 });
@@ -224,7 +234,7 @@ test('checkOpObligations: a destination ref that resolves to nothing fails', () 
   );
 
   assert.equal(result.ok, false);
-  assert.deepEqual(result.failures, [
+  assert.deepEqual(result.failures.map((f) => f.message), [
     `op obligation: entry for source unit (sha256:${s0.contentHash}, occurrence 0), op=represented: declared destination (sha256:${'e'.repeat(64)}, occurrence 0) not found in edition`,
   ]);
 });
@@ -243,7 +253,7 @@ test('checkOpObligations: a source unit ref that resolves to nothing fails', () 
   );
 
   assert.equal(result.ok, false);
-  assert.deepEqual(result.failures, [
+  assert.deepEqual(result.failures.map((f) => f.message), [
     `op obligation: entry source unit (sha256:${'f'.repeat(64)}, occurrence 0) not found`,
   ]);
 });
@@ -273,6 +283,86 @@ test('checkOpObligations: D22 corroborates the DECLARED destination even when el
     ed,
   );
 
-  assert.equal(result.ok, true, `unexpected failures: ${result.failures.join(' | ')}`);
+  assert.equal(result.ok, true, `unexpected failures: ${result.failures.map((f) => f.message).join(' | ')}`);
   assert.deepEqual(result.failures, []);
+});
+
+test('AUDIT-20260726-17 (FIX 1): two merged entries sharing ONE destination cannot both discharge a single destination occurrence', () => {
+  // Two source units, each carrying the numeral "1978" once, BOTH merged into
+  // a single shared destination. Pre-fix, each entry was checked against its
+  // own rebuilt copy of the destination union, so ONE destination "1978" could
+  // discharge BOTH source obligations -- a cross-unit false-clean. Post-fix the
+  // shared supply is consumed once across the group.
+  const src = deriveUnits('First merged unit counts 1978.\n\nSecond merged unit counts 1978.\n', 'src');
+  const [s0, s1] = src;
+  assert.ok(s0 && s1, 'expected 2 source units');
+
+  // Destination contains "1978" only ONCE -> a shortfall for the second entry.
+  const edOnce = deriveUnits('The merged edition line records 1978.\n', 'edOnce');
+  const [dOnce] = edOnce;
+  assert.ok(dOnce);
+  const resultOnce = checkOpObligations(
+    ledgerOf([
+      { source_unit: ref(s0), op: 'merged', edition_units: [ref(dOnce)] },
+      { source_unit: ref(s1), op: 'merged', edition_units: [ref(dOnce)] },
+    ]),
+    src,
+    edOnce,
+  );
+  assert.equal(
+    resultOnce.ok,
+    false,
+    `a single shared "1978" must not discharge both merged obligations; got: ${resultOnce.failures.map((f) => f.message).join(' | ')}`,
+  );
+  const numericShortfalls = resultOnce.failures.filter((f) => f.kind === 'numeric');
+  assert.equal(numericShortfalls.length, 1, 'exactly one numeric obligation goes unmet');
+  const shortfall = numericShortfalls[0];
+  assert.ok(shortfall);
+  // Per-source attribution: the SECOND source unit's obligation is the unmet one.
+  assert.equal(
+    shortfall.message,
+    `op obligation: entry for source unit (sha256:${s1.contentHash}, occurrence 0), op=merged: numeric 1978 does not survive into declared destinations`,
+  );
+
+  // Same layout, but the destination now carries "1978" TWICE -> enough supply
+  // for both source obligations, so the shared group survives.
+  const edTwice = deriveUnits('The merged edition line records 1978 and again 1978.\n', 'edTwice');
+  const [dTwice] = edTwice;
+  assert.ok(dTwice);
+  const resultTwice = checkOpObligations(
+    ledgerOf([
+      { source_unit: ref(s0), op: 'merged', edition_units: [ref(dTwice)] },
+      { source_unit: ref(s1), op: 'merged', edition_units: [ref(dTwice)] },
+    ]),
+    src,
+    edTwice,
+  );
+  assert.equal(
+    resultTwice.ok,
+    true,
+    `two destination "1978" occurrences discharge both obligations; got: ${resultTwice.failures.map((f) => f.message).join(' | ')}`,
+  );
+});
+
+test('AUDIT-20260726-19 (FIX 4): a non-cut entry with zero declared destinations fails, naming the unit', () => {
+  // loadLedger rejects an empty edition_units for a non-cut entry; construct the
+  // checker input DIRECTLY to exercise the defensive guard. Without it, the
+  // destination loop never runs and an empty union trivially "survives" -- a
+  // producer could drop prose by labelling it `represented` with no destination.
+  const src = deriveUnits('Some prose that would be silently dropped.\n', 'src');
+  const ed = deriveUnits('Unrelated edition content.\n', 'ed');
+  const [s0] = src;
+  assert.ok(s0);
+
+  const result = checkOpObligations(
+    ledgerOf([{ source_unit: ref(s0), op: 'represented', edition_units: [] }]),
+    src,
+    ed,
+  );
+
+  assert.equal(result.ok, false);
+  assert.deepEqual(result.failures.map((f) => f.message), [
+    `op obligation: entry for source unit (sha256:${s0.contentHash}, occurrence 0), op=represented: non-cut entry declares no destination`,
+  ]);
+  assert.deepEqual(result.failures.map((f) => f.kind), ['structural']);
 });

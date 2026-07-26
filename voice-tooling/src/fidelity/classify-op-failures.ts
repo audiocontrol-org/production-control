@@ -7,29 +7,48 @@
 import type { CoverageLedger, UnitRef } from '@/schema/ledger.ts';
 import { extractPayload } from '@/payload/extract.ts';
 import { normalizeHash, unitRefKey } from '@/fidelity/run-support.ts';
+import type { OpFailure, OpFailureKind } from '@/fidelity/check-op-obligations.ts';
 
 /** The four named payload checks a failure can be attributed to. */
 export type PayloadCheckName = 'verbatim_quotes' | 'citations' | 'numeric_literals' | 'lexicon';
 
 /**
- * Failure-message classifiers for step 5's payload checks. `checkOpObligations`
- * returns ALL of its failures as flat strings naming which payload KIND
- * failed to survive (see its module doc); these patterns bucket each such
- * failure under the ONE named check it belongs to. Destination-NOT-FOUND
- * failures are NOT classified via these patterns — a "not found" destination
- * carries no kind label in its message, so it is classified per-entry
- * instead (see `findUnresolvedDestinationChecks`), by inspecting which
- * payload kinds the entry's own source content actually carries. Together
- * these two mechanisms ensure no obligation failure can silently vanish
- * without flipping a named check to `failed` (the false-clean risk this
- * validator exists to prevent).
+ * Named-check attribution per STRUCTURED op-failure kind (AUDIT-20260726-23).
+ * `checkOpObligations` returns each failure with a `kind` enum, so bucketing
+ * switches on that kind and NEVER regex-matches the human-facing `message`
+ * (whose interpolated payload item -- a quoted span, a citation, a lexicon
+ * term -- could contain a word like "numeric" and flip the wrong named check,
+ * the exact prose-matching defect this replaces). `destination` (a "not found"
+ * destination carries no payload kind) is classified per-entry instead (see
+ * `findUnresolvedDestinationChecks`); `structural` failures (arity, no shared
+ * destination, empty destination, source not found) attribute to no single
+ * named payload check.
  */
-export const VERBATIM_BYTE_MISMATCH_FAILURE =
-  /op=verbatim: destination bytes differ from source unit bytes/i;
-export const QUOTE_SURVIVAL_FAILURE = /(?:^|\s)quote /i;
-export const CITATION_FAILURE = /(?:^|\s)citation /i;
-export const NUMERIC_FAILURE = /(?:^|\s)numeric /i;
-export const LEXICON_FAILURE = /lexicon term /i;
+const CHECK_FOR_KIND: Partial<Record<OpFailureKind, PayloadCheckName>> = {
+  quote: 'verbatim_quotes',
+  verbatim: 'verbatim_quotes',
+  citation: 'citations',
+  numeric: 'numeric_literals',
+  lexicon: 'lexicon',
+};
+
+/**
+ * Bucket every structured op-obligation failure under the named payload
+ * check(s) it belongs to, switching on `OpFailure.kind` (AUDIT-20260726-23).
+ * Together with `findUnresolvedDestinationChecks` (which handles unresolved
+ * destinations per-entry), this ensures no payload obligation failure can
+ * silently vanish without flipping a named check to `failed`.
+ */
+export function classifyOpFailures(failures: readonly OpFailure[]): Set<PayloadCheckName> {
+  const affected = new Set<PayloadCheckName>();
+  for (const failure of failures) {
+    const check = CHECK_FOR_KIND[failure.kind];
+    if (check !== undefined) {
+      affected.add(check);
+    }
+  }
+  return affected;
+}
 
 /** Human-legible singular label per payload kind, matching
  * `check-op-obligations.ts`'s own `KIND_LABEL` (duplicated locally so the

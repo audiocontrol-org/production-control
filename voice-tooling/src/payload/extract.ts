@@ -53,9 +53,28 @@ export function extractPayload(
   return {
     quotes: extractQuotes(content),
     citations: extractMatches(content, CITATION_RE),
-    numerics: extractMatches(content, NUMERIC_RE),
+    numerics: extractNumerics(content),
     lexiconTerms: extractLexiconTerms(content, lexicon),
   };
+}
+
+/**
+ * Extract maximal numeric-literal tokens, EXCLUDING any digits that belong to a
+ * citation marker's own label (AUDIT-20260726-08/-11). `NUMERIC_RE` and
+ * `CITATION_RE` scan the same bytes, so a digit-labeled footnote marker like
+ * `[^1]` would otherwise be counted as BOTH a citation AND a numeric — a
+ * double-booking that contaminates multiset survival in both directions (a
+ * dropped prose numeral could be "corroborated" by a surviving citation marker,
+ * and a legitimate footnote renumber could read as a numeric shortfall). Masking
+ * the citation-marker spans before applying `NUMERIC_RE` makes extraction itself
+ * correct at the single source of truth, so a bare `[^1]` yields a citation only.
+ */
+function extractNumerics(content: string): string[] {
+  const withoutCitationMarkers = content.replace(
+    new RegExp(CITATION_RE.source, CITATION_RE.flags),
+    '',
+  );
+  return extractMatches(withoutCitationMarkers, NUMERIC_RE);
 }
 
 /** Collect every match of a global regex verbatim, preserving order+multiplicity. */

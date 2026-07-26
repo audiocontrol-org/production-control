@@ -1,9 +1,8 @@
 // T016 support helpers for `@/fidelity/run.ts`: source-unit indexing, the
-// lightweight (pre-structural-validation) `source.hash` read, the two
-// report-only recomputations (D12's uncorroborated-units count, and the
-// numeric/citation-marker overlap correction), and frontmatter/allow-list
-// parsing for the SOURCE document. Split out of `run.ts` to keep that file
-// within the project's file-size guideline (see CLAUDE.md).
+// lightweight (pre-structural-validation) `source.hash` read, D12's
+// uncorroborated-units count, and frontmatter/allow-list parsing for the
+// SOURCE document. Split out of `run.ts` to keep that file within the
+// project's file-size guideline (see CLAUDE.md).
 
 import { parse as parseYamlText } from 'yaml';
 import { isRecord } from '@/util/is-record.ts';
@@ -14,10 +13,6 @@ import {
   parseCitationAllowlist,
 } from '@/fidelity/check-ledger-structure.ts';
 import { extractPayload } from '@/payload/extract.ts';
-
-/** Matches a footnote-style citation marker, mirroring `payload/extract.ts`'s
- * own `CITATION_RE` (duplicated locally — see `countProseNumerics`). */
-const CITATION_MARKER_PATTERN = /\[\^[^\]\s]+\]/g;
 
 /**
  * Best-effort read of `source.hash` directly from the ledger's raw YAML,
@@ -64,42 +59,7 @@ export function indexSourceUnits(units: readonly SourceUnit[]): Map<string, stri
   return byKey;
 }
 
-// ---- report-only recomputations (D12, and the numeric/citation overlap) ---
-
-/**
- * Count of numeric literals across every non-cut entry's SOURCE content,
- * EXCLUDING any digit run that is actually a citation marker's own label
- * (e.g. the "1" inside `[^1]`). `payload/extract.ts`'s `NUMERIC_RE` and
- * `CITATION_RE` scan independently, so a digit-labeled footnote marker like
- * `[^1]` is legitimately extracted as BOTH a citation AND a numeric literal —
- * correct for `check-op-obligations.ts`'s survival bookkeeping (both sides of
- * a destination carry the same marker, so it never causes a false failure),
- * but misleading as the coverage report's `numeric_literals.checked` count: a
- * footnote label is not a free-standing numeral in the prose, and double-
- * booking the same span under two payload kinds overstates what was checked.
- * This does not alter pass/fail semantics (the `numeric_literals` PASS/FAIL
- * state still reads directly off `checkOpObligations`'s own failures) — it
- * only corrects the displayed count.
- */
-export function countProseNumerics(
-  ledger: CoverageLedger,
-  sourceByKey: Map<string, string>,
-  lexicon: readonly string[] | undefined,
-): number {
-  let count = 0;
-  for (const entry of ledger.coverage) {
-    if (entry.op === 'cut') {
-      continue;
-    }
-    const content = sourceByKey.get(unitRefKey(entry.source_unit));
-    if (content === undefined) {
-      continue;
-    }
-    const withoutCitationMarkers = content.replace(CITATION_MARKER_PATTERN, '');
-    count += extractPayload(withoutCitationMarkers, lexicon).numerics.length;
-  }
-  return count;
-}
+// ---- report-only recomputation (D12) --------------------------------------
 
 /**
  * Count of `represented`/`merged` entries whose SOURCE unit yields no
