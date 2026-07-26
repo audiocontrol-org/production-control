@@ -22,7 +22,7 @@ export function generateReadme(ctx: EpisodeContext): string {
   const stateById = new Map<Identity, NodeStatus>(ctx.status.nodes.map((n) => [n.id, n]));
   const recordById = ctx.ledger.artifacts;
 
-  // A derived node is AI-generated (non-reproducible, committed under ai-generated/) exactly when it
+  // A derived node is AI-generated (non-reproducible, committed under .ai/) exactly when it
   // is impure — and impurity can be declared by the profile (decl) OR by the provider at build time
   // (recorded as producer_impure). This mirrors the routing in providers/build.ts (`impurityOf`), so
   // the README can never disagree with where a build actually put its bytes.
@@ -65,7 +65,7 @@ export function generateReadme(ctx: EpisodeContext): string {
   lines.push('');
   lines.push(
     'production-control produced these by running an impure tool, so it KNOWS they are',
-    'machine-derived and not reproducible — the exact bytes are COMMITTED (under `ai-generated/`)',
+    'machine-derived and not reproducible — the exact bytes are COMMITTED (under `.ai/`)',
     'as the durable record. Do not mistake them for authored content: the authored inputs above',
     'are written from them (an authored input that `follows` one is written against it).'
   );

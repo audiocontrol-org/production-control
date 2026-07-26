@@ -157,10 +157,10 @@ describe('a build records what it actually did (T053, FR-013)', () => {
 
     // And the artifact is still fully recorded: impurity costs re-derivability, not provenance.
     // The podcast is built from THESE bytes, whose hash is recorded, whatever made them.
-    // An impure output is not reproducible, so it lands in the COMMITTED ai-generated/ tree, not
+    // An impure output is not reproducible, so it lands in the COMMITTED .ai/ tree, not
     // gitignored dist/ — the bytes are the durable record and must be kept.
-    expect(record.output.path).toBe('ai-generated/voiceover.out');
-    expect(record.output.hash).toBe(await hashFile(path.join(dir, 'ai-generated/voiceover.out')));
+    expect(record.output.path).toBe('.ai/voiceover.out');
+    expect(record.output.hash).toBe(await hashFile(path.join(dir, '.ai/voiceover.out')));
   });
 
   it('`built_at` is recorded and NEVER read by a decision (T060, research R7)', async () => {

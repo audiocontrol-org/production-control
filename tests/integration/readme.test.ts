@@ -8,7 +8,7 @@ import { cleanupFixtureCopies, copyFixture, parseJsonText, pc, FIXTURES } from '
  * `pc readme` — the per-episode README, generated from the manifest + committed ledger, with
  * provenance that cannot drift because it is derived, not narrated. The load-bearing property is
  * that it classifies each object the SAME way the build path routes its bytes: a human-authored
- * object, an AI-generated (impure, committed under ai-generated/) object, or a reproducible
+ * object, an AI-generated (impure, committed under .ai/) object, or a reproducible
  * (gitignored dist/) build output.
  */
 
@@ -60,11 +60,11 @@ describe('pc readme writes provenance that matches how builds route their bytes'
     expect(authoredBlock).toContain('authored input');
     expect(authoredBlock).not.toContain('human-authored');
 
-    // voiceover is AI-generated: impure output committed under ai-generated/, with its recorded
+    // voiceover is AI-generated: impure output committed under .ai/, with its recorded
     // impurity reason and producer — even though the impurity came from the response, not the decl.
     const aiBlock = section(readme, '## AI-generated', '## Reproducible');
     expect(aiBlock).toContain('### voiceover');
-    expect(aiBlock).toContain('ai-generated/voiceover.out');
+    expect(aiBlock).toContain('.ai/voiceover.out');
     expect(aiBlock).toMatch(/Impure:/);
     expect(aiBlock).not.toContain('### narration');
 

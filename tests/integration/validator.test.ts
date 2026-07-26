@@ -57,7 +57,7 @@ async function episode(): Promise<string> {
   return dir;
 }
 
-/** Build voiceover impurely, so its output is the committed, non-reproducible ai-generated/ bytes. */
+/** Build voiceover impurely, so its output is the committed, non-reproducible .ai/ bytes. */
 async function buildImpure(dir: string): Promise<void> {
   const built = await pc(
     ['build', 'voiceover', '--episode', dir],
@@ -101,7 +101,7 @@ describe('pc validate runs a declared validator against the existing artifact', 
   it('refuses an artifact edited outside the system — never judges bytes the record does not describe', async () => {
     const dir = await episode();
     await buildImpure(dir);
-    await fs.appendFile(path.join(dir, 'ai-generated', 'voiceover.out'), 'tampered\n', 'utf8');
+    await fs.appendFile(path.join(dir, '.ai', 'voiceover.out'), 'tampered\n', 'utf8');
 
     const result = await pc(['validate', 'voiceover', '--episode', dir, '--json']);
     expect(result.code).toBe(1);

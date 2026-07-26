@@ -11,6 +11,7 @@ import type { BuildImpure, BuildInput, BuildResponse } from '@/providers/contrac
 import { resolveInputs } from '@/providers/inputs.js';
 import { invokeProvider, type ProducedOutput } from '@/providers/invoke.js';
 import type { ProviderRunner } from '@/providers/run.js';
+import { impureOutputRoot, pureOutputRoot } from '@/zoning/route.js';
 
 /**
  * **Building an output and recording its origin, as ONE INDIVISIBLE ACT** (FR-014, T059/T060).
@@ -109,7 +110,8 @@ export async function buildTarget(context: BuildContext, id: Identity): Promise<
     // human-crafted, so nobody mistakes it for authored content. A PURE output is reproducible and
     // stays in gitignored `dist/`. production-control already knows which this is (the same
     // impurity it records), so the routing is principled, not a per-target flag.
-    const outputRoot = impurityOf(decl, response) !== undefined ? 'ai-generated' : 'dist';
+    const outputRoot =
+      impurityOf(decl, response) !== undefined ? impureOutputRoot() : pureOutputRoot();
 
     // Step 4: stage the produced bytes to a temp sibling — NOT their final path yet.
     const staged = await stage(context.episodeDir, outputRoot, output);
@@ -203,7 +205,7 @@ async function stage(
   // Defense in depth. `BuildOutputSchema.path` (RelativePathSchema) already refuses a traversing
   // output on the wire, but this composition trusts `output.relPath`, and a future caller that
   // builds a ProducedOutput another way must still not be able to write outside the output root
-  // (`dist/` for pure, `ai-generated/` for impure). The schema guards the wire; this guards the
+  // (`dist/` for pure, `.ai/` for impure). The schema guards the wire; this guards the
   // composition (FR-036).
   const outputRoot = path.join(episodeDir, root);
   const relToRoot = path.relative(outputRoot, destination);
