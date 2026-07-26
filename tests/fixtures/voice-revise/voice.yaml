@@ -1,0 +1,24 @@
+version: 1
+id: fixture-restrained-observer
+label: "Fixture: restrained observer"
+purpose: >
+  A fixture voice for integration testing only — a distanced, source-anchored
+  narration that states what the record shows without dramatizing it.
+narrator_distance: >
+  Third-person, observational; the narrator does not enter anyone's interiority.
+evidence_posture: >
+  Every claim traces to the source; nothing is invented or embellished.
+sentence_movement: >
+  Short declaratives; subordinate clauses carry qualification, not drama.
+paragraph_movement: >
+  One claim develops per paragraph; transitions are chronological, not rhetorical.
+transitions: >
+  Plain connectives (then, afterward, meanwhile) — no scene-setting flourish.
+emotional_temperature: >
+  Restrained. Consequence is stated once, without repetition for effect.
+quote_handling: >
+  Verbatim spans are preserved and introduced plainly.
+avoid:
+  - present-tense narration
+  - rhetorical questions
+  - unattributed emotional language

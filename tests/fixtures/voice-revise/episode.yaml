@@ -1,0 +1,10 @@
+version: 1
+id: voice-revise-fixture
+title: Voice revise fixture
+profile: voice-editions
+authored:
+  source:
+    path: source.md
+  voice:
+    path: voice.yaml
+targets: [edition]

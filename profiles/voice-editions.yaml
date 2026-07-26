@@ -1,0 +1,21 @@
+# A profile is a generic, reusable recipe binding targets to their inputs and producing tools.
+# It is subject-agnostic and describes roles and transformations, not content or specific stories.
+#
+# `edition`'s cmd is a PLACEHOLDER, mirroring `editorial-audio.yaml`'s existing convention
+# (`npx <name>-tooling <verb>`) — a name-only recipe an operator resolves, not an invocation this
+# repo's own tests ever execute (`pc status` never spawns a provider; see `offline.test.ts`
+# FR-010). Real per-episode wiring points `provider.cmd`/`validator.cmd` at the actual
+# `voice-tooling/bin/voice-revise.mjs` / `voice-tooling/bin/voice-fidelity.mjs` binaries, the way
+# `tests/integration/voice-revise.test.ts` (T018) does — that wiring is US2's task T020, not this
+# shared profile's job.
+
+version: 1
+targets:
+  edition:
+    inputs: [source, voice]
+    provider:
+      cmd: [npx, voice-tooling, revise]
+      impure:
+        reason: "model-produced edition; not reproducible byte-for-byte"
+    validator:
+      cmd: [npx, voice-tooling, fidelity]
