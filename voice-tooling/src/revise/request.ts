@@ -131,16 +131,21 @@ export function parseReviseRequest(raw: unknown): ParsedReviseRequest {
     fail('internal error: voice candidate list was non-empty but unindexable');
   }
 
+  // FR-007/D5 (v1 source-locked constraint, T020): a governed target MUST declare EXACTLY ONE
+  // source draft. `target` is already resolved above (line ~88), so every refusal below NAMES the
+  // target the request was for, alongside the cause — never a bare count.
   if (otherEntries.length === 0) {
     fail(
-      'no source draft input declared alongside the voice document — voice revise requires a source draft input',
+      `target ${target}: no source draft input declared alongside the voice document — voice ` +
+        'revise requires exactly one source draft input (found 0)',
     );
   }
   if (otherEntries.length > 1) {
     fail(
-      `more than one non-voice input declared (${otherEntries
-        .map((entry) => entry.identity)
-        .join(', ')}) — voice revise cannot tell which one is the source draft`,
+      `target ${target}: expected exactly one source draft input, found ${otherEntries.length} ` +
+        `(${otherEntries
+          .map((entry) => entry.identity)
+          .join(', ')}) — voice revise cannot tell which one is the source draft`,
     );
   }
   const sourceEntry = otherEntries[0];
