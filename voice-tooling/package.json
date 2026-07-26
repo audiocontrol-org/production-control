@@ -1,0 +1,23 @@
+{
+  "name": "voice-tooling",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "description": "Reusable craft tools that produce and verify voice-varied editions of a source-locked draft.",
+  "scripts": {
+    "test": "node --import tsx --test",
+    "typecheck": "tsc --noEmit"
+  },
+  "bin": {
+    "voice-revise": "./bin/voice-revise.mjs",
+    "voice-fidelity": "./bin/voice-fidelity.mjs"
+  },
+  "dependencies": {
+    "yaml": "^2.4.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "tsx": "^4",
+    "typescript": "^5"
+  }
+}
