@@ -1,0 +1,15 @@
+{"id":"T001","tierLabel":"fast","model":"haiku","dispatchedModel":"sonnet","note":"scaffolding folded into classifier batch","commitRange":"ab4a5b9","reviewClean":true}
+{"id":"T003","tierLabel":"balanced","model":"sonnet","commitRange":"ab4a5b9","reviewClean":true}
+{"id":"T004","tierLabel":"balanced","model":"sonnet","commitRange":"ab4a5b9","reviewClean":true}
+{"id":"T005","tierLabel":"fast","model":"haiku","commitRange":"a58b0ff","reviewClean":true}
+{"id":"T002","tierLabel":"fast","model":"haiku","commitRange":"a58b0ff","reviewClean":true}
+{"id":"T006","tierLabel":"balanced","model":"sonnet","commitRange":"b063b07","reviewClean":true,"state":"RED-expected"}
+{"id":"T007","tierLabel":"balanced","model":"sonnet","commitRange":"b063b07","reviewClean":true,"state":"RED-expected"}
+{"id":"T008","tierLabel":"balanced","model":"sonnet","commitRange":"b063b07","reviewClean":true,"state":"RED-expected"}
+{"id":"T010","tierLabel":"balanced","model":"sonnet","commitRange":"b063b07","reviewClean":true,"state":"RED-expected"}
+{"id":"T011","tierLabel":"balanced","model":"sonnet","commitRange":"57a4db7","reviewClean":true}
+{"id":"T022","tierLabel":"balanced","model":"sonnet","commitRange":"57a4db7","reviewClean":true}
+{"id":"T009","tierLabel":"powerful","model":"opus","commitRange":"673681f","reviewClean":true}
+{"id":"T012","tierLabel":"powerful","model":"opus","commitRange":"673681f","reviewClean":true,"note":"parent-only realpath prevents write-through symlink; 6-channel red-team"}
+{"id":"T013","tierLabel":"powerful","model":"opus","commitRange":"673681f","reviewClean":true}
+{"id":"T014","tierLabel":"balanced","model":"sonnet","commitRange":"9659be6","reviewClean":true,"note":"also fixed 5 fixtures relying on old silent-coalesce"}
