@@ -8,6 +8,16 @@
 
 **Input**: Operator-approved design record `docs/superpowers/specs/2026-07-25-voice-editions-design.md` (`design-approved: yes`). Produce voice-varied editions of a source-locked draft: an explicit voice drives an impure revision provider that may change narration only, gated by a deterministic fidelity validator and a declared per-unit coverage ledger. Same impure-producer → declarative-metadata → deterministic-corroboration → structured-coverage-report shape as the quote bank, applied to derived prose.
 
+## Clarifications
+
+### Session 2026-07-26
+
+- Q: Source-unit granularity — separator-line vs sentence-level? → A: Separator-line units (design D6 default); maximal runs of non-separator lines, byte-reproducible ids, ~57–84 units/chapter. No sentence-level split in v1.
+- Q: Should the gate refuse a weak edition on uncorroborated-unit count, or only report it? → A: Report-only, no threshold (D12); the uncorroborated count is first-class in the coverage report but never causes refusal. No project-set threshold in v1.
+- Q: Lexicon provenance and v1 schema? → A: Optional hand-authored declared-lexicon input, literal terms, byte-exact case-sensitive matching, no Unicode normalization (D11); absent lexicon → entity survival reports `not-run`. Deriving from quote-bank/spine is deferred (couples to asset-bank).
+- Q: Ledger carrier at ~480 entries/edition — frontmatter or block on directory-outputs? → A: Frontmatter for v1 with a carrier-independent schema (one loader), so a later sidecar move is a carrier swap not a redesign (D10). `design:feature/directory-outputs` stays a non-blocker.
+- Q (deferred, fixture-coverage): markdown constructs beyond the current corpus (setext headings, MDX, HTML blocks, list items with blank lines) → A: Not resolved here; D6 handles fenced code + separator lines; golden fixtures should cover the others as they arise. Revisit at planning/test-design.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Prove an existing edition is faithful to its source (Priority: P1)
@@ -152,12 +162,12 @@ An operator treats a voice as a first-class declared input (an ordinary authored
 - `design:feature/directory-outputs` is deliberately NOT a blocker; v1 carries the ledger in frontmatter (D10), accepting the reading-copy weight until directory outputs land.
 - The existing manifest mechanisms (`authored` nodes, `inputs`, the `follows` advisory edge, impurity declaration, stage-then-rename, drift/restale) are reused; no core change is required for v1 (D1, D19).
 
-### Open clarification targets (for `/speckit-clarify`)
+### Clarification outcomes
 
-Reasonable v1 defaults from the design are assumed below; `/speckit-clarify` may refine them:
+Resolved in the 2026-07-26 clarification session (see Clarifications), all confirming the design defaults the requirements already encode:
 
-- **Unit granularity** — default: separator-line units (D6). Whether a long multi-claim paragraph should decompose to sentence level is open (corpus yields 57–84 units/chapter; too coarse weakens the guarantee, too fine makes the ledger unusable).
-- **Ledger carrier at scale** — default: frontmatter (D10). At ~480 entries/edition this is likely untenable as reading-copy frontmatter; the schema is carrier-independent so the carrier can move (interacts with directory-outputs).
-- **Minimum-corroboration policy** — default: report uncorroborated units, do not refuse (D12). Whether a project may set a threshold that refuses when uncorroborated entries exceed a share is open (it would be deterministic but is a threshold, which the design has otherwise avoided).
-- **Lexicon provenance/schema** — default: optional declared-lexicon input, byte-exact matching, no Unicode normalization (D11). Origin (hand-authored vs derived from quote-bank/spine), aliases/variants, and literal-vs-pattern entries are unsettled (deriving it couples to asset-bank).
-- **Markdown constructs beyond the current corpus** — default: D6 handles fenced code blocks and separator lines. Setext headings, MDX constructs, HTML blocks, and list items with blank lines are unexercised by the corpus; golden fixtures should cover them.
+- **Unit granularity** — RESOLVED: separator-line units (D6); no sentence-level split in v1. (FR-008)
+- **Minimum-corroboration policy** — RESOLVED: report-only, no threshold (D12); no project-set refusal threshold in v1. (FR-022)
+- **Lexicon provenance/schema** — RESOLVED: optional hand-authored, literal terms, byte-exact case-sensitive, no Unicode normalization; deriving from quote-bank/spine deferred. (FR-020)
+- **Ledger carrier** — RESOLVED: frontmatter for v1, carrier-independent schema; `design:feature/directory-outputs` stays a non-blocker. (FR-015)
+- **Markdown constructs beyond the current corpus** — DEFERRED to planning/test-design: D6 handles fenced code + separator lines; golden fixtures should cover setext headings, MDX, HTML blocks, and list items with blank lines as they arise.
