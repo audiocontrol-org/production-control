@@ -55,3 +55,4 @@ workflow(design-to-spec): design:feature/episode-production-contract designing -
 workflow(design-to-spec): design:feature/quote-bank designing -> specifying
 workflow(graduate): design:feature/episode-production-contract merging -> validating
 workflow(graduate): design:feature/quote-bank merging -> validating
+workflow(graduate): design:feature/content-zone-segregation merging -> validating
