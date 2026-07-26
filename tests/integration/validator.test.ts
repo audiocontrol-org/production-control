@@ -45,9 +45,15 @@ async function episode(): Promise<string> {
   const profile = {
     version: 1,
     targets: {
+      // Declared impure: `buildImpure` below always builds this with `FAKE_PROVIDER_MODE=impure`,
+      // so the runtime response corroborates rather than introduces impurity (FR-012) — a pure
+      // declaration here would now be a refused contradiction.
       voiceover: {
         inputs: ['narration'],
-        provider: { cmd: [FAKE_PROVIDER] },
+        provider: {
+          cmd: [FAKE_PROVIDER],
+          impure: { reason: 'fake-provider fixture, impure mode' },
+        },
         validator: { cmd: [FAKE_VALIDATOR] },
       },
       podcast: { inputs: ['voiceover'], provider: { cmd: [FAKE_PROVIDER] } },

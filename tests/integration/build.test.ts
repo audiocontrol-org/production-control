@@ -42,13 +42,24 @@ const NARRATION = 'assets/narration/take-01.wav';
  * The edges are the fixture's own: `voiceover ← [narration]`, `podcast ← [voiceover]`. That is
  * what makes the chain test at the bottom a test of transitive staleness rather than of two
  * unrelated builds.
+ *
+ * `impureVoiceover` declares `voiceover`'s provider impure in the STATIC profile — required by
+ * FR-012 for any test that then runs it in `FAKE_PROVIDER_MODE=impure`: a response reporting
+ * impure must corroborate a declaration that already said so, never introduce impurity a pure
+ * declaration lacked, so a caller that means to build impurely must opt in here.
  */
-async function chainEpisode(cmd: readonly string[] = [FAKE_PROVIDER]): Promise<string> {
+async function chainEpisode(
+  cmd: readonly string[] = [FAKE_PROVIDER],
+  impureVoiceover = false
+): Promise<string> {
   const dir = await copyFixture('chain');
+  const voiceoverProvider = impureVoiceover
+    ? { cmd: [...cmd], impure: { reason: 'fake-provider fixture, impure mode' } }
+    : { cmd: [...cmd] };
   const profile = {
     version: 1,
     targets: {
-      voiceover: { inputs: ['narration'], provider: { cmd: [...cmd] } },
+      voiceover: { inputs: ['narration'], provider: voiceoverProvider },
       podcast: { inputs: ['voiceover'], provider: { cmd: [...cmd] } },
     },
   };
@@ -144,7 +155,7 @@ describe('a build records what it actually did (T053, FR-013)', () => {
   });
 
   it("records an impure provider's REASON, not merely the fact (T060, FR-032)", async () => {
-    const dir = await chainEpisode();
+    const dir = await chainEpisode([FAKE_PROVIDER], true);
 
     expect((await build(dir, 'voiceover', 'impure')).code).toBe(0);
     const record = await recordOf(dir, 'voiceover');

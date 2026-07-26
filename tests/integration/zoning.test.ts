@@ -62,7 +62,16 @@ async function chainEpisode(): Promise<string> {
   const profile = {
     version: 1,
     targets: {
-      voiceover: { inputs: ['narration'], provider: { cmd: [FAKE_PROVIDER] } },
+      // Declared impure: this fixture is always built with `FAKE_PROVIDER_MODE=impure` (below),
+      // so its runtime response reports impure too — corroborating, not introducing, the static
+      // declaration (FR-012). A pure declaration here would now be a refused contradiction.
+      voiceover: {
+        inputs: ['narration'],
+        provider: {
+          cmd: [FAKE_PROVIDER],
+          impure: { reason: 'fake-provider fixture, impure mode' },
+        },
+      },
       podcast: { inputs: ['voiceover'], provider: { cmd: [FAKE_PROVIDER] } },
     },
   };

@@ -33,12 +33,23 @@ const ValidateJsonSchema = z.object({
 /**
  * The `chain` fixture with a profile pointed at the fake provider, and only `voiceover` declared
  * as a target — so `pc validate` with no argument has exactly one thing to do.
+ *
+ * `impureVoiceover` declares the provider impure in the STATIC profile — required by FR-012 for
+ * any caller that then builds it with `FAKE_PROVIDER_MODE=impure`: a response reporting impure
+ * must corroborate a declaration that already said so, never introduce impurity a pure
+ * declaration lacked.
  */
-async function episode(cmd: readonly string[] = [FAKE_PROVIDER]): Promise<string> {
+async function episode(
+  cmd: readonly string[] = [FAKE_PROVIDER],
+  impureVoiceover = false
+): Promise<string> {
   const dir = await copyFixture('chain');
+  const provider = impureVoiceover
+    ? { cmd: [...cmd], impure: { reason: 'fake-provider fixture, impure mode' } }
+    : { cmd: [...cmd] };
   const profile = {
     version: 1,
-    targets: { voiceover: { inputs: ['narration'], provider: { cmd: [...cmd] } } },
+    targets: { voiceover: { inputs: ['narration'], provider } },
   };
   await fs.writeFile(path.join(dir, 'editorial-audio.yaml'), stringify(profile), 'utf8');
 
@@ -141,7 +152,7 @@ describe('pc validate records the verdict and gates on it (T062)', () => {
   });
 
   it('**refuses rather than rebuilding over an artifact** — an impure provider cannot be validated (FR-017a)', async () => {
-    const dir = await episode();
+    const dir = await episode(undefined, true);
     expect((await pc(['build', 'voiceover', '--episode', dir], withMode('impure'))).code).toBe(0);
 
     // Impure output is committed under .ai/ (not gitignored dist/): its irreproducible
