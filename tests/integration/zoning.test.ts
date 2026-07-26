@@ -14,6 +14,7 @@ import type { BuildRequest, BuildResponse } from '@/providers/contract.js';
 import { buildTarget, type BuildContext } from '@/providers/build.js';
 import type { ProviderRunner } from '@/providers/run.js';
 import { classifyZone } from '@/zoning/classify.js';
+import { resolveStatus } from '@/state/resolve.js';
 import { cleanupFixtureCopies, copyFixture, FIXTURES, REPO_ROOT, pc } from './support.js';
 
 /**
@@ -473,3 +474,27 @@ describe(
     });
   }
 );
+
+describe('T023: in-place edits to impure artifacts under `.ai/` report modified (FR-024, TASK-15)', () => {
+  it('reports modified when impure artifact is edited in place', async () => {
+    const dir = await copyFixture('chain');
+    const context = await contextOver(
+      dir,
+      { cmd: ['unused'], impure: { reason: 'test' } },
+      runnerEmitting('voiceover.out', { reason: 'test' })
+    );
+    const record = await buildTarget(context, 'voiceover');
+    expect(record.output.path).toBe('.ai/voiceover.out');
+    // Simulate in-place edit; reports modified (normal drift). Feature does NOT protect
+    // such edits (FR-024); TASK-15 is the separate safety dependency (stale-over-modified).
+    await fs.writeFile(path.join(dir, '.ai', 'voiceover.out'), 'HUMAN-EDITED\n', 'utf8');
+    const manifest = await loadEpisode(dir);
+    const loaded = await loadProfile(manifest.profile, [dir, path.join(REPO_ROOT, 'profiles')]);
+    const status = await resolveStatus({
+      episodeDir: dir, manifest, profile: loaded, ledger: await readLedger(dir),
+    });
+    const voiceoverStatus = status.nodes.find((n) => n.id === 'voiceover');
+    expect(voiceoverStatus?.state).toBe('modified');
+    expect(voiceoverStatus?.cause.code).toBe('output-edited');
+  });
+});
