@@ -125,5 +125,25 @@ describe(
           `(stdout: ${result.stdout.trim() || '(empty)'})`
       ).toBe(0);
     });
+
+    // AUDIT-17: a directory-scoped ignore rule is not the only way to lose `.ai/` bytes — the more
+    // likely edit in a MEDIA repo is EXTENSION-scoped (`*.wav`, `*.mp3`, `*.m4a`, a blanket binary/LFS
+    // rule). The real impure artifacts here are audio (the target is `voiceover`; inputs are `.wav`),
+    // and `check-ignore` answers about a full path, so an extension rule would ignore every real
+    // impure artifact under `.ai/` while a `.ai/probe.out` probe stayed green. Probe the extensions a
+    // provider actually emits, at a realistic nested depth, so such a rule goes loud here.
+    it.each(['voiceover.wav', 'voiceover.mp3', 'voiceover.m4a'] as const)(
+      'the impure root stays UNIGNORED for a media artifact (%s) — an extension-scoped .gitignore rule goes loud',
+      async (artifact) => {
+        const probe = path.posix.join('content', 'ep-01', impureOutputRoot(), artifact);
+        const result = await gitCheckIgnore(probe);
+        expect(
+          result.code,
+          `expected "${probe}" to be UNIGNORED (exit 1); got exit ${String(result.code)} ` +
+            `(stdout: ${result.stdout.trim() || '(empty)'}) — an extension-scoped ignore rule ` +
+            '(e.g. `*.wav`, a binary/LFS rule) is silently un-committing real impure media artifacts'
+        ).toBe(1);
+      }
+    );
   }
 );

@@ -20,6 +20,16 @@ classifyZone(relPath: string, kind: 'file' | 'directory'): 'human-safe' | 'ai-pe
    segment begins with `.`. Which segments count as directory segments is decided by `kind`, never by
    a trailing `/`: `kind: 'directory'` counts EVERY segment (so the bare root `.ai` is `ai-permitted`);
    `kind: 'file'` excludes the basename.
+
+   **The rule is deliberately unbounded, not `.ai`-specific (ratified — FR-016, AUDIT-19):** ANY
+   dot-prefixed directory segment is AI-permitted — `.ai`, `.cache`, `.tmp`, and equally any other
+   dotted directory. `.ai` is the *convention* the build writes to, not a privileged name; a
+   dot-prefixed directory universally signals "not a human-safe authoring area." This is intentional:
+   the zone is a legibility signal about human-safety, not a whitelist of one root. Note the scope —
+   `classifyZone` is only ever handed a path **relative to a production/episode root** (a build output
+   destination or a declared manifest node path); it is never fed the repository tree, so top-level
+   tool/VCS directories (`.git/`, `.github/`, `.stack-control/`) are outside its inputs by
+   construction and are not "zoned" by it.
 2. **Basename excluded (files only)** — under `kind: 'file'` a dot-prefixed file in an otherwise
    non-dot directory is `human-safe` (`dist/.draft.md` → human-safe; a file literally named `.ai` →
    human-safe). (FR-002)

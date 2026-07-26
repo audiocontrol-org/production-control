@@ -56,9 +56,16 @@ describe('classifyZone', () => {
       expect(classifyZone('.ai', 'file')).toBe('human-safe');
     });
 
-    it('the real impure output root the build uses classifies ai-permitted as a directory', () => {
-      // Feed the actual root back: the root the build writes impure output to can never silently
-      // classify human-safe, since a directory-kind classification exposes its leading dot.
+    it('the real impure output root classifies ai-permitted WHEN classified as a directory', () => {
+      // Feed the actual root string back: `impureOutputRoot()` classified as a directory is
+      // ai-permitted. NOTE the scope honestly (AUDIT-18): this pins a property of the STRING, with
+      // the `'directory'` kind supplied here — it does NOT prove the production call sites pass the
+      // right kind. That call-site correctness is what the INTEGRATION tests cover: the real routing
+      // (impure output landing under `.ai/`, `tests/integration/zoning.test.ts`) and the real
+      // `pc audit-zones` verb (which calls `classifyZone(impureOutputRoot(), 'directory')` and
+      // `classifyZone(node.path, 'file')` internally, `tests/integration/audit-zones.test.ts`)
+      // exercise the actual kinds. `kind` being a required parameter makes a missing kind a compile
+      // error; passing the WRONG kind is caught by those integration paths, not this unit assertion.
       expect(classifyZone(impureOutputRoot(), 'directory')).toBe('ai-permitted');
     });
   });
