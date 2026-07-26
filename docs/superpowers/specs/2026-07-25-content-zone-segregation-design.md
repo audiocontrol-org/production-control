@@ -93,16 +93,50 @@ segregates where these files are written, and nothing forbids AI bytes from land
 in a human's working area. This feature hardens the latent three-way distinction
 into a guarded structural boundary.
 
+## Invariants (the principle, above any mechanism)
+
+Stated independently of enforcement so the philosophy is not read as an
+implementation detail:
+
+- **INV-1 — Structural segregation.** Human-authored, mechanically-generated, and
+  AI-generated content are kept structurally apart. AI (impure-provider) output may
+  never occupy a human-authored area.
+- **INV-2 — Human legibility at a glance.** A person MUST be able to tell a file's
+  zone from its **name alone** — in a file tree, a `git status`, a diff — with no
+  tooling, no manifest lookup, and no graph query. This is a first-class
+  requirement, not a convenience: the naming convention is the *human's* channel to
+  a file's provenance, co-equal with the machine's.
+- **INV-3 — The two channels may never diverge.** The human-readable name and the
+  machine-known provenance (the graph's `impure` flag) are two projections of one
+  truth and MUST agree: an impure node MUST sit at a name a human reads as AI. The
+  build refusal exists precisely to keep them in lockstep, so a name can never lie
+  about what produced the bytes.
+- **INV-4 — No in-place editing of impure artifacts.** No supported workflow may
+  require a human to edit an AI-generated artifact in place. A human who wants to
+  work on the content authors a separate document in a human area (D6).
+
+Directory zoning (below) is how v1 realizes these — but INV-2 constrains any future
+mechanism: a replacement that made a file's zone unreadable from its name (a
+manifest-declared zone list, a database of paths) would violate the principle even
+if it enforced INV-1 perfectly. Legibility-by-name is not swappable.
+
 ## Solution space
 
 ### Chosen — directory-name zoning, any-dot-wins, impure output confined to dot-zoned paths
 
-Zoning authority is the **directory name**, inherited down the tree:
+The naming convention is the design, because it is what makes the segregation
+**human-legible** (INV-2). Zoning is read directly from the path, inherited down the
+tree:
 
 - A path is **AI-permitted iff at least one of its directory segments is
   dot-prefixed** (begins with `.`).
 - A path with **no dot-prefixed segment is human-safe** and MUST NOT receive
   impure-provider output.
+
+Provenance and the name are **two authorities for two audiences** of the same fact:
+the graph's `impure` flag is how the machine knows a node is AI; the dot-name is how
+a human knows, at a glance. Neither is subordinate — INV-3 requires them to agree,
+and the build refusal is what guarantees it.
 
 `dist/` remains the build root. Impure artifacts are routed into a dot-prefixed
 subdirectory under it (`dist/.ai/…`); pure artifacts may sit anywhere, including
@@ -112,9 +146,9 @@ a dot-free path, plus a standalone audit verb over the manifest.
 
 Chosen because it is fully decidable from the path alone, needs no configuration or
 declared list of "blessed" human names (non-dot *is* human, the fail-safe default),
-is visually obvious (a leading dot is a deliberate, conspicuous mark), and matches
-the codebase's existing taste for simple mechanical path invariants
-(`RelativePathSchema`, the `run.ts` traversal refusal).
+and — the load-bearing reason — a human reads a file's zone straight from its name
+with no tooling (INV-2). It also matches the codebase's existing taste for simple
+mechanical path invariants (`RelativePathSchema`, the `run.ts` traversal refusal).
 
 ### Rejected — adopt-the-edit (the original `artifact-adoption` framing)
 
@@ -171,11 +205,15 @@ every fixture and the quickstart for no gain.
 
 ## Decisions
 
-**D1 — Zoning is decided by directory name, any-dot-wins.**
+**D1 — Zoning is read from the directory name, any-dot-wins — and the name is a human authority, not just a rule.**
 A path is AI-permitted iff at least one of its directory segments begins with `.`.
 A path with no dot-prefixed segment is human-safe. The rule is evaluated on the
 episode-relative path, is total (every path resolves to exactly one zone), and
-requires no configuration.
+requires no configuration. The name is chosen as the carrier because a human reads
+it at a glance (INV-2); provenance (the `impure` flag) is the machine's authority
+for the same fact, and INV-3 binds the two to agree. "Directory name as authority"
+means the *human's* authority — it is not subordinate to provenance, it is the other
+projection of it.
 
 **D2 — The invariant: impure output may never be written to a human-safe path.**
 An impure-provider (`ProviderDecl.impure` present, or `BuildResponse.impure`
@@ -194,27 +232,57 @@ Because non-dot is human-safe, an area is protected unless it is explicitly dott
 There is no configuration whose absence opens a hole; forgetting to mark something
 leaves it protected, never exposed.
 
-**D5 — Enforcement is defense-in-depth, directory name as the authority.**
-Three layers, the directory-name rule (D1) being the authority the others check
-against:
+**D5 — Enforcement keeps the human name and the machine provenance in agreement (INV-3).**
+The name is the human's authority (D1); this is the machinery that guarantees it
+never diverges from the `impure` flag. Defense-in-depth:
 1. **Routing** — production-control assigns an impure target's output location
-   inside a dot-zone, so the common path is correct by construction.
+   inside a dot-zone, so the common path is correct — and human-legible — by
+   construction.
 2. **Build-time refusal** — if an impure provider declares an output that resolves
    to a dot-free (human-safe) path, the build refuses, naming the path, in the same
-   layer where `run.ts` already refuses traversal (FR-036 shape). This catches a
-   provider that tries to escape its routed `output_dir`.
+   layer where `run.ts` already refuses traversal (FR-036 shape). This is the point
+   where INV-3 is enforced: it is what stops a name from lying about provenance.
 3. **Standalone audit verb** — a read-only check over the whole manifest/graph that
    reports any impure target whose intended output is not dot-zoned, so a violation
    is caught before a build rather than at build time.
-The file-type / role signal is a redundant secondary check, not the authority.
 
-**D6 — AI is never taken over by a human; the human authors a companion.**
-An AI (impure) artifact is never hand-edited in place. A human who wants to work on
-the prose authors a *separate* document in a human-safe area. The manifest already
-models the relationship: `AuthoredDecl.follows` is the advisory "is a response to"
-edge, distinct from a build dependency (`follows` never rebuilds and never blocks
-alone, FR-019). The AI draft may be the thing the human companion follows. No new
-edge type is required.
+**D5a — File naming is part of the human-legibility layer, not a separate undefined mechanism.**
+An earlier draft named a vague "file-type / role" check as a redundant secondary
+enforcement layer. A third-party reviewer rightly flagged that an undefined second
+mechanism invites confusion about which one is authoritative. It is neither removed
+nor left vague: file and directory **names** are one human-legibility surface
+(INV-2) — an extension a human reads (`.md`, `.wav`) is the same kind of at-a-glance
+signal as a dot-directory. So naming (directory *and* file) is the single
+human-facing authority, provenance is the machine authority, and INV-3 binds them.
+Any *further* type/role check (e.g. per-zone extension expectations) is **reserved
+as a future layer, deliberately unspecified in v1** — v1 rests on naming +
+provenance + the refusal/audit. It returns as its own feature only when a concrete
+need names it.
+
+**D6 — AI is never taken over by a human; the human authors a companion, and neither node auto-demotes the other.**
+An AI (impure) artifact is never hand-edited in place (INV-4). A human who wants to
+work on the content authors a *separate* document in a human-safe area. The manifest
+already models the relationship: `AuthoredDecl.follows` is the advisory "is a
+response to" edge, distinct from a build dependency (`follows` never rebuilds and
+never blocks alone, FR-019). The AI artifact may be the thing the human companion
+follows. No new edge type is required.
+
+**On whether the companion "becomes the authoritative production input"** — a
+reviewer asked that this be stated. It is deliberately *not* asserted as a general
+rule, because it is not one. The AI artifact and the human companion are **distinct
+nodes with distinct provenance**; which of them is a release target is a manifest
+declaration (`manifest.targets`), not something this feature imposes. In some
+domains the AI artifact is itself the deliverable (a voice edition, gated by its
+validator); in others a human companion is the thing shipped. Segregation guarantees
+the two never blur in one file; it does not rank them. What *is* true generally: a
+human edit never mutates the AI artifact, so the AI artifact's provenance stays
+honest whether or not a companion exists.
+
+**D6a — The AI artifact's post-companion lifecycle.**
+Because a companion never supersedes it in the graph, an AI artifact remains a valid,
+reproducible build product for its whole life — retained for provenance, comparison,
+and (where it is the declared target) as the deliverable. It is not demoted by the
+existence of a companion; it is simply never the thing a human hand-edits.
 
 **D7 — Mechanical (pure) output retains the `modified` protection; AI output does not need it.**
 The `modified` state and its release block are correct for a pure output a human
@@ -241,7 +309,11 @@ provider outputs that already carry impurity provenance.
    honest answer may simply be "rebuild, your edit had no standing" — but the system
    should probably say so rather than silently overwrite (this overlaps TASK-15).
    Whether that warrants a verb, or just a clear refusal-with-guidance on `build`,
-   is unresolved and separable from the segregation invariant.
+   is unresolved and separable from the segregation invariant. A third-party
+   reviewer's instinct here matches TASK-15's candidate fix: no new lifecycle state —
+   `build` on a `modified` pure output refuses with an explicit "this output is
+   reproducible; rebuilding discards your edits; proceed?" acknowledgment. Recorded
+   as the leaning; the decision stays with TASK-15.
 
 2. **Where exactly do impure outputs land under `dist/`, and who decides the
    subpath?** D3 fixes the dot-zone requirement but not the layout
@@ -306,4 +378,30 @@ provider outputs that already carry impurity provenance.
   convention inherited downward; **fail-safe default**; **any-dot-wins** (a nested
   dot under a non-dot dir DOES establish an AI zone — human-dominance rejected);
   **keep `dist/`**, but impure artifacts must be written to a dot-prefixed directory
-  somewhere under it.
+  somewhere under it; and — the operator's emphatic correction during review — **the
+  naming convention is CRITICAL and for HUMANS**: humans read names at a glance, so
+  the name is a first-class human-facing authority, not a swappable enforcement
+  detail subordinate to provenance (this drove INV-2/INV-3 and the D1/D5 reframing).
+
+### Third-party review disposition (2026-07-25)
+
+A third-party review recommended revision before approval, praising the reframe
+(prevent the collision rather than clean it up) and the fail-safe default. Its
+central architectural ask — separate the invariant from the mechanism, because the
+mechanism might evolve — was **partially rejected after operator input**: legibility
+of the zone *from the name* (INV-2) is itself part of the invariant, so the naming
+convention is not a swappable implementation detail. A future mechanism that made a
+file's zone unreadable from its name would violate the principle even while
+enforcing segregation. The reviewer's related move — promote node provenance to "the
+conceptual authority" and demote the directory to "enforcement" — is corrected to
+**two authorities for two audiences** bound by INV-3.
+
+Incorporated in full: the explicit invariants section (INV-1..4); the named
+in-place-editing invariant (INV-4); the correction that a companion does **not**
+generally become the authoritative input, only that the AI artifact is never
+mutated (D6); the AI artifact's retained-but-not-demoted lifecycle (D6a); and the
+resolution of the vague file-type layer into the naming-legibility surface plus a
+reserved-and-unspecified future type check (D5a). The reviewer's open-question-1
+instinct (refuse-with-acknowledgment over a new state) is recorded against TASK-15.
+Pushed back on: the swappable-mechanism premise (above), and the companion-supersedes
+claim (D6/D6a).
