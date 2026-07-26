@@ -16,6 +16,11 @@ import {
   StatusJsonSchema,
 } from './support.js';
 
+/** Narrows a parsed-YAML value to an indexable mapping without a type assertion. */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
 /**
  * T022 [US3] — voice is a first-class DECLARED input; a human-polish companion `follows` an
  * edition and is accepted without ever becoming a build dependency; a companion declared under a
@@ -154,10 +159,17 @@ describe('T022 fact 2: a human-safe companion authored node `follows` the editio
   async function addCompanion(dir: string): Promise<void> {
     const manifestPath = path.join(dir, 'episode.yaml');
     const manifestText = await fs.readFile(manifestPath, 'utf8');
-    const manifest = parseYamlText(manifestText) as Record<string, unknown>;
-    const authored = manifest['authored'] as Record<string, unknown>;
+    const parsedManifest: unknown = parseYamlText(manifestText);
+    if (!isRecord(parsedManifest)) {
+      throw new Error('voice-inputs fixture: episode.yaml did not parse to a YAML mapping');
+    }
+    const manifest = parsedManifest;
+    const authoredValue = manifest['authored'];
+    if (!isRecord(authoredValue)) {
+      throw new Error('voice-inputs fixture: manifest.authored is not a mapping');
+    }
     manifest['authored'] = {
-      ...authored,
+      ...authoredValue,
       // A human-safe path (no dot-zone segment): the polish notes a human wrote in response to
       // the machine-produced edition. `follows` names the edition by identity — advisory, never
       // a dependency.

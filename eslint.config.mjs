@@ -41,6 +41,14 @@ export default [
       '**/*.config.ts',
       '**/*.config.js',
       '**/*.config.mjs',
+      // voice-tooling is a self-contained sub-package: its own package.json, tsconfig,
+      // dependencies, and gates (`node --test` + `tsc --noEmit`), and no eslint config of
+      // its own. The root config's unscoped type-checked ruleset cannot lint it without a
+      // dedicated toolchain, and imposing the root prettier/type-aware idiom rules on its
+      // node:test suite would be an out-of-scope mass-reformat. Root `eslint .` therefore
+      // leaves voice-tooling to its own package gates. (Typing discipline there — no
+      // any/as/ts-ignore — is still enforced, see voice-tooling verification.)
+      'voice-tooling/',
     ],
   },
   js.configs.recommended,
@@ -120,6 +128,24 @@ export default [
       '@typescript-eslint/no-unused-vars': 'off',
       '@typescript-eslint/no-unused-expressions': 'off',
     },
+  },
+  // Fixture `.mjs` files (e.g. tests/fixtures/voice-revise/stub-model.mjs) are plain
+  // Node ESM not covered by any tsconfig project. Without this block, the global
+  // `recommendedTypeChecked` spread above (which registers the TS parser and type-aware
+  // rules for every file, unscoped) applies to them too and crashes for lack of parser
+  // services. Disable the type-checked rules here — mirroring the editorial-tooling
+  // block below — while declaring the Node globals these fixtures reference so `no-undef`
+  // (from `js.configs.recommended`, applied unscoped above) doesn't misfire.
+  {
+    files: ['tests/fixtures/**/*.mjs'],
+    languageOptions: {
+      ...tseslint.configs.disableTypeChecked.languageOptions,
+      globals: {
+        process: 'readonly',
+        Buffer: 'readonly',
+      },
+    },
+    rules: tseslint.configs.disableTypeChecked.rules,
   },
   // editorial-tooling is a separate, plain-ESM package (no tsconfig project covers its
   // .mjs files). Without this block, the global `recommendedTypeChecked` spread above

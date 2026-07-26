@@ -121,12 +121,12 @@ export function loadVoice(yamlText: string): VoiceDocument {
   if (!Array.isArray(avoidValue)) {
     fail('avoid must be a list');
   }
-  for (let i = 0; i < avoidValue.length; i++) {
-    if (typeof avoidValue[i] !== 'string') {
-      fail(`avoid[${i}] must contain only strings (got ${JSON.stringify(avoidValue[i])})`);
+  const avoid: string[] = avoidValue.map((item, i) => {
+    if (typeof item !== 'string') {
+      fail(`avoid[${i}] must contain only strings (got ${JSON.stringify(item)})`);
     }
-  }
-  const avoid = avoidValue as string[];
+    return item;
+  });
 
   return {
     ...omitKnownKeys(root, KNOWN_VOICE_KEYS),

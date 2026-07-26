@@ -15,6 +15,11 @@ import {
   StatusJsonSchema,
 } from './support.js';
 
+/** Narrows a parsed-YAML value to an indexable mapping without a type assertion. */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
 /**
  * T023 [US3] — a voice edit RESTALES its dependent editions, report-only; a producer/tool
  * VERSION change is reported as DRIFT, distinct from stale, and never auto-restales
@@ -241,7 +246,11 @@ async function driftEpisode(dir: string, driftCmd: readonly string[]): Promise<s
 
   const manifestPath = path.join(dir, 'episode.yaml');
   const manifestText = await fs.readFile(manifestPath, 'utf8');
-  const manifest = parseYamlText(manifestText) as Record<string, unknown>;
+  const parsedManifest: unknown = parseYamlText(manifestText);
+  if (!isRecord(parsedManifest)) {
+    throw new Error('voice-freshness fixture: episode.yaml did not parse to a YAML mapping');
+  }
+  const manifest = parsedManifest;
   manifest['targets'] = [TARGET, 'edition-drift'];
   await fs.writeFile(manifestPath, stringify(manifest), 'utf8');
 

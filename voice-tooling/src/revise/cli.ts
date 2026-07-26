@@ -9,6 +9,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { isRecord } from '@/util/is-record.ts';
 import { parseReviseRequest } from '@/revise/request.ts';
 import { resolveModelCommand, invokeModel } from '@/revise/model.ts';
 import { emitEdition } from '@/revise/emit.ts';
@@ -20,7 +21,7 @@ import { emitEdition } from '@/revise/emit.ts';
 async function readStdinText(): Promise<string> {
   const chunks: Buffer[] = [];
   for await (const chunk of process.stdin) {
-    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as Uint8Array));
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
   }
   return Buffer.concat(chunks).toString('utf8');
 }
@@ -45,14 +46,14 @@ function readPackageVersion(): string {
     throw new Error(`voice-revise: could not read "${pkgPath}": ${describeError(cause)}`);
   }
   const parsed: unknown = JSON.parse(raw);
-  if (
-    typeof parsed !== 'object' ||
-    parsed === null ||
-    typeof (parsed as Record<string, unknown>)['version'] !== 'string'
-  ) {
+  if (!isRecord(parsed)) {
     throw new Error(`voice-revise: "${pkgPath}" has no string "version" field`);
   }
-  return (parsed as Record<string, unknown>)['version'] as string;
+  const version = parsed['version'];
+  if (typeof version !== 'string') {
+    throw new Error(`voice-revise: "${pkgPath}" has no string "version" field`);
+  }
+  return version;
 }
 
 /**

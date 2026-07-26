@@ -47,6 +47,13 @@ const KIND_TO_CHECK: Record<keyof typeof KIND_LABEL, PayloadCheckName> = {
   numerics: 'numeric_literals',
   lexiconTerms: 'lexicon',
 };
+/** The payload kinds, explicitly typed so iteration needs no `Object.keys` assertion. */
+const PAYLOAD_KINDS: readonly (keyof typeof KIND_LABEL)[] = [
+  'quotes',
+  'citations',
+  'numerics',
+  'lexiconTerms',
+];
 
 /**
  * Find every ledger entry whose declared destination(s) do NOT resolve to an
@@ -99,7 +106,7 @@ export function findUnresolvedDestinationChecks(
     const payload = content !== undefined ? extractPayload(content, lexicon) : undefined;
     let matchedAny = false;
     if (payload !== undefined) {
-      for (const kind of Object.keys(KIND_LABEL) as (keyof typeof KIND_LABEL)[]) {
+      for (const kind of PAYLOAD_KINDS) {
         if (kind === 'lexiconTerms' && !(lexicon !== undefined && lexicon.length > 0)) {
           continue;
         }

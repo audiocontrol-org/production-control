@@ -148,34 +148,28 @@ describe(
     });
 
     describe('a voice AUTHORED node declared under `.ai/` (FR-006/D2b)', () => {
-      it(
-        'is reported, named, and causes non-zero exit; the scope boundary is still stated',
-        async () => {
-          const dir = await voiceInDotZoneFixture();
-          const result = await pc(['audit-zones', '--episode', dir, '--json']);
+      it('is reported, named, and causes non-zero exit; the scope boundary is still stated', async () => {
+        const dir = await voiceInDotZoneFixture();
+        const result = await pc(['audit-zones', '--episode', dir, '--json']);
 
-          expect(result.code, 'expected a non-zero (violation) exit').not.toBe(0);
+        expect(result.code, 'expected a non-zero (violation) exit').not.toBe(0);
 
-          const report = parseJsonOrFail(result.stdout);
-          const violation = expectViolation(report, 'voice');
-          expect(violation['expectedZone']).toBe('human-safe');
-          expect(violation['actualZone']).toBe('ai-permitted');
+        const report = parseJsonOrFail(result.stdout);
+        const violation = expectViolation(report, 'voice');
+        expect(violation['expectedZone']).toBe('human-safe');
+        expect(violation['actualZone']).toBe('ai-permitted');
 
-          assertScopeStatement(result.stdout);
-        }
-      );
+        assertScopeStatement(result.stdout);
+      });
 
-      it(
-        'is still named and non-zero without --json; the scope boundary is stated',
-        async () => {
-          const dir = await voiceInDotZoneFixture();
-          const result = await pc(['audit-zones', '--episode', dir]);
+      it('is still named and non-zero without --json; the scope boundary is stated', async () => {
+        const dir = await voiceInDotZoneFixture();
+        const result = await pc(['audit-zones', '--episode', dir]);
 
-          expect(result.code, 'expected a non-zero (violation) exit').not.toBe(0);
-          expect(result.stdout, 'the offending voice node must be named').toContain('voice');
-          assertScopeStatement(result.stdout);
-        }
-      );
+        expect(result.code, 'expected a non-zero (violation) exit').not.toBe(0);
+        expect(result.stdout, 'the offending voice node must be named').toContain('voice');
+        assertScopeStatement(result.stdout);
+      });
     });
 
     describe('the voice edition output path assertion', () => {
@@ -183,7 +177,7 @@ describe(
         'the impure voice edition is routed under impureOutputRoot (`.ai/`) by the build gate ' +
           '(FR-028)',
         async () => {
-          const dir = await cleanVoiceFixture();
+          await cleanVoiceFixture();
           const expectedRoot = impureOutputRoot();
           expect(expectedRoot).toBe('.ai');
         }

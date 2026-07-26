@@ -6,6 +6,7 @@
 // within the project's file-size guideline (see CLAUDE.md).
 
 import { parse as parseYamlText } from 'yaml';
+import { isRecord } from '@/util/is-record.ts';
 import type { SourceUnit } from '@/units/derive.ts';
 import type { CoverageLedger, UnitRef } from '@/schema/ledger.ts';
 import {
@@ -34,14 +35,14 @@ export function readDeclaredSourceHash(ledgerYaml: string): string | undefined {
   } catch {
     return undefined;
   }
-  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+  if (!isRecord(parsed)) {
     return undefined;
   }
-  const sourceField = (parsed as Record<string, unknown>)['source'];
-  if (typeof sourceField !== 'object' || sourceField === null || Array.isArray(sourceField)) {
+  const sourceField = parsed['source'];
+  if (!isRecord(sourceField)) {
     return undefined;
   }
-  const hash = (sourceField as Record<string, unknown>)['hash'];
+  const hash = sourceField['hash'];
   return typeof hash === 'string' ? hash : undefined;
 }
 

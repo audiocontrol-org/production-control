@@ -1,4 +1,5 @@
 import * as fs from 'node:fs';
+import { isRecord } from '@/util/is-record.ts';
 import { loadVoice } from '@/schema/voice.ts';
 import type { VoiceDocument } from '@/schema/voice.ts';
 
@@ -217,10 +218,10 @@ function requireNonEmptyString(
 }
 
 function requireRecord(value: unknown, path: string): Record<string, unknown> {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+  if (!isRecord(value)) {
     fail(`${path} must be a JSON object`);
   }
-  return value as Record<string, unknown>;
+  return value;
 }
 
 function describeError(cause: unknown): string {
