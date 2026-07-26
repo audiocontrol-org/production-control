@@ -29,6 +29,7 @@ import { checkCitations, assertQuoteDialectSupported } from '@/fidelity/check-pa
 import {
   passed,
   notRun,
+  aborted,
   reported,
   notCheckable,
   failed,
@@ -138,7 +139,7 @@ export function runFidelity(input: FidelityInput): FidelityResult {
     const structureFailure =
       structResult.failure ?? 'ledger structure: source.hash is missing or not a string';
     checks['ledger_structure'] = failed(structureFailure);
-    checks['source_hash'] = notRun('aborted: ledger_structure failed', { aborted: true });
+    checks['source_hash'] = aborted('aborted: ledger_structure failed');
     failures.push(structureFailure);
     markAborted(checks, AFTER_LEDGER_STRUCTURE, 'ledger_structure');
     return finalize(checks, failures, true);
@@ -265,7 +266,8 @@ export function runFidelity(input: FidelityInput): FidelityResult {
       ? failed('one or more citation obligations were not satisfied; see failures[]')
       : passed({ mode: citationResult.mode, checked: citationResult.checked });
 
-  // lexicon: not-run (inapplicable, no `aborted` marker) when no lexicon was
+  // lexicon: not-run (inapplicable — the `not-run` state now unambiguously means
+  // "inapplicable", distinct from the `aborted` state) when no lexicon was
   // declared at all (FR-020) — never silently skipped.
   if (!opResult.lexiconApplicable) {
     checks['lexicon'] = notRun('no lexicon declared');
@@ -342,7 +344,7 @@ function markAborted(
   abortedBy: string,
 ): void {
   for (const name of names) {
-    checks[name] = notRun(`aborted: ${abortedBy} failed`, { aborted: true });
+    checks[name] = aborted(`aborted: ${abortedBy} failed`);
   }
 }
 

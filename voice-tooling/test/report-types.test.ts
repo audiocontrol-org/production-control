@@ -4,11 +4,41 @@ import type { CheckResult, CoverageReport } from '@/fidelity/report.ts';
 import {
   passed,
   notRun,
+  aborted,
   reported,
   notCheckable,
   failed,
   computeVerdict,
 } from '@/fidelity/report.ts';
+
+/**
+ * A complete required-check set, every entry in a NON-blocking passing state, for
+ * verdict tests that isolate a single dimension. Because `computeVerdict` now
+ * refuses a verdict unless every REQUIRED_CHECKS key is present (AUDIT-13/-16),
+ * verdict tests must supply the full vocabulary; callers override the one or two
+ * checks whose state the test is actually about.
+ */
+function fullChecks(
+  overrides: Record<string, CheckResult> = {},
+): Record<string, CheckResult> {
+  return {
+    source_hash: passed(),
+    ledger_structure: passed(),
+    unit_accounting: passed({ total: 57 }),
+    verbatim_quotes: passed({ checked: 10 }),
+    citations: passed({ mode: 'multiset', checked: 11 }),
+    numeric_literals: passed({ checked: 8 }),
+    lexicon: notRun('no lexicon declared'),
+    uncorroborated_units: reported({ count: 6 }),
+    semantic_claim_fidelity: notCheckable(
+      'not provable under D4 — declared out of scope for v1',
+    ),
+    voice_conformance: notCheckable(
+      'not provable under D16 — declared out of scope for v1',
+    ),
+    ...overrides,
+  };
+}
 
 test('coverage-report: passed() helper constructs a passed CheckResult', () => {
   const result = passed();
@@ -76,92 +106,107 @@ test('coverage-report: failed() helper accepts additional fields', () => {
   assert.equal(result.checked, 3);
 });
 
-test('verdict-invariant: all checks passed → verdict is passed', () => {
-  const report: CoverageReport = {
-    checks: {
-      source_hash: passed(),
-      ledger_structure: passed(),
-      unit_accounting: passed({ total: 57 }),
-    },
-  };
+test('coverage-report (AUDIT-14): aborted() helper constructs an aborted CheckResult with reason', () => {
+  const result = aborted('aborted: source_hash failed');
+  assert.equal(result.state, 'aborted');
+  assert.equal(result.reason, 'aborted: source_hash failed');
+});
+
+test('coverage-report (AUDIT-14): aborted() helper accepts additional fields', () => {
+  const result = aborted('aborted: ledger_structure failed', { after: 'ledger_structure' });
+  assert.equal(result.state, 'aborted');
+  assert.equal(result.reason, 'aborted: ledger_structure failed');
+  assert.equal(result.after, 'ledger_structure');
+});
+
+test('verdict-invariant: full required set, all checks passed → verdict is passed', () => {
+  // Re-pointed for AUDIT-13/-16: a verdict now requires the FULL required-check
+  // vocabulary present. The original partial `{ source_hash, ledger_structure,
+  // unit_accounting }` would (correctly, now) yield no verdict; the coverage this
+  // test provides — "every present check passing yields passed" — is preserved by
+  // supplying the complete required set.
+  const report: CoverageReport = { checks: fullChecks() };
 
   const verdict = computeVerdict(report);
   assert.equal(verdict, 'passed');
 });
 
 test('verdict-invariant: passed + inapplicable not-run (no lexicon) → verdict is passed', () => {
-  const report: CoverageReport = {
-    checks: {
-      source_hash: passed(),
-      verbatim_quotes: passed({ checked: 10 }),
-      citations: passed({ checked: 11, mode: 'multiset' }),
-      lexicon: notRun('no lexicon declared'),
-    },
-  };
+  // The dimension under test is "an inapplicable lexicon not-run does not block".
+  // `fullChecks()` already sets lexicon to `not-run('no lexicon declared')`, so the
+  // full required set is present with a not-run lexicon → passed.
+  const report: CoverageReport = { checks: fullChecks() };
 
   const verdict = computeVerdict(report);
   assert.equal(verdict, 'passed');
 });
 
 test('verdict-invariant: passed + reported count + inapplicable not-run → verdict is passed', () => {
-  const report: CoverageReport = {
-    checks: {
-      source_hash: passed(),
-      unit_accounting: passed({ total: 57 }),
-      verbatim_quotes: passed({ checked: 10 }),
-      uncorroborated_units: reported({ count: 6 }),
-      lexicon: notRun('no lexicon declared'),
-    },
-  };
+  // Dimension under test: a `reported` uncorroborated count does not block. The full
+  // required set already carries `uncorroborated_units: reported(...)` and a not-run
+  // lexicon.
+  const report: CoverageReport = { checks: fullChecks() };
 
   const verdict = computeVerdict(report);
   assert.equal(verdict, 'passed');
 });
 
 test('verdict-invariant: passed + not-checkable (out of scope) → verdict is passed', () => {
-  const report: CoverageReport = {
-    checks: {
-      source_hash: passed(),
-      ledger_structure: passed(),
-      unit_accounting: passed({ total: 57 }),
-      semantic_claim_fidelity: notCheckable(
-        'not provable under D4 — declared out of scope for v1',
-      ),
-      voice_conformance: notCheckable(
-        'not provable under D16 — declared out of scope for v1',
-      ),
-    },
-  };
+  // Dimension under test: the declared-out-of-scope `not-checkable` checks do not
+  // block. The full required set already carries both as `not-checkable`.
+  const report: CoverageReport = { checks: fullChecks() };
 
   const verdict = computeVerdict(report);
   assert.equal(verdict, 'passed');
 });
 
-test('verdict-invariant: explicit-abort not-run (earlier failure, aborted:true marker) → no verdict', () => {
-  // computeVerdict does NOT sniff `reason` text — an aborted not-run is
-  // identified by the explicit `aborted: true` marker (see notRun()'s doc
-  // comment and computeVerdict's doc comment).
+test('verdict-invariant (AUDIT-13/-16): a report missing a required key yields NO verdict even when every present check passed', () => {
+  // Regression guard for the missing-required-check false pass: start from the full
+  // required set (which passes), then DROP one required obligation — as an
+  // orchestrator early-return, a key typo, or a check behind a false condition would.
+  // Every remaining check still passes, yet the verdict must be withheld because the
+  // dropped obligation never ran.
+  const withoutUnitAccounting = fullChecks();
+  delete withoutUnitAccounting['unit_accounting'];
+  assert.equal(computeVerdict({ checks: withoutUnitAccounting }), undefined);
+
+  // The specific class the audit named — a key TYPO (`unitAccounting` instead of
+  // `unit_accounting`) — presents to `computeVerdict` as the required key simply
+  // being absent, so it is caught by the same guard.
+  const typoedKey = fullChecks();
+  delete typoedKey['unit_accounting'];
+  typoedKey['unitAccounting'] = passed({ total: 57 });
+  assert.equal(computeVerdict({ checks: typoedKey }), undefined);
+});
+
+test('verdict-invariant (AUDIT-14): an `aborted` check (earlier failure) → no verdict', () => {
+  // Re-pointed to the discriminated-state model: an earlier-failure abort is now a
+  // first-class `state: 'aborted'`, not a `not-run` carrying an `aborted: true`
+  // boolean. `computeVerdict` still never sniffs `reason` text — it blocks on the
+  // explicit `aborted` STATE. The full required set is present so the ONLY reason a
+  // verdict is withheld is the aborted state.
   const report: CoverageReport = {
-    checks: {
-      source_hash: passed(),
-      ledger_structure: notRun('aborted: source_hash failed', { aborted: true }),
-      unit_accounting: notRun('aborted: source_hash failed', { aborted: true }),
-    },
+    checks: fullChecks({
+      ledger_structure: aborted('aborted: source_hash failed'),
+      unit_accounting: aborted('aborted: source_hash failed'),
+    }),
   };
 
   const verdict = computeVerdict(report);
   assert.equal(verdict, undefined);
 });
 
-test('verdict-invariant: not-run WITHOUT the aborted marker never blocks, even with an "aborted"-sounding reason string', () => {
-  // Regression guard for the "no reason-sniffing" requirement: a `not-run`
-  // whose reason text happens to mention "aborted" or "failed" must NOT
-  // block the verdict unless the explicit `aborted: true` marker is set.
+test('verdict-invariant (AUDIT-14): a `not-run` (inapplicable) NEVER blocks, even with an "aborted"-sounding reason string', () => {
+  // `not-run` now unambiguously means "inapplicable" and can never block — there is
+  // no longer any boolean flag that could turn a not-run into a blocker. A not-run
+  // whose reason text happens to mention "aborted"/"failed" is still inapplicable and
+  // does not block (no reason-sniffing). Full required set present → passed.
   const report: CoverageReport = {
-    checks: {
-      source_hash: passed(),
-      lexicon: notRun('not applicable — an earlier prototype aborted this path, but this check is simply not applicable'),
-    },
+    checks: fullChecks({
+      lexicon: notRun(
+        'not applicable — an earlier prototype aborted this path, but this check is simply not applicable',
+      ),
+    }),
   };
 
   const verdict = computeVerdict(report);
@@ -194,24 +239,25 @@ test('verdict-invariant: complex realistic report with all check types → verdi
 });
 
 test('verdict-invariant: a decided failed() check → no verdict', () => {
+  // Isolates the `failed`-blocks dimension: full required set present, one obligation
+  // overridden to `failed`. (A bare partial report would now also yield undefined via
+  // the missing-key guard; overriding on the full set keeps this test about `failed`.)
   const report: CoverageReport = {
-    checks: {
-      source_hash: passed(),
-      some_check: failed('some obligation was not satisfied'),
-    },
+    checks: fullChecks({
+      unit_accounting: failed('some obligation was not satisfied'),
+    }),
   };
 
   const verdict = computeVerdict(report);
   assert.equal(verdict, undefined);
 });
 
-test('verdict-invariant: multiple aborted not-run checks → no verdict', () => {
+test('verdict-invariant (AUDIT-14): multiple aborted checks → no verdict', () => {
   const report: CoverageReport = {
-    checks: {
-      source_hash: passed(),
-      ledger_structure: notRun('aborted: source validation failed', { aborted: true }),
-      unit_accounting: notRun('aborted: source validation failed', { aborted: true }),
-    },
+    checks: fullChecks({
+      ledger_structure: aborted('aborted: source validation failed'),
+      unit_accounting: aborted('aborted: source validation failed'),
+    }),
   };
 
   const verdict = computeVerdict(report);
@@ -266,52 +312,41 @@ test('sc-004-invariant: document the invariant clearly', () => {
    *   about every possible check having actually executed.
    * - A `reported` count does NOT block `passed`.
    * - A `not-checkable` check that is declared out of scope (D4, D16) does NOT block `passed`.
-   * - An abort (earlier check failure) producing `not-run` DOES block `passed`.
+   * - An abort (earlier check failure) producing the `aborted` state DOES block `passed`.
+   * - A report MISSING a required obligation yields NO verdict (AUDIT-13/-16).
+   *
+   * All dimensions are exercised on the FULL required-check set (with a single
+   * override) so each assertion isolates the one state it is about — rather than
+   * being confounded by the missing-required-key guard.
    */
 
-  // Test: inapplicable not-run is OK
-  const inapplicable: CoverageReport = {
-    checks: {
-      source_hash: passed(),
-      lexicon: notRun('no lexicon declared'),
-    },
-  };
-  assert.equal(computeVerdict(inapplicable), 'passed');
+  // Test: inapplicable not-run is OK (fullChecks() already carries a not-run lexicon)
+  assert.equal(computeVerdict({ checks: fullChecks() }), 'passed');
 
-  // Test: reported is OK
+  // Test: reported is OK (fullChecks() already carries a reported uncorroborated count)
   const withReported: CoverageReport = {
-    checks: {
-      source_hash: passed(),
-      uncorroborated_units: reported({ count: 5 }),
-    },
+    checks: fullChecks({ uncorroborated_units: reported({ count: 5 }) }),
   };
   assert.equal(computeVerdict(withReported), 'passed');
 
-  // Test: not-checkable is OK
-  const withNotCheckable: CoverageReport = {
-    checks: {
-      source_hash: passed(),
-      semantic_claim_fidelity: notCheckable(
-        'not provable under D4 — declared out of scope for v1',
-      ),
-    },
-  };
-  assert.equal(computeVerdict(withNotCheckable), 'passed');
+  // Test: not-checkable is OK (fullChecks() already carries the two not-checkable checks)
+  assert.equal(computeVerdict({ checks: fullChecks() }), 'passed');
 
-  // Test: abort blocks verdict
+  // Test: an `aborted` state blocks the verdict
   const withAbort: CoverageReport = {
-    checks: {
-      source_hash: notRun('aborted: parsing failed', { aborted: true }),
-    },
+    checks: fullChecks({ ledger_structure: aborted('aborted: source_hash failed') }),
   };
   assert.equal(computeVerdict(withAbort), undefined);
 
-  // Test: a decided failed() check also blocks verdict
+  // Test: a decided failed() check also blocks the verdict
   const withFailed: CoverageReport = {
-    checks: {
-      source_hash: passed(),
-      unit_accounting: failed('unaccounted source unit'),
-    },
+    checks: fullChecks({ unit_accounting: failed('unaccounted source unit') }),
   };
   assert.equal(computeVerdict(withFailed), undefined);
+
+  // Test: a MISSING required obligation yields no verdict, even though every present
+  // check passes
+  const missingRequired = fullChecks();
+  delete missingRequired['citations'];
+  assert.equal(computeVerdict({ checks: missingRequired }), undefined);
 });

@@ -167,8 +167,10 @@ test('fidelity-refuse (US1, Acceptance Scenario 5, SC-003): a source.hash mismat
   );
 
   // No unit/op obligation may have run -- the abort happens before all of
-  // them (FR-017/SC-003, D15). Each is reported `not-run`, naming
-  // source_hash as the aborting check.
+  // them (FR-017/SC-003, D15). Each is reported with the first-class `aborted`
+  // state (AUDIT-20260726-14: an earlier-failure abort is its OWN blocking state,
+  // not a `not-run` carrying an optional boolean that could be forgotten and fail
+  // open), naming source_hash as the aborting check.
   const abortedChecks = [
     'ledger_structure',
     'unit_accounting',
@@ -182,13 +184,13 @@ test('fidelity-refuse (US1, Acceptance Scenario 5, SC-003): a source.hash mismat
     const check = result.report.checks[name];
     assert.equal(
       check?.state,
-      'not-run',
-      `expected "${name}" to be not-run after a source_hash abort; got: ${JSON.stringify(check)}`,
+      'aborted',
+      `expected "${name}" to be aborted after a source_hash abort; got: ${JSON.stringify(check)}`,
     );
     assert.match(
       String(check?.reason ?? ''),
       /aborted.*source_hash/i,
-      `expected "${name}"'s not-run reason to name source_hash as the aborting check; got: ${JSON.stringify(check)}`,
+      `expected "${name}"'s aborted reason to name source_hash as the aborting check; got: ${JSON.stringify(check)}`,
     );
   }
 });
