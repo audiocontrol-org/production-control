@@ -60,6 +60,7 @@ A capability to produce voice-varied editions of a source-locked draft: an expli
 
 ## design:feature/content-zone-segregation
 - status: planned
+- analyze-clean: yes
 - spec: specs/003-content-zone-segregation
 - design-approved: yes
 - design: docs/superpowers/specs/2026-07-25-content-zone-segregation-design.md
