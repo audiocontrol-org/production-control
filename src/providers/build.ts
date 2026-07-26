@@ -218,21 +218,41 @@ async function stage(
     );
   }
 
-  // `dirname(destination)` is at or under `outputRoot`, so this also creates `outputRoot` — both
-  // where the temp sibling lands AND what the realpath resolution below needs to exist. `recursive`
-  // is a no-op when a (possibly symlinked) component already exists.
-  await fs.mkdir(path.dirname(destination), { recursive: true });
+  // Create ONLY the output root itself — a single segment directly under `episodeDir` — so it can
+  // be realpath-resolved below. We deliberately do NOT create `dirname(destination)` yet: its
+  // intermediate segments may traverse a symlink, and a `recursive` mkdir would FOLLOW that symlink
+  // and materialize directories OUTSIDE the real output root before containment has been proven
+  // (AUDIT-05). Nothing is created outside the real output root until (c0)/(c) pass. `recursive`
+  // is a no-op when `outputRoot` (or a symlink standing in for it) already exists.
+  await fs.mkdir(outputRoot, { recursive: true });
 
-  // (c) REAL-PATH containment (FR-009/FR-010). The lexical guard cannot see through a symlink: a
-  // path that is lexically inside `${root}/` may, once symlinks are resolved, point somewhere
-  // else entirely (a symlinked component, or the root itself being a symlink). Resolve the REAL
-  // destination — realpath the PARENT (which the atomic `rename` in step 6 follows) and append the
-  // basename (which `rename` REPLACES rather than follows, so it must NOT itself be resolved) — and
-  // confirm it stays within the assigned, realpath-resolved output root. Episode dir and root are
-  // realpath-resolved too so the comparison is symlink-consistent (e.g. /tmp -> /private/tmp).
   const realEpisodeDir = await fs.realpath(episodeDir);
   const realOutputRoot = await fs.realpath(outputRoot);
-  const realParent = await fs.realpath(path.dirname(destination));
+
+  // (c0) THE OUTPUT ROOT ITSELF must resolve to `<episode>/<root>` (AUDIT-03). `root` is a single
+  // posix segment (`.ai` or `dist`). If `<episode>/<root>` is a symlink, its real target could be
+  // anywhere — outside the episode entirely, or a human-safe directory inside it — and every
+  // containment check below would then be measured RELATIVE TO WHERE THE ROOT POINTS rather than
+  // the episode, so the destination would sit "inside" a root that has itself escaped. For PURE
+  // output there is no zoning guard (d) at all, so an unchecked symlinked `dist/` would be
+  // write-anywhere. Assert the real output root is the episode's own `<root>/` and refuse loudly,
+  // NAMING the symlinked target, before comparing the destination against it.
+  const rootReal = toPosix(path.relative(realEpisodeDir, realOutputRoot));
+  if (rootReal !== root) {
+    throw new Error(
+      `the ${root}/ output root resolves through a symlink to "${rootReal}", which is not the ` +
+        `episode's own ${root}/ directory — refusing to write build output outside ` +
+        `${realEpisodeDir}/${root} (FR-009).`
+    );
+  }
+
+  // (c) REAL-PATH containment of the DESTINATION (FR-009/FR-010). The lexical guard cannot see
+  // through a symlink BENEATH the root. Resolve the REAL destination WITHOUT creating anything:
+  // realpath the deepest EXISTING ancestor of the destination's parent and re-append the not-yet-
+  // existing remainder (`realpathDeepest`), then append the basename — which the atomic `rename` in
+  // step 6 REPLACES rather than follows, so it must NOT itself be resolved. Confirm the result
+  // stays within the realpath-resolved output root BEFORE any nested directory is created (AUDIT-05).
+  const realParent = await realpathDeepest(path.dirname(destination));
   const resolved = path.join(realParent, path.basename(destination));
 
   const realRel = path.relative(realOutputRoot, resolved);
@@ -253,6 +273,12 @@ async function stage(
     throw zoningRefusal({ path: resolvedRel, target });
   }
 
+  // Only NOW, with the resolved destination proven contained, create its parent directories. The
+  // deepest existing ancestor resolved inside the real output root, and the not-yet-existing
+  // remainder cannot be a symlink, so this `recursive` mkdir creates real directories inside the
+  // real output root only — never following an escaping symlink out of it (AUDIT-05).
+  await fs.mkdir(path.dirname(destination), { recursive: true });
+
   // (e) STAGE the bytes to a temp sibling under `outputRoot`. Both the temp and its eventual
   // destination are then within one filesystem, so the caller's temp->destination rename is atomic.
   const tempPath = path.join(outputRoot, `.pc-ingest-${crypto.randomUUID()}`);
@@ -264,6 +290,47 @@ async function stage(
 /** Episode-relative paths are recorded and classified POSIX-separated, regardless of host OS. */
 function toPosix(relativePath: string): string {
   return relativePath.split(path.sep).join('/');
+}
+
+/**
+ * Resolves `target` to its REAL location WITHOUT creating anything: realpaths the deepest existing
+ * ancestor and re-appends the not-yet-existing remainder (which, not existing, cannot be a symlink).
+ *
+ * This is what lets containment (guard (c)) be proven BEFORE `dirname(destination)` is created
+ * (AUDIT-05): `fs.realpath` needs its whole argument to exist, so realpathing `dirname(destination)`
+ * directly would force the escaping `mkdir` to run first. Walking up to the deepest existing ancestor
+ * — a symlink there is followed (an in-root symlink resolves inside the root and is allowed; an
+ * escaping one resolves outside and (c) refuses it) — and re-appending the purely-lexical remainder
+ * yields the real destination parent with no filesystem mutation at all.
+ */
+async function realpathDeepest(target: string): Promise<string> {
+  const remainder: string[] = [];
+  let current = target;
+  for (;;) {
+    const real = await realpathOrNull(current);
+    if (real !== null) {
+      return remainder.length === 0 ? real : path.join(real, ...remainder);
+    }
+    const parent = path.dirname(current);
+    if (parent === current) {
+      throw new Error(`no existing ancestor of "${target}" could be resolved.`);
+    }
+    remainder.unshift(path.basename(current));
+    current = parent;
+  }
+}
+
+/** `fs.realpath`, returning `null` for a path that does not exist (ENOENT, incl. a dangling
+ * symlink) and rethrowing every other I/O fault by name. */
+async function realpathOrNull(target: string): Promise<string | null> {
+  try {
+    return await fs.realpath(target);
+  } catch (error) {
+    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
+      return null;
+    }
+    throw error;
+  }
 }
 
 /**
