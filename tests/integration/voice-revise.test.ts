@@ -50,6 +50,24 @@ const REVISE_BIN = path.join(REPO_ROOT, 'voice-tooling', 'bin', 'voice-revise.mj
 const FIDELITY_BIN = path.join(REPO_ROOT, 'voice-tooling', 'bin', 'voice-fidelity.mjs');
 
 /**
+ * T019: the deterministic, no-network test-mode `voice-revise` exposes via
+ * `VOICE_REVISE_MODEL` — mirroring quote-miner's injectable
+ * `QUOTE_MINER_MODEL_CMD` seam (`editorial-tooling/src/claude.mjs`). This
+ * stub is MOCK CODE that lives in `tests/fixtures/`, never in the shipped
+ * `voice-tooling` package (`voice-tooling/src/revise/model.ts` throws rather
+ * than invent a default model when this env var is unset).
+ */
+const STUB_MODEL = path.join(REPO_ROOT, 'tests', 'fixtures', 'voice-revise', 'stub-model.mjs');
+
+/**
+ * `pc()`'s `env` option REPLACES the child's environment rather than merging
+ * into it (see `support.ts`), so the model seam is layered onto a full copy
+ * of the harness's own env — including `PATH`, which `pc build` needs to
+ * resolve the `node` the provider's `cmd: ['node', REVISE_BIN]` names.
+ */
+const BUILD_ENV = { ...process.env, VOICE_REVISE_MODEL: `node ${STUB_MODEL}` };
+
+/**
  * The wire shape of `pc build --json` (`BuildJson`, `src/cli/build.ts`), asserted structurally
  * rather than assumed — the same discipline `validator.test.ts`'s `ValidateJsonSchema` uses.
  */
@@ -124,7 +142,7 @@ describe('US2: `voice revise` produces a gated, `.ai/`-routed edition (T018)', (
     async () => {
       const dir = await episode();
 
-      const built = await pc(['build', TARGET, '--episode', dir, '--json']);
+      const built = await pc(['build', TARGET, '--episode', dir, '--json'], { env: BUILD_ENV });
 
       // THE RED ASSERTION: today this fails — `voice-revise.mjs` throws its T001 placeholder
       // error, `pc build` surfaces that on stderr, and exits 1. `built.stderr` is attached as the
@@ -177,7 +195,7 @@ describe('US2: `voice revise` produces a gated, `.ai/`-routed edition (T018)', (
     async () => {
       const dir = await episode();
 
-      const built = await pc(['build', TARGET, '--episode', dir, '--json']);
+      const built = await pc(['build', TARGET, '--episode', dir, '--json'], { env: BUILD_ENV });
       // Same RED point as the test above: nothing past this line runs today.
       expect(built.code, built.stderr).toBe(0);
       const answer = BuildJsonSchema.parse(parseJsonText(built.stdout));
