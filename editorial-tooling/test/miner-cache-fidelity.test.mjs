@@ -7,7 +7,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mine } from '../src/miner.mjs';
+import { mine, serializeBank } from '../src/miner.mjs';
 import { tempDir, lineFor, makeSources, countingModel, countingBatchModel, seedEntry, filesIn } from './miner-cache-fixtures.mjs';
 import { PROTOCOL_VERSION } from '../src/cache.mjs';
 
@@ -27,7 +27,7 @@ test('miner cache: DISABLED unless asked for', async (t) => {
       assert.deepEqual(second.asked, ['s-0', 's-1', 's-2'], 'without a cache every run re-mines');
       assert.equal(uncachedTwo.report.sources_from_cache, 0);
       assert.equal(uncachedTwo.report.cache_entries_ignored, 0);
-      // (serializeBank check removed to keep this file under 500 lines; tested in main file)
+      assert.equal(serializeBank(uncachedTwo.bank), serializeBank(uncachedOne.bank));
       assert.deepEqual(filesIn(observed), [], 'no cache directory is invented anywhere');
     } finally {
       if (previous === undefined) delete process.env.QUOTE_MINER_CACHE_DIR;
