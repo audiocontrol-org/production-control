@@ -1,0 +1,1 @@
+{"id":"T001","tierLabel":"fast","model":"haiku","commitRange":"a8c2a4a","reviewClean":true,"note":"controller read package.json/tsconfig/tree; TS skeleton with node --import tsx --test, @/ paths, strict; npm install/typecheck/test green; node_modules ignored"}
