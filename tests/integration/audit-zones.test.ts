@@ -7,34 +7,43 @@ import { cleanupFixtureCopies, copyFixture, parseJsonText, pc } from './support.
 /**
  * Content zone segregation — User Story 3 (T019; specs/003-content-zone-segregation).
  *
- * RED by design: `pc audit-zones` (T020, `src/cli/audit-zones.ts`) does not exist yet, and it is
- * not registered on the CLI dispatcher (T021, `src/cli/index.ts`) either. Every test below drives
- * the BUILT binary through the same `pc(...)` harness `zoning.test.ts` and its siblings use — the
- * same entry surface T020/T021 will wire up — so today every invocation fails with commander's
- * own "unknown command 'audit-zones'" (exit 2), and once T020/T021 land these tests should go
- * green unchanged.
+ * `pc audit-zones` (T020, `src/cli/audit-zones.ts`) exists and is registered on the CLI
+ * dispatcher (T021, `src/cli/index.ts`). Every test below drives the BUILT binary through the
+ * same `pc(...)` harness `zoning.test.ts` and its siblings use.
  *
  * Contract: `specs/003-content-zone-segregation/contracts/audit-verb.md` (verb name, flags, exit
  * codes, the `AuditReport` shape) plus `data-model.md`'s `AuditReport` section (the per-violation
  * shape: `{ id, class, assignedRoot, expectedZone, actualZone }`) and `quickstart.md` Scenario 8 /
  * FR-013/014/015.
  *
- * ** AMBIGUITY FLAGGED FOR T020 (read before changing the "mis-routed impure target" test). **
- * Today's routing (`src/zoning/route.ts`) is a FIXED function of class alone —
- * `impureOutputRoot()` always returns `.ai`, `pureOutputRoot()` always returns `dist` — with no
- * per-target override anywhere in the manifest/profile schema. So under a correct implementation
- * that classifies the routing policy LEXICALLY (as T020's own task text describes — "apply the
- * class<->zone rule via routeOutputRoot/classifyZone"), an impure target's assigned root can
- * NEVER actually disagree with its expected zone: the two are computed by the same fixed function
- * and can't drift from manifest data alone. The only way to make a genuine, filesystem-observable
- * disagreement is for the assigned root itself, AS IT CONCRETELY EXISTS on the episode's
- * filesystem, to not be what its name claims — i.e. a symlink, exactly mirroring the ROOT-level
- * symlink `zoning.test.ts`'s T007 uses for the analogous BUILD-time check (FR-010's "zoning is
- * evaluated on the resolved, not lexical, destination"). This test therefore ASSUMES the audit
- * `fs.realpath`-resolves the assigned root before classifying it, the same way build-time
- * enforcement does. That assumption is NOT stated in `contracts/audit-verb.md` (whose Non-goals
- * only rule out resolving PROVIDER outputs and touching object storage — neither of which this
- * is) and is the single biggest thing T020 should either confirm or explicitly reject.
+ * ** RESOLVED DESIGN DECISION (was flagged as an ambiguity; settled by the controller). **
+ * The audit is LEXICAL routing-policy only, over the resolved manifest/graph. It MUST NOT call
+ * `fs.realpath`, MUST NOT touch the filesystem for output locations, and MUST NOT resolve a
+ * provider's actual output or object storage — that resolution (symlink, real-path divergence,
+ * a provider's actual runtime filename) is BUILD-TIME ONLY (`pc build`,
+ * `src/providers/build.ts`'s `stage`), and is explicitly OUT of this audit's scope per
+ * `contracts/audit-verb.md`'s Non-goals and its own scope statement (FR-014). This is why the
+ * "mis-routed impure target via a symlinked `.ai/`" scenario that used to live below is GONE: it
+ * assumed a `realpath` resolution this audit is expressly forbidden from performing. That
+ * scenario belongs to BUILD-time enforcement (User Story 1) and is already covered there — see
+ * `zoning.test.ts`'s T007 (the analogous symlink case, exercised where realpath resolution
+ * actually happens).
+ *
+ * What remains, and why it is enough: the audit checks two things, both answerable from manifest
+ * data ALONE (no filesystem I/O beyond loading the manifest/profile YAML itself):
+ *
+ *   1. An IMPURE target's assigned output root (`impureOutputRoot()`) classifies `ai-permitted`.
+ *      Under today's FIXED routing policy (`src/zoning/route.ts`: `impureOutputRoot()` always
+ *      returns `.ai`, with no per-target override anywhere in the manifest/profile schema — that
+ *      would need `design:feature/directory-outputs`), this check can never actually fail from
+ *      manifest data alone: the assigned root and its expected zone are computed by the same
+ *      fixed function every time. So it is exercised below only as a POLICY-CONSISTENCY GUARD —
+ *      it passes today, on the clean fixture, and exists to catch a FUTURE regression (the impure
+ *      root becoming dot-free) rather than to report a violation now.
+ *   2. An AUTHORED node's declared path classifies `human-safe` (FR-006/D2b). THIS is the live,
+ *      manifest-constructible violation — nothing stops an operator from writing
+ *      `authored: { spoken: { path: '.ai/script.md' } }` — and it is what the dirty-case tests
+ *      below exercise.
  */
 
 const FAKE_CMD = ['unused'];
@@ -167,20 +176,6 @@ async function authoredInDotZoneEpisode(): Promise<string> {
   return dir;
 }
 
-/**
- * `.ai` — the impure target's assigned root — is itself a symlink to a REAL, human-safe
- * directory. See the file-header note: this is the only manifest-observable way to make an
- * impure target's assigned root actually resolve human-safe, given today's fixed routing.
- */
-async function misroutedImpureEpisode(): Promise<string> {
-  const dir = await copyFixture('chain');
-  await writeCleanProfile(dir);
-  const humanSafeReal = path.join(dir, 'escape');
-  await fs.mkdir(humanSafeReal, { recursive: true });
-  await fs.symlink(humanSafeReal, path.join(dir, '.ai'));
-  return dir;
-}
-
 // ---------------------------------------------------------------------------
 // T019 — the tests.
 // ---------------------------------------------------------------------------
@@ -240,20 +235,11 @@ describe(
       });
     });
 
-    describe('an impure target whose assigned root resolves (via symlink) to a human-safe path', () => {
-      it('is reported, named, and causes a non-zero exit, with the scope limit still stated', async () => {
-        const dir = await misroutedImpureEpisode();
-        const result = await pc(['audit-zones', '--episode', dir, '--json']);
-
-        expect(result.code, 'expected a non-zero (violation) exit').not.toBe(0);
-
-        const report = parseJsonOrFail(result.stdout);
-        const violation = expectViolation(report, 'voiceover');
-        expect(violation['expectedZone']).toBe('ai-permitted');
-        expect(violation['actualZone']).toBe('human-safe');
-
-        assertScopeStatement(result.stdout);
-      });
-    });
+    // The symlink-based "mis-routed impure target" scenario that used to live here is gone —
+    // see the file-header note. `voiceover` (the fixture's impure target) is exercised only via
+    // the clean-manifest case above, which already asserts NO violation is reported for it: that
+    // IS the policy-consistency guard passing, under today's fixed routing policy where an
+    // impure target's assigned root and its expected zone are computed by the same function and
+    // cannot disagree from manifest data alone.
   }
 );
