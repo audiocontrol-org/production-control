@@ -101,16 +101,23 @@ export function checkSourceCitationAllowlist(
   return { ok: true };
 }
 
-// ---- internal helpers ------------------------------------------------------
+// ---- shared helpers (also used by @/fidelity/run.ts) -----------------------
+//
+// `extractFrontmatterBlock`, `parseCitationAllowlist`, and `decodeText` are
+// exported (in addition to the two check functions above) because the T016
+// orchestrator (`@/fidelity/run.ts`) needs the SAME frontmatter-stripped body
+// and the SAME parsed `citation_allowlist` array that `checkSourceCitationAllowlist`
+// computes internally -- re-deriving them with different logic would risk the
+// two call sites silently drifting apart.
 
-interface FrontmatterBlock {
+export interface FrontmatterBlock {
   /** Raw YAML text between the frontmatter delimiters (delimiters excluded). */
   yamlText: string;
   /** Remaining text after the frontmatter block. */
   body: string;
 }
 
-function extractFrontmatterBlock(text: string): FrontmatterBlock | undefined {
+export function extractFrontmatterBlock(text: string): FrontmatterBlock | undefined {
   const match = FRONTMATTER_PATTERN.exec(text);
   if (match === null) {
     return undefined;
@@ -121,7 +128,7 @@ function extractFrontmatterBlock(text: string): FrontmatterBlock | undefined {
   };
 }
 
-function parseCitationAllowlist(frontmatterYaml: string): string[] {
+export function parseCitationAllowlist(frontmatterYaml: string): string[] {
   const parsed = parseYamlText(frontmatterYaml);
   if (!isRecord(parsed)) {
     return [];
@@ -141,7 +148,7 @@ function parseCitationAllowlist(frontmatterYaml: string): string[] {
   });
 }
 
-function decodeText(input: string | Uint8Array): string {
+export function decodeText(input: string | Uint8Array): string {
   if (typeof input === 'string') {
     return input;
   }

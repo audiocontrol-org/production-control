@@ -13,11 +13,11 @@
     "voice-fidelity": "./bin/voice-fidelity.mjs"
   },
   "dependencies": {
-    "yaml": "^2.4.0"
+    "yaml": "^2.4.0",
+    "tsx": "^4"
   },
   "devDependencies": {
     "@types/node": "^20",
-    "tsx": "^4",
     "typescript": "^5"
   }
 }

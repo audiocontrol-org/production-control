@@ -6,6 +6,7 @@ import {
   notRun,
   reported,
   notCheckable,
+  failed,
   computeVerdict,
 } from '@/fidelity/report.ts';
 
@@ -60,6 +61,19 @@ test('coverage-report: notCheckable() helper accepts additional fields', () => {
   assert.equal(result.state, 'not-checkable');
   assert.equal(result.reason, 'out of scope');
   assert.equal(result.scope, 'v1');
+});
+
+test('coverage-report: failed() helper constructs a failed CheckResult with reason', () => {
+  const result = failed('destination bytes differ from source unit bytes');
+  assert.equal(result.state, 'failed');
+  assert.equal(result.reason, 'destination bytes differ from source unit bytes');
+});
+
+test('coverage-report: failed() helper accepts additional fields', () => {
+  const result = failed('citation does not survive', { checked: 3 });
+  assert.equal(result.state, 'failed');
+  assert.equal(result.reason, 'citation does not survive');
+  assert.equal(result.checked, 3);
 });
 
 test('verdict-invariant: all checks passed → verdict is passed', () => {
@@ -123,23 +137,35 @@ test('verdict-invariant: passed + not-checkable (out of scope) → verdict is pa
   assert.equal(verdict, 'passed');
 });
 
-test('verdict-invariant: aborted not-run (earlier failure) → no verdict', () => {
+test('verdict-invariant: explicit-abort not-run (earlier failure, aborted:true marker) → no verdict', () => {
+  // computeVerdict does NOT sniff `reason` text — an aborted not-run is
+  // identified by the explicit `aborted: true` marker (see notRun()'s doc
+  // comment and computeVerdict's doc comment).
   const report: CoverageReport = {
     checks: {
       source_hash: passed(),
-      ledger_structure: {
-        state: 'not-run',
-        reason: 'aborted: source_hash failed',
-      },
-      unit_accounting: {
-        state: 'not-run',
-        reason: 'aborted: source_hash failed',
-      },
+      ledger_structure: notRun('aborted: source_hash failed', { aborted: true }),
+      unit_accounting: notRun('aborted: source_hash failed', { aborted: true }),
     },
   };
 
   const verdict = computeVerdict(report);
   assert.equal(verdict, undefined);
+});
+
+test('verdict-invariant: not-run WITHOUT the aborted marker never blocks, even with an "aborted"-sounding reason string', () => {
+  // Regression guard for the "no reason-sniffing" requirement: a `not-run`
+  // whose reason text happens to mention "aborted" or "failed" must NOT
+  // block the verdict unless the explicit `aborted: true` marker is set.
+  const report: CoverageReport = {
+    checks: {
+      source_hash: passed(),
+      lexicon: notRun('not applicable — an earlier prototype aborted this path, but this check is simply not applicable'),
+    },
+  };
+
+  const verdict = computeVerdict(report);
+  assert.equal(verdict, 'passed');
 });
 
 test('verdict-invariant: complex realistic report with all check types → verdict is passed', () => {
@@ -167,12 +193,11 @@ test('verdict-invariant: complex realistic report with all check types → verdi
   assert.equal(verdict, 'passed');
 });
 
-test('verdict-invariant: check with unrecognized state → no verdict', () => {
-  // This represents a malformed or failed check result
+test('verdict-invariant: a decided failed() check → no verdict', () => {
   const report: CoverageReport = {
     checks: {
       source_hash: passed(),
-      some_check: { state: 'failed' as unknown as any },
+      some_check: failed('some obligation was not satisfied'),
     },
   };
 
@@ -180,12 +205,12 @@ test('verdict-invariant: check with unrecognized state → no verdict', () => {
   assert.equal(verdict, undefined);
 });
 
-test('verdict-invariant: multiple blocking reasons detected → no verdict', () => {
+test('verdict-invariant: multiple aborted not-run checks → no verdict', () => {
   const report: CoverageReport = {
     checks: {
       source_hash: passed(),
-      ledger_structure: notRun('aborted: source validation failed'),
-      unit_accounting: notRun('aborted: source validation failed'),
+      ledger_structure: notRun('aborted: source validation failed', { aborted: true }),
+      unit_accounting: notRun('aborted: source validation failed', { aborted: true }),
     },
   };
 
@@ -276,11 +301,17 @@ test('sc-004-invariant: document the invariant clearly', () => {
   // Test: abort blocks verdict
   const withAbort: CoverageReport = {
     checks: {
-      source_hash: {
-        state: 'not-run',
-        reason: 'aborted: parsing failed',
-      },
+      source_hash: notRun('aborted: parsing failed', { aborted: true }),
     },
   };
   assert.equal(computeVerdict(withAbort), undefined);
+
+  // Test: a decided failed() check also blocks verdict
+  const withFailed: CoverageReport = {
+    checks: {
+      source_hash: passed(),
+      unit_accounting: failed('unaccounted source unit'),
+    },
+  };
+  assert.equal(computeVerdict(withFailed), undefined);
 });

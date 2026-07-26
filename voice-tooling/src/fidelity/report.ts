@@ -13,25 +13,35 @@
  */
 
 /**
- * The four check states (FR-025, D15).
+ * The five check states (FR-025, D15).
  * - `passed`: obligation checked and satisfied
- * - `not-run`: check skippable-by-design with no applicable input (e.g., no lexicon)
+ * - `failed`: obligation checked and NOT satisfied (a decided, named failure)
+ * - `not-run`: check skippable-by-design with no applicable input (e.g., no lexicon),
+ *   OR a check that was aborted by an earlier failure (see the `aborted` marker below)
  * - `reported`: count surfaced without pass/fail verdict (uncorroborated units)
  * - `not-checkable`: obligation real but outside mechanical scope (semantic/voice conformance, out of scope in v1)
  */
-export type CheckState = 'passed' | 'not-run' | 'reported' | 'not-checkable';
+export type CheckState = 'passed' | 'failed' | 'not-run' | 'reported' | 'not-checkable';
 
 /**
  * A single check result within the coverage report.
  *
- * Per the validator contract, state is required; reason is present for not-run and
- * not-checkable states (naming why); count fields (total, checked, count, etc.) carry
- * check-specific metadata. The index signature permits per-check fields without
- * loosening the state constraint.
+ * Per the validator contract, state is required; reason is present for failed,
+ * not-run, and not-checkable states (naming why); count fields (total, checked,
+ * count, etc.) carry check-specific metadata. The index signature permits
+ * per-check fields without loosening the state constraint.
+ *
+ * `aborted` is an explicit boolean marker (not a reason-string convention) set
+ * ONLY on a `not-run` result produced because an EARLIER check failed and the
+ * sequence was aborted (as opposed to a `not-run` because the check is simply
+ * inapplicable, e.g. "no lexicon declared"). `computeVerdict` reads this
+ * marker directly rather than sniffing `reason` text (see `computeVerdict`).
  *
  * Example states from the contract:
  * - { "state": "passed" }
+ * - { "state": "failed", "reason": "..." }
  * - { "state": "not-run", "reason": "no lexicon declared" }
+ * - { "state": "not-run", "reason": "aborted: source_hash failed", "aborted": true }
  * - { "state": "passed", "total": 57 }
  * - { "state": "passed", "checked": 10 }
  * - { "state": "reported", "count": 6 }
@@ -39,8 +49,8 @@ export type CheckState = 'passed' | 'not-run' | 'reported' | 'not-checkable';
  */
 export interface CheckResult {
   state: CheckState;
-  reason?: string; // Present at least for 'not-run' / 'not-checkable' (name why).
-  [k: string]: unknown; // Permit per-check count fields (total, checked, count, mode, etc.) without loosening state.
+  reason?: string; // Present at least for 'failed' / 'not-run' / 'not-checkable' (name why).
+  [k: string]: unknown; // Permit per-check count fields (total, checked, count, mode, aborted, etc.) without loosening state.
 }
 
 /**
@@ -73,7 +83,10 @@ export function passed(fields?: Record<string, unknown>): CheckResult {
 /**
  * Helper to construct a `not-run` CheckResult with a reason naming why.
  * Reason is required (Constitution: every reported state MUST name its cause).
- * Optionally accepts additional fields.
+ * Optionally accepts additional fields — pass `{ aborted: true }` when this
+ * `not-run` is the result of an EARLIER check's failure aborting the sequence
+ * (as opposed to the check being simply inapplicable); `computeVerdict` reads
+ * that marker explicitly (see its doc comment).
  */
 export function notRun(
   reason: string,
@@ -81,6 +94,22 @@ export function notRun(
 ): CheckResult {
   return {
     state: 'not-run',
+    reason,
+    ...fields,
+  };
+}
+
+/**
+ * Helper to construct a `failed` CheckResult with a reason naming the unmet
+ * obligation. Reason is required (Constitution: every reported state MUST
+ * name its cause). Optionally accepts additional fields.
+ */
+export function failed(
+  reason: string,
+  fields?: Record<string, unknown>,
+): CheckResult {
+  return {
+    state: 'failed',
     reason,
     ...fields,
   };
@@ -117,52 +146,34 @@ export function notCheckable(
  * Compute the top-level verdict based on SC-004 invariant.
  *
  * A `passed` verdict appears ONLY when:
- * 1. Every check in the report is in a valid state (passed, not-run, reported, not-checkable).
- * 2. No 'not-run' checks are flagged with blocking reasons (e.g., "aborted: ...").
- * 3. No checks indicate failure or refusal.
+ * 1. No check in the report is `failed`.
+ * 2. No `not-run` check carries the explicit `aborted: true` marker (an
+ *    APPLICABLE obligation the run never reached because an earlier check
+ *    failed and the sequence was aborted).
  *
- * An absent verdict signals:
- * - A structural refusal or check failure occurred.
- * - The validator could not decide (FR-030, SC-006).
- * - An applicable obligation is unmet or unresolved.
+ * This is a structural check on explicit fields — it never inspects `reason`
+ * text. A `not-run` check that is merely inapplicable (e.g. "no lexicon
+ * declared", with no `aborted` marker) does NOT block `passed`; neither does
+ * `reported` (uncorroborated units, D12) nor `not-checkable` (the declared
+ * out-of-scope semantic/voice checks, D4/D16).
  *
- * Note: 'not-run' checks with reasons like "no lexicon declared" are inapplicable
- * (inputs don't exist) and do NOT block a 'passed' verdict. 'reported' counts and
- * 'not-checkable' checks (declared out of scope) also do NOT block 'passed'.
+ * An absent verdict signals a decided failure (some check is `failed`, or an
+ * applicable check was aborted). It is NOT used for the separate "cannot
+ * decide" outcome (FR-030/SC-006) — that outcome is signaled by the caller
+ * never calling this function with a verdict-bearing report at all (see
+ * `@/fidelity/run.ts`'s `decided` flag).
  *
  * @param report The coverage report to evaluate
  * @returns 'passed' if the invariant holds; undefined if no verdict should be emitted
  */
 export function computeVerdict(report: CoverageReport): 'passed' | undefined {
-  // Check if all checks are in valid, non-failure states.
-  // Valid states per the contract: 'passed', 'not-run', 'reported', 'not-checkable'.
-  for (const [checkName, result] of Object.entries(report.checks)) {
-    // Check for blocking "not-run" reasons (e.g., "aborted: ..." indicates earlier failure).
-    // A 'not-run' from skippable-by-design (e.g., "no lexicon declared") does NOT block.
-    if (result.state === 'not-run' && result.reason) {
-      // If the reason indicates an abort or failure, no verdict.
-      if (
-        result.reason.toLowerCase().includes('aborted') ||
-        result.reason.toLowerCase().includes('failed')
-      ) {
-        return undefined;
-      }
+  for (const result of Object.values(report.checks)) {
+    if (result.state === 'failed') {
+      return undefined;
     }
-
-    // All valid states are acceptable for a passed verdict.
-    // A state outside this set would indicate a failure (e.g., a malformed result
-    // or an explicit failed state), which would not be in this report format.
-    const validStates: CheckState[] = [
-      'passed',
-      'not-run',
-      'reported',
-      'not-checkable',
-    ];
-    if (!validStates.includes(result.state)) {
+    if (result.state === 'not-run' && result['aborted'] === true) {
       return undefined;
     }
   }
-
-  // If we got here, all checks are in valid states and no blocking conditions exist.
   return 'passed';
 }
