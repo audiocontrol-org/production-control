@@ -96,5 +96,34 @@ describe(
       ).toBe(0);
       expect(result.stdout.trim()).toBe(probe);
     });
+
+    // AUDIT-13: a real impure artifact lands at `<episode-dir>/.ai/<target>.out` — NESTED under a
+    // content/episode dir, not at the repo root (`build.test.ts` pins `record.output.path ===
+    // '.ai/voiceover.out'` resolved under an episode dir). Gitignore patterns are position-sensitive:
+    // an anchored `/.ai` or a scoped `content/**/.ai/` rule would ignore the NESTED artifacts while
+    // leaving the root-level `.ai/probe.out` probe unignored — the root probe alone cannot see it.
+    // Probing a nested depth is exactly what distinguishes an unanchored `.ai/` from an anchored one.
+    it('the impure root stays UNIGNORED at a nested (episode-relative) depth, not just at the repo root', async () => {
+      const probe = path.posix.join('content', 'ep-01', impureOutputRoot(), 'probe.out');
+      const result = await gitCheckIgnore(probe);
+      expect(
+        result.code,
+        `expected nested "${probe}" to be UNIGNORED (exit 1); got exit ${String(result.code)} ` +
+          `(stdout: ${result.stdout.trim() || '(empty)'}) — a position-anchored .gitignore rule is ` +
+          'ignoring real (nested) AI artifacts while the root-level probe stays green'
+      ).toBe(1);
+    });
+
+    it('the pure root stays IGNORED at a nested depth too — `dist/` matches at any level, not only the root', async () => {
+      const probe = path.posix.join('content', 'ep-01', pureOutputRoot(), 'probe.out');
+      const result = await gitCheckIgnore(probe);
+      // `dist/` (unanchored) matches at every depth; if a future edit anchored it to `/dist`, this
+      // nested probe would go red while reproducible output silently started getting committed.
+      expect(
+        result.code,
+        `expected nested "${probe}" to be IGNORED (exit 0); got exit ${String(result.code)} ` +
+          `(stdout: ${result.stdout.trim() || '(empty)'})`
+      ).toBe(0);
+    });
   }
 );
