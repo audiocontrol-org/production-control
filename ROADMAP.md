@@ -54,6 +54,7 @@ Generalize the quote bank into a metadata-rich, queryable store of production as
 
 ## design:feature/voice-editions
 - status: planned
+- design-approved: yes
 - depends-on: design:feature/content-zone-segregation
 - design: docs/superpowers/specs/2026-07-25-voice-editions-design.md
 A capability to produce voice-varied editions of a source-locked draft: an explicit voice profile (narrator distance, evidence posture, sentence and paragraph movement, transitions, emotional temperature, quote handling, hard avoids) drives a revision provider that may change narration only, while a deterministic fidelity validator gates the result (verbatim survival of every quoted span, citation-set preservation, no silently dropped source-backed claim, ledger completeness). Same impure-generation plus deterministic-grounding shape as the quote bank, applied to derived prose rather than extracted spans. Design must settle what is generic (profile schema, fidelity gate, edition-as-derived-target build shape, per-unit revision ledgers as provenance, and whether a profile is a producer input or a target of its own) versus per-project (the profiles themselves and the source contract). Surfaced by the nouvelle-france spike/codex-authorship trial, where the method held at n=1 but every invariant was enforced by prose rather than code and the driving skills lived outside the repo.
