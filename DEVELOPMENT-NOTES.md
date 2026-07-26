@@ -1,18 +1,25 @@
-## 2026-07-26: <!-- session title -->
+## 2026-07-26: Finish content-zone-segregation (execute → govern → ship) and author the whole voice-editions spec (design → runnable)
 
-**Goal:** <!-- compose: what we set out to do -->
+**Goal:** Pick up the paused content-zone-segregation execution at its US1 MVP boundary, drive it to a shipped feature, then return to voice-editions (its now-unblocked original driver) and take it through the full stack-control front door to a runnable spec.
 
 **Accomplished:**
-- <!-- compose -->
+- **content-zone-segregation finished and SHIPPED.** Resumed execute from 15/25 → completed US2 (authored-direction refusal + legibility), US3 (`pc audit-zones` routing verb), and polish (T022–T025), each task a fresh subagent at its resolved model, test-first. Cleared two pre-existing blockers (split the oversized `miner-cache.test.mjs`; trimmed `zoning.test.ts` off the exact-500 gate). Whole-feature govern ran **4 rounds** (9→4→2→4 findings): fixed every actionable finding — the fail-open `..` classifier (AUDIT-01/06), cross-model symlinked-output-root + pre-mkdir escapes (AUDIT-03/05, reproduced RED), a transient scratch escape (AUDIT-10), routing coverage (AUDIT-07), the `classifyZone` trailing-slash false-safe closed structurally via a required `file|directory` kind param (AUDIT-14/15), plus honesty/coverage tightenings (02/08/13/17/18/19). Graduated the single-model tail by **documented `--override`** (operator-approved). Integrated a diverged `main` (PRs #3/#5/#6) at ship time, resolved the `miner-cache` double-split, merged **PR #7**, and recorded `status: shipped` on trunk. Suite 488 green.
+- **voice-editions spec authored end-to-end and runnable.** Reconciled the design with what shipped (D19's stale `dist/.ai/` → `.ai/` sibling), recorded the operator's `design-approved`, then drove specify → clarify → plan → tasks → analyze: spec 004 (30 FRs, 3 validator-first stories, 7 SCs), 5 open questions resolved to design defaults, plan + Phase 0/1 artifacts (Principle I resolved architecturally — provider outside pc-core), 26 tier-tagged tasks, analyze-clean. Applied a third-party review's 6 valid corrections (declined 1 that was based on a false premise — D22 does exist). `execute-check: runnable`.
 
 **Didn't Work:**
-- <!-- compose -->
+- govern never fully converged to zero: it oscillated 9→4→2→4 into a single-model, non-cross-model, non-live-defect tail (each round red-teamed the prior round's fixes). Resolved by documented override, not by chasing the asymptote.
+- The govern chunker dispatched the `zoning.test.ts` chunk with an **empty diff body** every round (AUDIT-09/12) — a stackctl instrumentation defect, unfixable from feature code. Filed upstream (deskwork#532) + local TASK-17.
+- The `--status` background poll for govern was externally killed ~3× mid-run and needed manual restarts.
 
 **Course Corrections:**
-- <!-- compose -->
+- **Ship was not a clean merge.** "ship it" assumed a ready PR, but `main` had advanced with three merged PRs conflicting in the exact files the feature touched. Surfaced it and integrated `main` (green suite) rather than forcing the merge.
+- **Verify review feedback before applying.** A third-party reviewer asserted FR-018 cited a non-existent D22; verified against the design (D22 exists, line 463) and declined that one correction rather than introducing a regression.
+- **Caught a bad premise in my own subagent brief:** I told the plan agent "Bun runtime"; the repo is Node. The agent refused to invent Bun and corrected it loudly — the fail-loud discipline working on my own error.
 
 **Insights:**
-- <!-- compose -->
+- The single-model govern tail is a real convergence signal: when findings stop being cross-model and become adjacent test-nitpicks red-teaming the last fixes, that is the point to override with a documented disposition, not to keep fixing (the myopic-convergence trap the process drivers name).
+- The recurring production-control shape held again for voice-editions: impure producer → declarative metadata → deterministic corroboration → structured coverage report. The validator-first ordering (D3) makes the spec's MVP the smallest independently-valuable slice.
+- Structural fixes beat point patches: making `classifyZone`'s file/dir distinction a required parameter closed the whole false-safe channel, where patching the one `.ai` example would have invited the next round to find the next example.
 
 **Quantitative (auto-derived from git; verify before publishing):**
 - Commits: 46
