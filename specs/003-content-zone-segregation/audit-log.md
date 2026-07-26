@@ -245,3 +245,72 @@ That is defensible for a path that really names a file, and the docstring at lin
 Blast radius: an unattended agent extending this module reads `classifyZone(relPath)` and calls it with whatever path it has — `node.path`, a walked directory entry, `impureOutputRoot()` — and gets a wrong verdict in the direction that *permits* rather than refuses, defeating the defense-in-depth this classifier exists to provide (the same failure class as AUDIT-01, resolved for `..` at lines 59-64 but left open here). A reasonable fix makes the obligation structural rather than prose: a second required parameter (`classifyZone(relPath, kind: 'file' | 'directory')`), a separate `classifyDirectoryZone`, or — minimally — refusing an input whose last segment starts with `.` and has no trailing slash, since that is exactly the ambiguous case (`dist/.draft.md` vs `dist/.ai`) the current rule resolves silently in the permissive direction. Whichever shape is chosen needs a fixture per opened channel: bare `.ai`, `dist/.ai`, and the root returned by `impureOutputRoot()` fed straight back into `classifyZone`.
 
 ---
+
+## 2026-07-26 — audit-barrage lift (end-govern-after_implement)
+
+### AUDIT-20260726-16 — The impure output root was renamed `ai-generated/` → `.ai/` with no migration and no detection surface, silently orphaning non-reproducible artifacts on upgrade
+
+Finding-ID: AUDIT-20260726-16
+Status:     open
+Severity:   high
+Per-lane:   claude=high
+Decision:   single-model (gate-counted high)
+Surface:    tests/integration/build.test.ts:168-175 (the expectation flip) + missing surface (no migration verb / doctor rule anywhere in this chunk or in the other chunks' file lists)
+
+The diff flips the recorded output location of an impure target from `ai-generated/voiceover.out` to `.ai/voiceover.out`:
+
+```
+-    expect(record.output.path).toBe('ai-generated/voiceover.out');
++    expect(record.output.path).toBe('.ai/voiceover.out');
+```
+
+and the surrounding comment is edited from "the COMMITTED ai-generated/ tree" to "the COMMITTED .ai/ tree". Commit `57a4db7` describes this as "route impure output to dot-zoned .ai root; **migrate fixtures**" — fixtures, not adopter repositories. Nothing in this chunk, and nothing in the other chunks' file lists (`src/cli/audit-zones.ts`, `src/cli/index.ts`, `src/graph/validate.ts`, `src/providers/*`, `src/readme/generate.ts`), is a migration verb, an upgrade path, or a doctor rule that notices an existing `ai-generated/` tree.
+
+Blast radius: this is the one class of artifact the feature says cannot be re-derived. An adopter who upgrades has build records pointing at `ai-generated/<target>.out` while routing now resolves `.ai/<target>.out`. The bytes at the old path are still in git but are no longer referenced by the graph, so the next build re-runs the *impure* provider and produces **different** bytes — which then propagate downstream (the fixture's own `podcast ← voiceover` edge is exactly this shape). The feature's stated central guarantee ("impure bytes are the durable record") is broken precisely on the upgrade path, quietly, and `audit-zones` cannot report it because it is lexical-only by design. A reasonable fix is either a `pc` migration step that moves `ai-generated/` → `.ai/` and rewrites the recorded `output.path`, or a loud refusal when an `ai-generated/` tree is present, plus a test in `build.test.ts` that starts from a repo already holding `ai-generated/voiceover.out` and asserts the artifact survives. Fresh-install behavior is covered here; upgrade behavior is not covered anywhere in the diff.
+
+---
+
+### AUDIT-20260726-17 — The `.ai/` trackability gate only probes a synthetic `.out` extension, so the most likely future `.gitignore` edit in an audio repo (`*.wav`, `*.mp3`, binary/LFS rules) defeats the guarantee with all four probes green
+
+Finding-ID: AUDIT-20260726-17
+Status:     open
+Severity:   high
+Per-lane:   claude=high
+Decision:   single-model (gate-counted high)
+Surface:    tests/integration/ai-zone-tracked.test.ts:70, 86, 107, 118 (every probe is `probe.out`)
+
+All four probes are built as `path.posix.join(<root>(), 'probe.out')`. The file's header states its own purpose as a regression gate against "a future `.gitignore` edit" that would turn the committed AI-artifact root into "silent data loss". But `git check-ignore` answers a question about a *full path*, not about a directory, and the ignore rule that would actually bite here is far more likely to be extension-scoped than directory-scoped. `.out` is an artifact of the fake provider only; the real impure artifacts of this feature are media — the same test tree's `build.test.ts:42` carries `const NARRATION = 'assets/narration/take-01.wav'`, and the impure target under audit is literally named `voiceover`. A repo of audio episodes acquiring `*.wav`, `*.mp3`, `*.m4a`, or a blanket binary/LFS ignore rule is an ordinary, likely edit — and it would ignore every real impure artifact under `.ai/` while `.ai/probe.out` continues to report exit 1 and this whole file stays green.
+
+Blast radius: identical to the failure mode the test was written to prevent — the non-reproducible artifact silently stops being committed, with a green test standing in front of it. The gate's coverage shape is verifiable from the diff alone regardless of what the current `.gitignore` contains, because the test claims to defend against *future* edits and does not cover the most probable one. A fix keeps the existing `.out` probe and adds probes for the extensions providers actually emit — best derived (like the roots already are, per the file's own stated principle at lines 26-28) from the provider/profile surface or from a recorded `output.path` rather than hardcoded, so a new provider format does not silently fall outside the gate.
+
+---
+
+### AUDIT-20260726-18 — The `kind` parameter's false-safe channel is untested at the call sites; the "real impure output root" test hardcodes the safe answer
+
+Finding-ID: AUDIT-20260726-18
+Status:     open
+Severity:   high
+Per-lane:   claude=high
+Decision:   single-model (gate-counted high)
+Surface:    tests/unit/zoning/classify.test.ts:43-61 (dot-zone-root block; `impureOutputRoot()` case ~57-61)
+
+AUDIT-14/15 fixed the "dot-zone root classifies human-safe" hole by making `kind: 'file' | 'directory'` a *required caller-supplied* argument. That fix does not remove the false-safe — it **moves** it from the classifier into every call site: `classifyZone('.ai', 'file')` still returns `human-safe`, and the test at line ~54-56 pins that as intended behavior. So the whole guarantee now rests on each production caller passing the correct `kind`, and nothing in this chunk pins that. The test that appears to close the loop — "the real impure output root the build uses classifies ai-permitted as a directory", line ~57-61 — supplies `'directory'` *from the test itself*: `expect(classifyZone(impureOutputRoot(), 'directory')).toBe('ai-permitted')`. It proves a property of the string `impureOutputRoot()` returns; it cannot fail if `src/zoning/route.ts` or `src/graph/validate.ts` calls `classifyZone(root, 'file')`. The docblock's framing ("Feed the actual root back: the root the build writes impure output to can never silently classify human-safe") overclaims what the assertion covers.
+
+Blast radius: this is the *exact* defect class the feature exists to eliminate — an AI-permitted location reported as safe for a human to author in (INV-2). A single call site that mislabels a directory as a file re-opens AUDIT-14/15 with a green unit suite, and per round-0 self-red-team this fix diff must be audited as a fresh surface rather than trusted because it targets a known bug. A reasonable fix: assert the *call sites*, not the classifier — e.g. a test that spies/asserts the kind actually passed by the routing and validation paths, or (better) make the API impossible to misuse from a path string alone (`classifyDirectory(relPath)` / `classifyFile(relPath)`, or derive kind from the routing decision rather than accepting it as a bare positional literal). At minimum, the docblock at ~58-59 should stop claiming call-site coverage it does not have.
+
+### AUDIT-20260726-19 — "any-dot-wins" classifies every dot-directory in the repo — `.git`, `.github`, `.claude`, `.stack-control` — as an AI-permitted zone
+
+Finding-ID: AUDIT-20260726-19
+Status:     open
+Severity:   high
+Per-lane:   claude=high
+Decision:   single-model (gate-counted high)
+Surface:    src/zoning/classify.ts:27-28,81
+
+The rule as implemented is unbounded: `directorySegments.some((segment) => segment.startsWith('.'))` (line 81) makes *any* leading-dot directory segment an AI-permitted zone, not the `.ai` root the feature is named for. The doc at lines 27-28 states this deliberately ("a path is `ai-permitted` iff at least one of its DIRECTORY segments begins with `.`"), and lines 32-33 call `.ai` "the dot-zone root" — singular — while the predicate admits every dot-directory that exists in this repo: `.git/`, `.github/`, `.claude/`, `.specify/`, `.stack-control/`, `.deskwork/`.
+
+The blast radius runs through the read-only audit verb (`audit-zones`, T020/T021) and through the asymmetric refusal semantics (T017/T018). An operator or an unattended agent reading a zone audit is told that `.git/hooks/`, `.claude/settings.json`, and `.stack-control/` are AI-permitted territory — i.e. that writing there is zoning-sanctioned. That is a quietly-plausible wrong reading an agent would act on, and it is the reading the artifact *teaches*, not a misreading of it. The mirror-image cost is on the refusal side: legitimately human-authored files that live in dot-directories (`.github/workflows/*.yml` is the canonical case) classify `ai-permitted` and are therefore subject to the authored-under-dot-zone refusal.
+
+A reasonable fix is to classify against a declared zone-root set rather than a lexical dot test — the zone root is already a known constant (`.ai`), so `segment === AI_ZONE_ROOT` (or membership in a configured set) states the actual invariant. If the broad rule is genuinely ratified, the invariant needs stating positively in the contract — "every dot-directory is AI-permitted, including tool and VCS directories" — rather than being described as if `.ai` were the only one.
+
+---
