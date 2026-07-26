@@ -270,7 +270,8 @@ supported authored workspace. This is the one place this revision *extends* the
 operator's stated rule (which named only "AI must never be in human areas"); it is
 adopted because "strict segregation between the three classes" and INV-3's
 two-direction agreement both require it. Flagged for operator veto. Pure-derived
-nodes remain deliberately free to live in either zone.
+nodes remain deliberately free to live in either zone. **Ratified by the operator
+2026-07-25** — D2b stands; segregation is bidirectional for the two hard classes.
 
 **D3 — `dist/` stays the build root; impure output is dot-zoned within it.**
 The build root is unchanged. Impure targets are routed to a dot-prefixed
