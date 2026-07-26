@@ -3,6 +3,7 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import type { ProviderDecl } from '@/manifest/schema.js';
 import { parseBuildResponse, type BuildRequest, type BuildResponse } from '@/providers/contract.js';
+import { collectStderr, type DiagnosticSink } from '@/providers/diagnostics.js';
 
 /**
  * Runs a provider (contracts/provider.md).
@@ -15,9 +16,17 @@ import { parseBuildResponse, type BuildRequest, type BuildResponse } from '@/pro
  * It never fetches, never touches an asset store, and never hands a provider credentials.
  * Resolution happens upstream, before `run` is ever called. That is what keeps every provider
  * runnable by hand.
+ *
+ * `onDiagnostic` is where the provider's stderr goes WHILE it runs (see `diagnostics.ts`). It is
+ * optional and its absence means "accumulate only" — no caller's behaviour changes by ignoring it,
+ * and a runner that spawns nothing is free to never call it.
  */
 export interface ProviderRunner {
-  run(request: BuildRequest, decl: ProviderDecl): Promise<BuildResponse>;
+  run(
+    request: BuildRequest,
+    decl: ProviderDecl,
+    onDiagnostic?: DiagnosticSink
+  ): Promise<BuildResponse>;
 }
 
 /** The raw result of the subprocess, before any contract judgement is applied. */
@@ -46,9 +55,13 @@ interface Invocation {
  */
 export function subprocessRunner(): ProviderRunner {
   return {
-    async run(request: BuildRequest, decl: ProviderDecl): Promise<BuildResponse> {
+    async run(
+      request: BuildRequest,
+      decl: ProviderDecl,
+      onDiagnostic?: DiagnosticSink
+    ): Promise<BuildResponse> {
       const command = commandOf(decl);
-      const invocation = await invoke(command, decl.cmd.slice(1), request);
+      const invocation = await invoke(command, decl.cmd.slice(1), request, onDiagnostic);
 
       assertExitedCleanly(command, invocation);
       const response = parseStdout(command, invocation);
@@ -79,12 +92,24 @@ function commandOf(decl: ProviderDecl): string {
  * both pipes have drained, so stderr is never truncated in the failure path — which is the one
  * path where it is the only thing the operator has to go on.
  *
+ * stderr is TEED, not merely buffered: each chunk goes to `onDiagnostic` as it arrives AND is
+ * kept for the failure message. A provider is often the slowest thing in the system, and the only
+ * account of what it is doing is the one it writes to stderr while it does it; holding that until
+ * the process ends makes a multi-hour build indistinguishable from a hang (`diagnostics.ts`).
+ * The accumulated bytes are untouched by the tee, so the verbatim-on-failure message is exactly
+ * what it was before.
+ *
+ * stdout is NOT teed. It carries the BuildResponse — the thing this function must parse — and
+ * forwarding it would put a provider's protocol into the operator's log while stealing nothing
+ * back from the silence problem, since a response arrives all at once at the end anyway.
+ *
  * A spawn failure (ENOENT, EACCES) rejects here NAMING the command (FR-036).
  */
 function invoke(
   command: string,
   args: readonly string[],
-  request: BuildRequest
+  request: BuildRequest,
+  onDiagnostic?: DiagnosticSink
 ): Promise<Invocation> {
   return new Promise<Invocation>((resolve, reject) => {
     const child = childProcess.spawn(command, [...args], {
@@ -92,18 +117,19 @@ function invoke(
     });
 
     const stdout: Buffer[] = [];
-    const stderr: Buffer[] = [];
+    const stderr = collectStderr(onDiagnostic);
     child.stdout.on('data', (chunk: Buffer) => stdout.push(chunk));
-    child.stderr.on('data', (chunk: Buffer) => stderr.push(chunk));
+    child.stderr.on('data', (chunk: Buffer) => stderr.accept(chunk));
 
     child.on('error', (error: NodeJS.ErrnoException) => {
       reject(new Error(describeSpawnFailure(command, error), { cause: error }));
     });
 
     child.on('close', (code: number | null, signal: NodeJS.Signals | null) => {
+      stderr.flush();
       resolve({
         stdout: Buffer.concat(stdout).toString('utf8'),
-        stderr: Buffer.concat(stderr).toString('utf8'),
+        stderr: stderr.text(),
         code,
         signal,
       });

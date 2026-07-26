@@ -1,19 +1,14 @@
-// RESUMABLE MINING: the per-source model-result cache (src/cache.mjs) wired into mine().
-//
-// The problem this exists for: a 123-source corpus takes tens of minutes and the build is
-// ATOMIC, so one killed run or one bad model response at source 59 discards every source
-// that already succeeded. The cache makes completed sources durable the instant they
-// complete, so a second run only pays for what is actually missing.
-//
-// CORE CACHE BEHAVIOR: miss then hit, resumability, content-based keys, and error handling.
-// For advanced features (grounding, model identities, batch composition), see miner-cache-fidelity.test.mjs.
+// RESUMABLE MINING: core cache behaviour (miss/hit, resumability, key, bad entries).
+// Seam-level cases (disabled, grounding, identities, batch, progress) live in
+// test/miner-cache-seams.test.mjs. Shared helpers: test/cache-support.mjs.
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
 import { mine, serializeBank } from '../src/miner.mjs';
-import { tempDir, lineFor, makeSources, countingModel, seedEntry, filesIn } from './miner-cache-fixtures.mjs';
 import { PROTOCOL_VERSION, entryFileName } from '../src/cache.mjs';
-
+import { tempDir, lineFor, makeSources, countingModel, seedEntry, filesIn } from './cache-support.mjs';
 test('miner cache: miss then hit', async (t) => {
   await t.test('a second run over the same sources makes ZERO model calls', async () => {
     const cacheDir = tempDir('qm-cache-');
@@ -193,8 +188,6 @@ test('miner cache: a bad entry is ignored and counted, never fatal', async (t) =
   await t.test('a truncated/corrupt entry file is a miss, with no crash', async () => {
     const cacheDir = tempDir('qm-cache-');
     const sources = makeSources(2);
-    const fs = await import('node:fs');
-    const path = await import('node:path');
     fs.mkdirSync(cacheDir, { recursive: true });
     fs.writeFileSync(
       path.join(cacheDir, entryFileName(sources[0].bytes)),

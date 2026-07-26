@@ -3,6 +3,7 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { stringify } from 'yaml';
 import { z } from 'zod';
+import { readLedger } from '@/ledger/store.js';
 import {
   cleanupFixtureCopies,
   copyFixture,
@@ -12,17 +13,31 @@ import {
   StatusJsonSchema,
 } from './support.js';
 
+/**
+ * `.strict()` on the target shape is deliberate: it makes an UNEXPECTED key a failure, which is
+ * what lets the passing-case test below prove the wire shape did not change when `errors` was
+ * added. A non-strict schema silently strips extras, so it could not tell the difference.
+ */
+const ValidateTargetSchema = z
+  .object({
+    target: z.string(),
+    state: z.enum(['passed', 'failed', 'unresolved']),
+    detail: z.string().nullable(),
+    errors: z.array(z.string()).optional(),
+  })
+  .strict();
+
 const ValidateJsonSchema = z.object({
   episode: z.string(),
   valid: z.boolean(),
-  targets: z.array(
-    z.object({
-      target: z.string(),
-      state: z.enum(['passed', 'failed', 'unresolved']),
-      detail: z.string().nullable(),
-    })
-  ),
+  targets: z.array(ValidateTargetSchema),
 });
+
+/** Exactly what `FAKE_VALIDATOR_MODE=fail` names, in order (tests/fixtures/fake-validator). */
+const FAIL_ERRORS = [
+  "quote 'q-076-3' (source PB-P076): span 1 raw is not a substring of the source",
+  "quote 'q-081-2': reconstruction does not match recorded text; first difference at byte 42",
+];
 
 /**
  * The INDEPENDENT acceptance gate: a target declares a `validator` distinct from its `provider`,
@@ -102,6 +117,81 @@ describe('pc validate runs a declared validator against the existing artifact', 
     );
     expect(result.code).toBe(1);
     expect(ValidateJsonSchema.parse(parseJsonText(result.stdout)).targets[0]?.state).toBe('failed');
+  });
+
+  it('**names every defect beneath the verdict** — a failed verdict with no reasons is unactionable', async () => {
+    const dir = await episode();
+    await buildImpure(dir);
+
+    const result = await pc(
+      ['validate', 'voiceover', '--episode', dir],
+      withEnv({ FAKE_VALIDATOR_MODE: 'fail' })
+    );
+    expect(result.code).toBe(1);
+
+    // Verbatim: these are already operator-facing prose, and paraphrasing a validator's finding
+    // would put words in its mouth.
+    const lines = result.stdout.trimEnd().split('\n');
+    expect(lines[0]).toMatch(/^voiceover\s+failed$/);
+    expect(lines.slice(1)).toEqual(FAIL_ERRORS.map((error) => `  ${error}`));
+  });
+
+  it('**--json carries the errors structurally** — CI and agents read the reasons too', async () => {
+    const dir = await episode();
+    await buildImpure(dir);
+
+    const result = await pc(
+      ['validate', 'voiceover', '--episode', dir, '--json'],
+      withEnv({ FAKE_VALIDATOR_MODE: 'fail' })
+    );
+    expect(result.code).toBe(1);
+
+    const json = ValidateJsonSchema.parse(parseJsonText(result.stdout));
+    expect(json.targets[0]?.state).toBe('failed');
+    expect(json.targets[0]?.errors).toEqual(FAIL_ERRORS);
+  });
+
+  it('a PASSING verdict adds nothing — no error lines, and the JSON shape is what it always was', async () => {
+    const dir = await episode();
+    await buildImpure(dir);
+
+    const human = await pc(['validate', 'voiceover', '--episode', dir]);
+    expect(human.code).toBe(0);
+    expect(human.stdout.trimEnd().split('\n')).toHaveLength(1);
+
+    const result = await pc(['validate', 'voiceover', '--episode', dir, '--json']);
+    expect(result.code).toBe(0);
+
+    // `.strict()` above would have refused an unexpected key; this asserts the converse — that
+    // `errors` is ABSENT rather than an empty array, so a passing verdict's bytes on the wire are
+    // byte-for-byte what a caller parsed before this field existed.
+    const target = ValidateJsonSchema.parse(parseJsonText(result.stdout)).targets[0];
+    expect(target).toEqual({ target: 'voiceover', state: 'passed', detail: null });
+  });
+
+  it('**records the named errors in the ledger** — a durable `failed` with no reasons is not a report', async () => {
+    const dir = await episode();
+    await buildImpure(dir);
+
+    expect(
+      (
+        await pc(
+          ['validate', 'voiceover', '--episode', dir],
+          withEnv({ FAKE_VALIDATOR_MODE: 'fail' })
+        )
+      ).code
+    ).toBe(1);
+
+    const failed = (await readLedger(dir)).artifacts.voiceover;
+    expect(failed?.validation?.state).toBe('failed');
+    expect(failed?.validation?.errors).toEqual(FAIL_ERRORS);
+
+    // A later verdict REPLACES the earlier one whole. Reasons that outlived the failure they
+    // explain would be a lie of exactly the kind the ledger exists to prevent.
+    expect((await pc(['validate', 'voiceover', '--episode', dir])).code).toBe(0);
+    const passed = (await readLedger(dir)).artifacts.voiceover;
+    expect(passed?.validation?.state).toBe('passed');
+    expect(passed?.validation?.errors).toBeUndefined();
   });
 
   it('refuses an artifact edited outside the system — never judges bytes the record does not describe', async () => {

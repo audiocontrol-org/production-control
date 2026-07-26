@@ -170,6 +170,70 @@ describe('schema validation (RED tests)', () => {
       expect(result.success).toBe(true);
     });
 
+    it('Case 8e: parses a failed validation carrying the errors that name each defect', () => {
+      const record = {
+        producer: {
+          tool: 'tts',
+          version: '1.0.0',
+        },
+        inputs: {
+          spoken: 'sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+        },
+        output: {
+          path: 'dist/narration.mp3',
+          hash: 'sha256:ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad',
+        },
+        built_at: '2026-01-01T00:00:00Z',
+        validation: {
+          state: 'failed',
+          at: '2026-01-02T00:00:00Z',
+          errors: ["quote 'q-076-3' (source PB-P076): span 1 raw is not a substring of the source"],
+        },
+      };
+
+      const result = ArtifactRecordSchema.safeParse(record);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.validation?.errors).toEqual([
+          "quote 'q-076-3' (source PB-P076): span 1 raw is not a substring of the source",
+        ]);
+      }
+    });
+
+    /**
+     * BACKWARD COMPATIBILITY. Every ledger written before `validation.errors` existed records a
+     * verdict with no errors key, and those ledgers are committed history — a schema that refused
+     * them would make an old episode unreadable, which is a far worse failure than a verdict
+     * whose reasons were never captured.
+     */
+    it('Case 8f: a pre-existing ledger whose verdicts have no `errors` field still parses', () => {
+      const ledger = {
+        version: 1,
+        artifacts: {
+          narration: {
+            producer: { tool: 'tts', version: '1.0.0' },
+            inputs: {
+              spoken: 'sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+            },
+            output: {
+              path: 'dist/narration.mp3',
+              hash: 'sha256:ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad',
+            },
+            built_at: '2026-01-01T00:00:00Z',
+            validation: { state: 'failed', at: '2026-01-02T00:00:00Z' },
+          },
+        },
+        reviews: {},
+      };
+
+      const result = LedgerSchema.safeParse(ledger);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.artifacts.narration?.validation?.state).toBe('failed');
+        expect(result.data.artifacts.narration?.validation?.errors).toBeUndefined();
+      }
+    });
+
     it('Case 8d: refuses validation with invalid state', () => {
       const record: unknown = {
         producer: {

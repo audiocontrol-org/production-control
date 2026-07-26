@@ -1,9 +1,27 @@
-// Shared fixtures and helpers for miner-cache tests.
+// RESUMABLE MINING: the per-source model-result cache (src/cache.mjs) wired into mine().
+//
+// The problem this exists for: a 123-source corpus takes tens of minutes and the build is
+// ATOMIC, so one killed run or one bad model response at source 59 discards every source
+// that already succeeded. The cache makes completed sources durable the instant they
+// complete, so a second run only pays for what is actually missing.
+//
+// The properties pinned here are the ones that would quietly rot:
+//   1. Miss then hit: a second run makes ZERO model calls and produces the SAME bank.
+//   2. RESUMABILITY: a run that dies partway leaves the completed sources on disk, and
+//      the next run asks the model only about the ones that never finished.
+//   3. The key is CONTENT: changed bytes miss, renamed-but-identical bytes hit.
+//   4. A stale-protocol, corrupt, or unreadable entry is IGNORED and COUNTED — never
+//      trusted, never fatal.
+//   5. Disabled by default: no cacheDir, no files, behaviour identical to today.
+//   6. GROUNDING IS NEVER BYPASSED — a cached candidate that is not in the current bytes
+//      is omitted exactly like a fresh one. The cache cannot smuggle a quote past fidelity.
+//   7. Mixed model identities across cached + fresh sources are DISCLOSED, not hidden.
+//   8. Both model seams compose with it: `select` per source and `selectBatch` fan-out.
 
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { PROTOCOL_VERSION, entryFileName } from '../src/cache.mjs';
+import { entryFileName } from '../src/cache.mjs';
 
 /** A fresh temp directory; node's test runner leaves them for post-mortem on failure. */
 export function tempDir(prefix) {
@@ -82,6 +100,3 @@ export function filesIn(dir) {
     .filter((entry) => entry.isFile())
     .map((entry) => entry.name);
 }
-
-// Export PROTOCOL_VERSION for use in tests
-export { PROTOCOL_VERSION };

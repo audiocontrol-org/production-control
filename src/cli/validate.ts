@@ -36,11 +36,21 @@ import { validateTarget } from '@/providers/validate.js';
  * that could not be validated appears in the report, and it fails the gate (FR-036).
  */
 
-/** One target's outcome. `unresolved` carries the refusal for a target that could not answer. */
+/**
+ * One target's outcome. `unresolved` carries the refusal for a target that could not answer.
+ *
+ * `errors` is what the validator NAMED, verbatim — the defects themselves, which is the whole
+ * reason an independent deterministic validator is worth running. It is OMITTED rather than
+ * emitted as `[]` when nothing was named: unlike `detail` and `validated`, whose absence carries
+ * the distinct meaning "no refusal" / "not yet validated", an empty list and an absent one say
+ * exactly the same thing here, and omitting keeps a passing verdict's bytes on the wire identical
+ * to what callers parsed before this field existed.
+ */
 interface TargetVerdict {
   readonly target: Identity;
   readonly state: 'passed' | 'failed' | 'unresolved';
   readonly detail: string | null;
+  readonly errors?: readonly string[];
 }
 
 export interface ValidateJson {
@@ -49,11 +59,21 @@ export interface ValidateJson {
   readonly targets: readonly TargetVerdict[];
 }
 
+/**
+ * `id  state`, and beneath it every defect the validator named, indented and verbatim.
+ *
+ * ALL of them, never a leading few: a truncated list of what is wrong with an artifact is a
+ * report that hides the thing the reader may most need, and a silent one hides that it is hiding
+ * it. Each error is emitted as its own indented line — a multi-line error keeps its shape rather
+ * than being folded into one, so a validator that reports a byte diff stays readable.
+ */
 function renderValidate(answer: ValidateJson): readonly string[] {
   const width = answer.targets.reduce((widest, item) => Math.max(widest, item.target.length), 0);
-  return answer.targets.map((item) => {
+  return answer.targets.flatMap((item) => {
     const head = `${item.target.padEnd(width)}  ${item.state}`;
-    return item.detail === null ? head : `${head}  ${item.detail}`;
+    const line = item.detail === null ? head : `${head}  ${item.detail}`;
+    const errors = item.errors ?? [];
+    return [line, ...errors.flatMap((error) => error.split('\n').map((part) => `  ${part}`))];
   });
 }
 
@@ -61,7 +81,15 @@ function renderValidate(answer: ValidateJson): readonly string[] {
 async function verdictFor(context: BuildContext, target: Identity): Promise<TargetVerdict> {
   try {
     const verdict = await validateTarget(context, target);
-    return { target, state: verdict.state, detail: null };
+    // Whatever the validator named comes through whether it passed or failed: a validator that
+    // names something and passes anyway is still saying it, and dropping it would be this same
+    // bug in the other direction.
+    return {
+      target,
+      state: verdict.state,
+      detail: null,
+      ...(verdict.errors.length > 0 ? { errors: verdict.errors } : {}),
+    };
   } catch (error) {
     // Named, never swallowed: this target did not validate, and the reason is the only thing the
     // operator has to act on (FR-036). It is reported as `unresolved` rather than `failed` —
@@ -108,6 +136,12 @@ export async function validateCommand(
       graph,
       ledger,
       runner: subprocessRunner(),
+      // Whatever the provider or the declared validator writes to stderr reaches the operator as
+      // it is written — including on a PASS, where the tool's report is the only thing that says
+      // anything about the quality of what passed.
+      onDiagnostic: (chunk: string): void => {
+        deps.output.diagnostic(chunk);
+      },
       assets: envInputResolver(process.env, assetCacheDir(episodeDir)),
       // Validation re-invokes the provider and so re-resolves the same inputs — the FR-026 guard
       // applies exactly as it does for `pc build`, with the real git-backed check (AUDIT-20260716-26).

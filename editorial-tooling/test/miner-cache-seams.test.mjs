@@ -1,16 +1,13 @@
-// CACHE FIDELITY AND ADVANCED FEATURES
-//
-// Continuation of miner-cache tests: cache disabling, grounding/fidelity guarantees,
-// model identity tracking, batch composition, and progress observation.
-//
-// Core cache behavior (miss/hit, resumability, content keys) is in miner-cache.test.mjs.
+// RESUMABLE MINING: how the cache composes with the rest of the miner —
+// disabled-by-default, grounding is never bypassed, mixed model identities are
+// disclosed, the batch seam, and progress disclosure. Core cases live in
+// test/miner-cache.test.mjs. Shared helpers: test/cache-support.mjs.
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mine, serializeBank } from '../src/miner.mjs';
-import { tempDir, lineFor, makeSources, countingModel, countingBatchModel, seedEntry, filesIn } from './miner-cache-fixtures.mjs';
 import { PROTOCOL_VERSION } from '../src/cache.mjs';
-
+import { tempDir, lineFor, makeSources, countingModel, countingBatchModel, seedEntry, filesIn } from './cache-support.mjs';
 test('miner cache: DISABLED unless asked for', async (t) => {
   await t.test('no cacheDir and no env var writes nothing and changes nothing', async () => {
     const previous = process.env.QUOTE_MINER_CACHE_DIR;
@@ -20,11 +17,10 @@ test('miner cache: DISABLED unless asked for', async (t) => {
     try {
       const sources = makeSources(3);
       const first = countingModel();
-      // Scope the runs' CWD to the empty `observed` dir. The prior assertion checked a directory
-      // `mine()` was never told about, so it was vacuous — true for every implementation (AUDIT-11).
-      // Running under `observed` gives the assertion a real subject: if a regression made `mine()`
-      // invent a DEFAULT cwd-relative cache (e.g. ./.quote-miner-cache), it would materialize here
-      // and `filesIn(observed)` would go red.
+      // Scope the runs' CWD to the empty `observed` dir. Checking a directory `mine()` was never
+      // told about would be vacuous — true for every implementation (AUDIT-11). Running under
+      // `observed` gives the assertion a real subject: if a regression made `mine()` invent a
+      // DEFAULT cwd-relative cache (e.g. ./.quote-miner-cache), it materializes here and goes red.
       process.chdir(observed);
       const uncachedOne = await mine({ sources, model: first });
       const second = countingModel();

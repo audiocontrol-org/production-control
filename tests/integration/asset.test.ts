@@ -63,6 +63,9 @@ function capture(): Captured {
     stderr,
     out: (line: string): void => void stdout.push(line),
     err: (line: string): void => void stderr.push(line),
+    // `pc asset` spawns nothing, so nothing can call this — it is here because `Output` is one
+    // interface for every verb, and a chunk of a craft tool's stderr belongs on stderr.
+    diagnostic: (chunk: string): void => void stderr.push(chunk),
   };
 }
 

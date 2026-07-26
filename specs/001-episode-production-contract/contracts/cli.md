@@ -121,6 +121,22 @@ Builds **and records provenance as one indivisible act** (FR-014).
 
 Runs validation and records the verdict. Exit 1 if any target is invalid.
 
+**A verdict names what is wrong with it.** Every error the validator reported is printed
+beneath the verdict line, verbatim and in full — never a leading few, and never a count in
+place of the findings themselves (SC-005).
+
+```
+$ pc validate quote-bank
+quote-bank  failed
+  quote 'q-076-3' (source PB-P076): span 1 raw is not a substring of the source
+  quote 'q-081-2': reconstruction does not match recorded text; first difference at byte 42
+```
+
+`--json` carries the same list as `targets[].errors`, and the ledger records it on the
+verdict — `failed` is read long after the run that produced it, and a durable claim of a
+defect that names no defect is nearly as unactionable as no verdict at all. The key is
+absent, not `[]`, when the validator named nothing.
+
 ## `pc release-check [--json]`
 
 Answers the release question (FR-012). Exit 0 only when **every target is fresh, every

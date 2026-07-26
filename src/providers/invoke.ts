@@ -3,6 +3,7 @@ import * as path from 'node:path';
 import { hashFile, type Hash } from '@/hash/content.js';
 import type { Identity, ProviderDecl } from '@/manifest/schema.js';
 import type { BuildInput, BuildResponse } from '@/providers/contract.js';
+import type { DiagnosticSink } from '@/providers/diagnostics.js';
 import type { ProviderRunner } from '@/providers/run.js';
 
 /**
@@ -42,6 +43,11 @@ export interface InvokeRequest {
   readonly inputs: Readonly<Record<Identity, BuildInput>>;
   /** A directory this module OWNS: emptied before the run, and the caller's to remove after. */
   readonly outputDir: string;
+  /**
+   * Where the provider's stderr goes while it runs (`diagnostics.ts`). Absent = accumulate only,
+   * which is what every caller got before this existed.
+   */
+  readonly onDiagnostic?: DiagnosticSink;
 }
 
 /**
@@ -64,7 +70,8 @@ export async function invokeProvider(request: InvokeRequest): Promise<Invocation
       inputs: { ...request.inputs },
       output_dir: request.outputDir,
     },
-    request.decl
+    request.decl,
+    request.onDiagnostic
   );
 
   refuseImpurityContradiction(request.target, request.decl, response);
