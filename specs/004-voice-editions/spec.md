@@ -6,14 +6,14 @@
 
 **Status**: Draft
 
-**Input**: Operator-approved design record `docs/superpowers/specs/2026-07-25-voice-editions-design.md` (`design-approved: yes`). Produce voice-varied editions of a source-locked draft: an explicit voice drives an impure revision provider that may change narration only, gated by a deterministic fidelity validator and a declared per-unit coverage ledger. Same impure-producer → declarative-metadata → deterministic-corroboration → structured-coverage-report shape as the quote bank, applied to derived prose.
+**Input**: Operator-approved design record `docs/superpowers/specs/2026-07-25-voice-editions-design.md` (`design-approved: yes`). Produce voice-varied editions of a source-locked draft: an explicit voice drives an impure revision provider that revises narration subject to the deterministic fidelity contract (quotations, citations, numeric literals, and the source-unit accounting remain governed; the narrative surface — paragraphing, transitions, exposition — may be revised), gated by a deterministic fidelity validator and a declared per-unit coverage ledger. Same impure-producer → declarative-metadata → deterministic-corroboration → structured-coverage-report shape as the quote bank, applied to derived prose.
 
 ## Clarifications
 
 ### Session 2026-07-26
 
 - Q: Source-unit granularity — separator-line vs sentence-level? → A: Separator-line units (design D6 default); maximal runs of non-separator lines, byte-reproducible ids, ~57–84 units/chapter. No sentence-level split in v1.
-- Q: Should the gate refuse a weak edition on uncorroborated-unit count, or only report it? → A: Report-only, no threshold (D12); the uncorroborated count is first-class in the coverage report but never causes refusal. No project-set threshold in v1.
+- Q: Should the gate refuse a weak edition on uncorroborated-unit count, or only report it? → A: Report-only, no threshold (D12). The uncorroborated count contributes ONLY to the structured coverage report and NEVER affects acceptance — a high count is visibly weak evidence for the operator to judge, not a refusal. No project-set threshold in v1.
 - Q: Lexicon provenance and v1 schema? → A: Optional hand-authored declared-lexicon input, literal terms, byte-exact case-sensitive matching, no Unicode normalization (D11); absent lexicon → entity survival reports `not-run`. Deriving from quote-bank/spine is deferred (couples to asset-bank).
 - Q: Ledger carrier at ~480 entries/edition — frontmatter or block on directory-outputs? → A: Frontmatter for v1 with a carrier-independent schema (one loader), so a later sidecar move is a carrier swap not a redesign (D10). `design:feature/directory-outputs` stays a non-blocker.
 - Q (deferred, fixture-coverage): markdown constructs beyond the current corpus (setext headings, MDX, HTML blocks, list items with blank lines) → A: Not resolved here; D6 handles fenced code + separator lines; golden fixtures should cover the others as they arise. Revisit at planning/test-design.
@@ -22,7 +22,7 @@
 
 ### User Story 1 - Prove an existing edition is faithful to its source (Priority: P1)
 
-An operator has an edition of a source-locked draft — produced by any means (an external skill, another model, a human editor) — plus a declared per-unit coverage ledger. They run the deterministic fidelity validator and learn, with no reliance on the producer's honesty, whether every source unit is accounted for, every quoted span survives verbatim, every citation is preserved, no source-backed claim was silently dropped, and the ledger was written against the supplied source version. The validator emits a structured coverage report that names every check it ran AND every check it could not run.
+An operator has an edition of a source-locked draft — produced by any means (an external skill, another model, a human editor) — plus a declared per-unit coverage ledger. They run the deterministic fidelity validator and learn, with no reliance on the producer's honesty, whether every source unit is accounted for, every quoted span survives verbatim, every citation is preserved, every declared literal obligation is satisfied, and the ledger was written against the supplied source version. (The validator establishes unit accounting and literal-payload survival — NOT that every source-backed claim survived semantically; that is not deterministically checkable, FR-017.) The validator emits a structured coverage report that names every check it ran AND every check it could not run.
 
 **Why this priority**: The validator ships first (design D3): an edition becomes checkable the moment it exists, independent of who or what produced it. This is the load-bearing guarantee and the smallest independently-valuable slice — it delivers trust in an artifact even before a governed producer exists.
 
@@ -41,7 +41,7 @@ An operator has an edition of a source-locked draft — produced by any means (a
 
 ### User Story 2 - Produce a voice edition of a source-locked draft (Priority: P2)
 
-An operator declares a governed target with exactly one source draft and one voice input, and builds it. An impure revision provider produces an edition that changes narration only, declaring itself impure and emitting the per-unit coverage ledger in the edition's frontmatter. The edition is routed as a machine artifact to the dot-zoned `.ai/` root (never a human-safe path), and the fidelity validator gates the result before it is accepted.
+An operator declares a governed target with exactly one source draft and one voice input, and builds it. An impure revision provider produces an edition that revises narration subject to the deterministic fidelity contract (governed: quotations, citations, numeric literals, unit accounting), declaring itself impure and emitting the per-unit coverage ledger in the edition's frontmatter. The edition is routed as a machine artifact to the dot-zoned `.ai/` root (never a human-safe path), and the fidelity validator gates the result before it is accepted.
 
 **Why this priority**: The producer is the generative half. It depends on US1 (the validator must exist to gate it) and on the shipped content-zone-segregation boundary (an edition is impure AI prose and must never land in a human's working area).
 
@@ -79,6 +79,7 @@ An operator treats a voice as a first-class declared input (an ordinary authored
 - A source whose own citations fall outside its frontmatter allow-list is invalid and refused before edition validation begins (D13.4).
 - A voice edition is prose with no quote bank declared as input: quoted-span checks use exact-block preservation (D11), NOT quote-bank identity semantics (which apply only when a quote bank is a declared input — D14).
 - Reordering byte-identical source blocks changes their `occurrence_index` though content is unchanged — named as intended (D6.10).
+- A `represented` entry whose declared destinations satisfy every deterministic payload obligation but sit at an editorially "wrong" location still PASSES — the validator corroborates the producer's DECLARED mapping and never infers a "better" one (D22). This is a deliberate trust-boundary guarantee (a regression guard against a future maintainer "improving" the validator into an inferring one), NOT an oversight.
 
 ## Requirements *(mandatory)*
 
@@ -114,14 +115,14 @@ An operator treats a voice as a first-class declared input (an ordinary authored
 - **FR-017**: The validator MUST prove that every source unit has exactly one declared disposition, that the ledger was written against the supplied source version, and that each disposition satisfies its applicable deterministic obligations — and MUST NOT prove semantic equivalence, editorial wisdom, or voice conformance (D4).
 - **FR-018**: The validator MUST CORROBORATE the producer's declared mappings and MUST NEVER infer them (D22).
 - **FR-019**: Payload MUST be extracted and checked PER SOURCE UNIT (unit-local), matched within the union of that entry's declared destinations — never globally (D11).
-- **FR-020**: Always-extracted payload MUST be numeric literals, citation markers, and verbatim quoted spans (blockquote lines within the unit); plus declared-lexicon terms when a lexicon input exists. When no lexicon is declared, the validator MUST pass and REPORT that entity survival was not checked (no capitalized-token heuristic) (D11).
+- **FR-020**: Always-extracted payload MUST be numeric literals, citation markers, and verbatim quoted spans (as defined by the approved quote-extraction rules — blockquote lines for the current corpus, so the requirement does not permanently encode today's representation and future inline-quotation support is not a spec violation); plus declared-lexicon terms when a lexicon input exists. When no lexicon is declared, the validator MUST pass and REPORT that entity survival was not checked (no capitalized-token heuristic) (D11).
 - **FR-021**: Payload matching MUST be byte-exact and case-sensitive with multiset semantics — each source occurrence discharged by a distinct destination occurrence (D11).
 - **FR-022**: An entry whose source unit yields no extractable payload MUST pass but be recorded as `uncorroborated` with a first-class count in the coverage report — never silently passed (D12).
 - **FR-023**: Citation semantics MUST be unit-local with multiset multiplicity: every citation occurrence in a non-`cut` source unit MUST appear in that entry's destinations with multiplicity; the edition MUST contain no citation absent from the source (no fabrication); every marker MUST resolve within the frontmatter allow-list; a source whose own citations fall outside its allow-list MUST be refused before edition validation begins. Document-level set equality MUST NOT be required (a `cut` unit's citations legitimately disappear) (D13).
 - **FR-024**: Quote-bank identity/transformation semantics MUST apply ONLY when a quote bank is an actual declared input of the target; otherwise the obligation MUST be the simpler exact-block preservation (D14).
 
 **Coverage report and honest scope**
-- **FR-025**: The validator MUST emit a structured coverage report as a first-class output that names every check with a state (`passed` / `not-run` / `reported` / `not-checkable`) and relevant counts; a top-level `passed` MUST mean every APPLICABLE deterministic obligation passed — never semantic equivalence (D15).
+- **FR-025**: The validator MUST emit a structured coverage report as a first-class output that names every check with a state (`passed` / `not-run` / `reported` / `not-checkable`) and relevant counts; a top-level `passed` MUST mean every APPLICABLE deterministic obligation passed AND no applicable refusal condition occurred (a `passed` verdict can never coexist with a structural refusal) — and never semantic equivalence (D15).
 - **FR-026**: Voice conformance MUST NOT be validated in v1, and this limitation MUST be stated plainly in the capability's own documentation (D16).
 
 **Freshness**
@@ -149,7 +150,7 @@ An operator treats a voice as a first-class declared input (an ordinary authored
 ### Measurable Outcomes
 
 - **SC-001**: 100% of source units in a passing edition carry exactly one declared disposition; an edition with any unaccounted unit is refused in 100% of cases.
-- **SC-002**: Every quoted span, citation, and numeric literal present in a non-`cut` source unit survives (multiset) into that entry's destinations for a passing edition; a single tampered span, dropped citation, or altered literal is caught in 100% of cases.
+- **SC-002**: Every quoted span, citation, numeric literal, and — where a lexicon is declared — lexicon term present in a non-`cut` source unit survives (multiset) into that entry's destinations for a passing edition; a single tampered span, dropped citation, altered literal, or (when applicable) dropped lexicon term is caught in 100% of cases.
 - **SC-003**: An edition whose ledger hash does not match the supplied source version is refused before any unit obligation is evaluated, 100% of the time.
 - **SC-004**: Every validator run emits a coverage report naming every applicable check and every check it did NOT run (not-run / not-checkable); a `passed` verdict never appears alongside an unrun applicable obligation.
 - **SC-005**: An impure edition is confined to a dot-zoned location in 100% of builds; an edition whose resolved output is human-safe is refused, and the routing audit reports it pre-build.
