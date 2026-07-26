@@ -209,3 +209,39 @@ Both probes are built by joining the root name onto a bare filename and are reso
 The same hole exists in the sibling direction and is arguably easier to trip: if `.gitignore` carries an anchored `/dist` rather than `dist/`, the root probe is ignored (exit 0, test green) while `<episode>/dist/…` build output is *not* ignored, so reproducible output starts getting committed. The test's own non-vacuity argument on lines 84-89 is therefore also anchored at the wrong depth.
 
 Blast radius: test-efficacy only, and only conditional on a future `.gitignore` edit — but this test is the *sole* automated guard for the feature's central claim ("impure bytes are the durable, committed record"), and its failure mode is silent, unbounded loss of unreproducible artifacts, discovered only when someone looks for bytes that were never committed. A reasonable fix: derive the probe from a realistic episode-relative location as well as the root — e.g. probe both `${impureOutputRoot()}/probe.out` and `${<fixture or configured content dir>}/ep/${impureOutputRoot()}/probe.out` — and assert on both, so a positionally-anchored rule cannot pass. If the content-root location is not knowable from `src/zoning/route.ts` alone, at minimum probe one nested depth (`a/b/${impureOutputRoot()}/probe.out`), which is what distinguishes `.ai/` from `/.ai/`.
+
+## 2026-07-26 — audit-barrage lift (end-govern-after_implement)
+
+### AUDIT-20260726-14 — `classifyZone('.ai')` and `classifyZone('.ai/')` disagree — the dot-zone root itself classifies human-safe, and no fixture pins it
+
+Finding-ID: AUDIT-20260726-14
+Status:     open
+Severity:   high
+Per-lane:   claude=high
+Decision:   single-model (gate-counted high)
+Surface:    tests/unit/zoning/classify.test.ts:27-38
+
+The file establishes two rules and never checks that they agree on the one input where they collide. Lines 27-32 pin "a single-segment path (just a filename) is human-safe, even when dot-prefixed," and the comment generalizes the mechanism, not the example: *"a dot-prefixed basename with no parent directory segments has no directory segment to trigger Rule 1"* — `.draft.md` → `human-safe`. Lines 34-38 pin the opposite treatment for a trailing slash: *"'dist/.ai/' names a directory, not a file — every segment (including the last) is a directory segment"* → `ai-permitted`. Apply both to the dot-zone root: `classifyZone('.ai')` is a single dot-prefixed segment with no parents, so by the stated rule it returns `human-safe`, while `classifyZone('.ai/')` returns `ai-permitted`. The same directory, two opposite verdicts, selected by a trailing character. Neither `'.ai'` nor `'.cache'` appears anywhere in the 131-line file.
+
+This is the exact false-safe shape the design says it exists to eliminate (INV-2, quoted in `tests/unit/graph/authored-zone.test.ts:6-10`): `human-safe` tells a human "safe to author in," and here it says that about the AI-permitted root. Reachability is the crux, and the trailing-slash fixture is itself the evidence that directory paths are a supported input class — yet nothing in the diff establishes that directory inputs always carry a trailing slash. The two most common ways a caller derives a directory relpath both strip it: `path.dirname('.ai/draft.md')` yields `'.ai'`, and `path.relative(root, aiRoot)` yields `'.ai'`. A consumer classifying the directory it is about to write into, or the `audit-zones` lexical-scope walker (`src/cli/audit-zones.ts`, another chunk), gets the permissive-for-humans verdict on the dot zone.
+
+Blast radius: a caller passing a bare directory relpath is told the `.ai` root is human-safe. Depending on direction, that either waves an authored node into the AI zone (the T017 refusal at `src/graph/validate.ts` never fires) or reports the dot zone as human territory in the routing audit — silently, with no error to notice. A reasonable fix: add fixtures pinning `classifyZone('.ai')`, `classifyZone('.cache')`, and `classifyZone('.ai/')` in one assertion group so the intended answer is stated, and if the intended answer is `ai-permitted` for both, make the classifier's contract explicit about whether it accepts directory inputs at all (or require callers to pass file paths and refuse a bare dot-directory, consistent with the AUDIT-01 refusal posture).
+
+---
+
+### AUDIT-20260726-15 — `classifyZone` silently reports `human-safe` for a directory path, and the "append a trailing slash" obligation is prose-only and unverifiable
+
+Finding-ID: AUDIT-20260726-15
+Status:     open
+Severity:   high
+Per-lane:   claude=high
+Decision:   single-model (gate-counted high)
+Surface:    src/zoning/classify.ts:44-48,71-72
+
+The basename/directory split is decided purely by whether the input string ends in `/` (lines 71-72: `const directorySegments = hasTrailingSlash ? rawSegments : rawSegments.slice(0, -1)`). So `classifyZone('.ai/')` → `ai-permitted`, but `classifyZone('.ai')` → `rawSegments = ['.ai']`, `directorySegments = []` → **`human-safe`**. Likewise `classifyZone('dist/.ai')` → `human-safe`. The zone root of the whole feature, passed by its own name with no trailing slash, classifies as the zone it is the negation of.
+
+That is defensible for a path that really names a file, and the docstring at lines 44-48 states it deliberately. The defect is that the correctness of every verdict now depends on an obligation the function cannot check and does not signal: *callers must append `/` when the path names a directory*. The function is lexical by contract (no I/O, line 26), so it can never detect a violation, and the type `(relPath: string) => Zone` makes an omitted slash indistinguishable from a file path. The failure is asymmetric and lands on the permissive side in the authored direction added by this feature (T017, "refuse authored node declared under a dot-zone"): a guard that refuses when `classifyZone(p) === 'ai-permitted'` will *accept* a declaration of the bare directory `.ai`, and the read-only `audit-zones` verb (T020/T021, `src/cli/audit-zones.ts`, another chunk) will report `.ai` as human-safe in its output. I cannot see `src/zoning/route.ts` or `src/cli/audit-zones.ts` from this chunk, so I cannot say which current call sites pass slash-less directory paths — but the API shape guarantees that the next caller written against it can, with no compiler, test, or runtime signal.
+
+Blast radius: an unattended agent extending this module reads `classifyZone(relPath)` and calls it with whatever path it has — `node.path`, a walked directory entry, `impureOutputRoot()` — and gets a wrong verdict in the direction that *permits* rather than refuses, defeating the defense-in-depth this classifier exists to provide (the same failure class as AUDIT-01, resolved for `..` at lines 59-64 but left open here). A reasonable fix makes the obligation structural rather than prose: a second required parameter (`classifyZone(relPath, kind: 'file' | 'directory')`), a separate `classifyDirectoryZone`, or — minimally — refusing an input whose last segment starts with `.` and has no trailing slash, since that is exactly the ambiguous case (`dist/.draft.md` vs `dist/.ai`) the current rule resolves silently in the permissive direction. Whichever shape is chosen needs a fixture per opened channel: bare `.ai`, `dist/.ai`, and the root returned by `impureOutputRoot()` fed straight back into `classifyZone`.
+
+---

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { classifyZone } from '@/zoning/classify.js';
+import { impureOutputRoot } from '@/zoning/route.js';
 
 describe('classifyZone', () => {
   describe('golden cases', () => {
@@ -13,28 +14,52 @@ describe('classifyZone', () => {
       ['.cache/x', 'ai-permitted'],
       ['.tmp/x', 'ai-permitted'],
       ['a/b/c.md', 'human-safe'],
-    ] as const)('classifyZone(%j) => %s', (relPath, expected) => {
-      expect(classifyZone(relPath)).toBe(expected);
+    ] as const)('classifyZone(%j, "file") => %s', (relPath, expected) => {
+      expect(classifyZone(relPath, 'file')).toBe(expected);
     });
   });
 
   describe('normalization', () => {
     it('a leading "./" normalizes correctly and does not itself count as a dot directory', () => {
-      expect(classifyZone('./ch01.md')).toBe('human-safe');
-      expect(classifyZone('./.ai/ch01.md')).toBe('ai-permitted');
+      expect(classifyZone('./ch01.md', 'file')).toBe('human-safe');
+      expect(classifyZone('./.ai/ch01.md', 'file')).toBe('ai-permitted');
     });
 
     it('a single-segment path (just a filename) is human-safe, even when dot-prefixed', () => {
       // The basename never participates (Rule 2) — a dot-prefixed basename with no parent
       // directory segments has no directory segment to trigger Rule 1.
-      expect(classifyZone('ch01.md')).toBe('human-safe');
-      expect(classifyZone('.draft.md')).toBe('human-safe');
+      expect(classifyZone('ch01.md', 'file')).toBe('human-safe');
+      expect(classifyZone('.draft.md', 'file')).toBe('human-safe');
     });
 
-    it('a trailing-slash directory path treats the final segment as a directory, not a basename', () => {
-      // 'dist/.ai/' names a directory, not a file — every segment (including the last) is a
-      // directory segment, so the trailing '.ai' segment must participate in Rule 1.
-      expect(classifyZone('dist/.ai/')).toBe('ai-permitted');
+    it('a directory path treats its final segment as a directory, not a basename', () => {
+      // 'dist/.ai' NAMES a directory, not a file — with kind: 'directory' every segment
+      // (including the last) is a directory segment, so the trailing '.ai' participates in Rule 1.
+      // No trailing slash is needed any more: the `kind` parameter governs (AUDIT-14/15).
+      expect(classifyZone('dist/.ai', 'directory')).toBe('ai-permitted');
+    });
+  });
+
+  describe('the dot-zone root cannot silently classify human-safe (AUDIT-14/15)', () => {
+    // `.ai` differs by kind because the two channels the `kind` parameter opens mean different
+    // things: a DIRECTORY named `.ai` IS the AI zone (its dot marks the whole subtree ai-permitted),
+    // whereas a FILE literally named `.ai` is just a dotfile whose basename never establishes a zone.
+    // These pin the previously-ambiguous inputs so the intended answer is STATED and a regression
+    // (a directory root misread as a human-safe dotfile) goes red.
+    it('a bare dot-zone root, classified as a directory, is ai-permitted', () => {
+      expect(classifyZone('.ai', 'directory')).toBe('ai-permitted');
+      expect(classifyZone('.cache', 'directory')).toBe('ai-permitted');
+      expect(classifyZone('dist/.ai', 'directory')).toBe('ai-permitted');
+    });
+
+    it('a FILE literally named `.ai` is a dotfile and stays human-safe', () => {
+      expect(classifyZone('.ai', 'file')).toBe('human-safe');
+    });
+
+    it('the real impure output root the build uses classifies ai-permitted as a directory', () => {
+      // Feed the actual root back: the root the build writes impure output to can never silently
+      // classify human-safe, since a directory-kind classification exposes its leading dot.
+      expect(classifyZone(impureOutputRoot(), 'directory')).toBe('ai-permitted');
     });
   });
 
@@ -44,19 +69,19 @@ describe('classifyZone', () => {
         // S6 & US2 acceptance scenario 5: dot-directories with different semantic names
         // (`.cache`, `.tmp`, `.ai`) are treated **identically** as AI-permitted — `.ai` is
         // conventional, not special. Only the leading dot matters (FR-016).
-        expect(classifyZone('.cache/x')).toBe('ai-permitted');
-        expect(classifyZone('.tmp/x')).toBe('ai-permitted');
-        expect(classifyZone('.ai/x')).toBe('ai-permitted');
+        expect(classifyZone('.cache/x', 'file')).toBe('ai-permitted');
+        expect(classifyZone('.tmp/x', 'file')).toBe('ai-permitted');
+        expect(classifyZone('.ai/x', 'file')).toBe('ai-permitted');
 
         // With nested paths, all three behave identically.
-        expect(classifyZone('.cache/subdir/file.md')).toBe('ai-permitted');
-        expect(classifyZone('.tmp/subdir/file.md')).toBe('ai-permitted');
-        expect(classifyZone('.ai/subdir/file.md')).toBe('ai-permitted');
+        expect(classifyZone('.cache/subdir/file.md', 'file')).toBe('ai-permitted');
+        expect(classifyZone('.tmp/subdir/file.md', 'file')).toBe('ai-permitted');
+        expect(classifyZone('.ai/subdir/file.md', 'file')).toBe('ai-permitted');
 
         // With mixed parents, one dot-segment anywhere marks the path as ai-permitted.
-        expect(classifyZone('dist/.cache/out.md')).toBe('ai-permitted');
-        expect(classifyZone('dist/.tmp/out.md')).toBe('ai-permitted');
-        expect(classifyZone('dist/.ai/out.md')).toBe('ai-permitted');
+        expect(classifyZone('dist/.cache/out.md', 'file')).toBe('ai-permitted');
+        expect(classifyZone('dist/.tmp/out.md', 'file')).toBe('ai-permitted');
+        expect(classifyZone('dist/.ai/out.md', 'file')).toBe('ai-permitted');
       });
     });
 
@@ -65,12 +90,12 @@ describe('classifyZone', () => {
         // FR-002 & S6: a dot-prefixed *file* (e.g. `dist/.draft.md`) in a directory whose
         // segments are all non-dot is **human-safe** — the basename does not establish
         // a zone. The "any-dot-wins" rule applies only to DIRECTORY segments.
-        expect(classifyZone('dist/.draft.md')).toBe('human-safe');
-        expect(classifyZone('src/.internal.ts')).toBe('human-safe');
-        expect(classifyZone('docs/.temp.md')).toBe('human-safe');
+        expect(classifyZone('dist/.draft.md', 'file')).toBe('human-safe');
+        expect(classifyZone('src/.internal.ts', 'file')).toBe('human-safe');
+        expect(classifyZone('docs/.temp.md', 'file')).toBe('human-safe');
 
         // Multiple non-dot parent directories with a dot basename: still human-safe.
-        expect(classifyZone('src/app/config/.hidden.json')).toBe('human-safe');
+        expect(classifyZone('src/app/config/.hidden.json', 'file')).toBe('human-safe');
       });
     });
 
@@ -84,24 +109,24 @@ describe('classifyZone', () => {
       // channel (channel-enumeration): `..` at the start, `..` mid-path (still escaping),
       // a bare `..`, and an absolute path.
       it('a leading ".." segment throws instead of classifying ai-permitted', () => {
-        expect(() => classifyZone('../secrets/out.wav')).toThrow();
+        expect(() => classifyZone('../secrets/out.wav', 'file')).toThrow();
       });
 
       it('a mid-path ".." that still escapes the root throws', () => {
-        expect(() => classifyZone('a/../../b/c.md')).toThrow();
+        expect(() => classifyZone('a/../../b/c.md', 'file')).toThrow();
       });
 
       it('a bare ".." throws', () => {
-        expect(() => classifyZone('..')).toThrow();
+        expect(() => classifyZone('..', 'file')).toThrow();
       });
 
       // Contrast: an INTERIOR ".." that normalizes back inside the root is NOT an escape and
       // must NOT throw — it agrees with `RelativePathSchema`, which accepts `a/../b.md`. The
       // refusal is scoped to a genuine climb (normal form leads with ".."), not any raw "..".
       it('an interior ".." that stays within the root classifies its normal form (no throw)', () => {
-        expect(classifyZone('a/../b.md')).toBe('human-safe');
+        expect(classifyZone('a/../b.md', 'file')).toBe('human-safe');
         // `.hidden` is entered then escaped back out, so the file lands at the root — human-safe.
-        expect(classifyZone('.hidden/../x.md')).toBe('human-safe');
+        expect(classifyZone('.hidden/../x.md', 'file')).toBe('human-safe');
       });
 
       it('an absolute path throws — the classifier requires root-relative input', () => {
@@ -109,22 +134,22 @@ describe('classifyZone', () => {
         // absolute filesystem path whose ancestor happens to be a dotfile/dot-directory
         // (here `.config`) must never be waved through as ai-permitted just because the
         // caller failed to relativize it first.
-        expect(() => classifyZone('/Users/x/.config/project/dist/out.md')).toThrow();
+        expect(() => classifyZone('/Users/x/.config/project/dist/out.md', 'file')).toThrow();
       });
 
       // Positive control: a well-formed, root-relative, non-climbing path with no dot
       // ancestors still classifies exactly as before — the refusal is additive, not a
       // change to the classification of any currently-valid path.
       it('a well-formed root-relative path with no dot ancestors stays human-safe', () => {
-        expect(classifyZone('dist/out.md')).toBe('human-safe');
+        expect(classifyZone('dist/out.md', 'file')).toBe('human-safe');
       });
 
       // A legitimate dotfile-basename / dot-directory path (neither absolute nor
       // ".."-bearing) still classifies exactly as the golden cases above pin — the throw is
       // scoped to malformed input only, not to every path with a dot in it.
       it('a legitimate dot-directory path (no escape, not absolute) still classifies ai-permitted', () => {
-        expect(classifyZone('.ai/output/file.md')).toBe('ai-permitted');
-        expect(classifyZone('build/.cache/temp.txt')).toBe('ai-permitted');
+        expect(classifyZone('.ai/output/file.md', 'file')).toBe('ai-permitted');
+        expect(classifyZone('build/.cache/temp.txt', 'file')).toBe('ai-permitted');
       });
     });
   });

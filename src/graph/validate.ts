@@ -89,7 +89,7 @@ export function validateGraph(manifest: EpisodeManifest, profile: Profile): void
   // an authored node's path is a property of the node itself. Reuses `classifyZone` rather than
   // reimplementing it, per FR-018.
   for (const [id, decl] of Object.entries(manifest.authored)) {
-    if (classifyZone(decl.path) === 'ai-permitted') {
+    if (classifyZone(decl.path, 'file') === 'ai-permitted') {
       throw new Error(
         `Authored node "${id}" declares path "${decl.path}", which classifies ai-permitted ` +
           `(dot-zoned) — authored content must resolve to a human-safe path (FR-006).`

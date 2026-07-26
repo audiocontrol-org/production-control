@@ -123,14 +123,13 @@ function derivedProvider(node: Node): ProviderDecl {
 /**
  * Check 2 (the live check, FR-006/D2b): an authored node's declared path must classify
  * `human-safe`. `node.path` already carries a basename (the authored file itself), so it is
- * passed to `classifyZone` exactly as `src/graph/validate.ts`'s Rule 7 does — no trailing slash,
- * because the basename must NOT participate in the any-dot-wins check (only its directory
- * segments do).
+ * passed to `classifyZone` with `kind: 'file'` exactly as `src/graph/validate.ts`'s Rule 7 does —
+ * the basename must NOT participate in the any-dot-wins check (only its directory segments do).
  */
 function authoredViolation(node: Node): AuditViolationJson | undefined {
   const assignedRoot = authoredPath(node);
   const expectedZone: Zone = 'human-safe';
-  const actualZone = classifyZone(assignedRoot);
+  const actualZone = classifyZone(assignedRoot, 'file');
   if (actualZone === expectedZone) {
     return undefined;
   }
@@ -142,12 +141,9 @@ function authoredViolation(node: Node): AuditViolationJson | undefined {
  * (`impureOutputRoot()`) must classify `ai-permitted`. A pure-derived target is not checked at
  * all — either zone is acceptable for it (data-model.md's agreement rule).
  *
- * `impureOutputRoot()` returns a bare root DIRECTORY (`.ai`), not a file path — it has no
- * basename to exclude. `classifyZone`'s any-dot-wins rule only excludes a basename when the
- * caller's own doc contract says so via a TRAILING SLASH: "a trailing `/` means every segment —
- * including the last — names a directory." Passed without one, `.ai` would be misread as a
- * dot-FILE in a clean directory (`human-safe`) — exactly backwards for a directory root. The
- * trailing slash is added here, once, so the root is classified as what it is.
+ * `impureOutputRoot()` returns a bare root DIRECTORY (`.ai`), not a file path, so it is classified
+ * with `kind: 'directory'` — every segment participates in the any-dot-wins check and the bare
+ * `.ai` root reads as `ai-permitted`, what it is.
  */
 function impureTargetViolation(node: Node): AuditViolationJson | undefined {
   const provider = derivedProvider(node);
@@ -156,7 +152,7 @@ function impureTargetViolation(node: Node): AuditViolationJson | undefined {
   }
   const assignedRoot = impureOutputRoot();
   const expectedZone: Zone = 'ai-permitted';
-  const actualZone = classifyZone(`${assignedRoot}/`);
+  const actualZone = classifyZone(assignedRoot, 'directory');
   if (actualZone === expectedZone) {
     return undefined;
   }

@@ -111,7 +111,7 @@ describe(
 
       // The path is human-legible as AI-permitted from the segment alone (INV-2) — the same
       // fact the machine channel (the ledger's `producer_impure`) already records.
-      expect(classifyZone(record.output.path)).toBe('ai-permitted');
+      expect(classifyZone(record.output.path, 'file')).toBe('ai-permitted');
       expect(record.producer_impure).toBeDefined();
     });
   }
@@ -397,7 +397,7 @@ describe(
 
       // Recorded under the lexical dot-zoned path; the bytes land through the symlink inside `.ai/`.
       expect(record.output.path).toBe('.ai/link/out.bin');
-      expect(classifyZone(record.output.path)).toBe('ai-permitted');
+      expect(classifyZone(record.output.path, 'file')).toBe('ai-permitted');
       expect(await exists(path.join(dir, '.ai', 'nested', 'out.bin'))).toBe(true);
       expect((await readLedger(dir)).artifacts['voiceover']).toBeDefined();
     });

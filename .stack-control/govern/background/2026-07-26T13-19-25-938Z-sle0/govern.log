@@ -1,0 +1,81 @@
+govern clone-step: 12 clone group(s) in this codebase; 12 NEW (no baseline yet).
+  NEW clone 356c76d6cc82 (6 lines)
+    /Users/orion/work/production-control-work/production-control-voice/tests/integration/support.ts:162:167
+    /Users/orion/work/production-control-work/production-control-voice/tests/unit/state/support.ts:27:32
+  NEW clone 85f32159bc01 (8 lines)
+    /Users/orion/work/production-control-work/production-control-voice/src/providers/validate-run.ts:94:101
+    /Users/orion/work/production-control-work/production-control-voice/tests/contract/provider-support.ts:59:64
+  NEW clone df65a7762a90 (22 lines)
+    /Users/orion/work/production-control-work/production-control-voice/src/providers/run.ts:91:112
+    /Users/orion/work/production-control-work/production-control-voice/tests/contract/provider-support.ts:58:113
+  NEW clone 208f519df3e2 (12 lines)
+    /Users/orion/work/production-control-work/production-control-voice/src/providers/run.ts:175:186
+    /Users/orion/work/production-control-work/production-control-voice/src/providers/validate-run.ts:54:63
+  NEW clone 8b9458fe9cf0 (8 lines)
+    /Users/orion/work/production-control-work/production-control-voice/src/manifest/load.ts:113:120
+    /Users/orion/work/production-control-work/production-control-voice/src/providers/contract.ts:126:133
+  NEW clone 35e2a730467e (38 lines)
+    /Users/orion/work/production-control-work/production-control-voice/src/ledger/store.ts:137:174
+    /Users/orion/work/production-control-work/production-control-voice/src/manifest/load.ts:74:111
+  NEW clone 755394449568 (14 lines)
+    /Users/orion/work/production-control-work/production-control-voice/src/ledger/store.ts:175:188
+    /Users/orion/work/production-control-work/production-control-voice/src/manifest/load.ts:112:125
+  NEW clone a7f8e2b8a6de (6 lines)
+    /Users/orion/work/production-control-work/production-control-voice/src/cli/index.ts:114:119
+    /Users/orion/work/production-control-work/production-control-voice/src/cli/index.ts:229:234
+  NEW clone f7450fbb5ae3 (24 lines)
+    /Users/orion/work/production-control-work/production-control-voice/src/cli/asset.ts:159:182
+    /Users/orion/work/production-control-work/production-control-voice/src/manifest/load.ts:85:96
+  NEW clone e7916441c40a (13 lines)
+    /Users/orion/work/production-control-work/production-control-voice/src/assets/pointer.ts:151:163
+    /Users/orion/work/production-control-work/production-control-voice/src/manifest/load.ts:81:96
+  NEW clone 160052a39bb1 (7 lines)
+    /Users/orion/work/production-control-work/production-control-voice/src/assets/pointer.ts:163:169
+    /Users/orion/work/production-control-work/production-control-voice/src/manifest/load.ts:97:103
+  NEW clone dbfe0f5d17d4 (9 lines)
+    /Users/orion/work/production-control-work/production-control-voice/src/assets/pointer.ts:173:181
+    /Users/orion/work/production-control-work/production-control-voice/src/manifest/load.ts:112:120
+govern: code-only scoping active — excluded 16 documentation file(s) from the audit payload.
+govern: chunk 35a25a79fbbf4380 barrage run-dir = /Users/orion/work/production-control-work/production-control-voice/.stack-control/audit-runs/20260726T131928585Z-003-content-zone-segregation-after_implement
+govern: fleet — configured 2, produced 2
+govern:   claude: completed [enforced, monitored]
+govern:   codex: completed [enforced, monitored]
+govern: chunk 432428dbd2cb380a barrage run-dir = /Users/orion/work/production-control-work/production-control-voice/.stack-control/audit-runs/20260726T132446146Z-003-content-zone-segregation-after_implement
+govern: fleet — configured 2, produced 2
+govern:   claude: completed [enforced, monitored]
+govern:   codex: completed [enforced, monitored]
+govern: chunk 43fb043b7200a9d5 barrage run-dir = /Users/orion/work/production-control-work/production-control-voice/.stack-control/audit-runs/20260726T133005893Z-003-content-zone-segregation-after_implement
+govern: fleet — configured 2, produced 2
+govern:   claude: completed [enforced, monitored]
+govern:   codex: completed [enforced, monitored]
+govern: chunk 4f99b83c979fa432 barrage run-dir = /Users/orion/work/production-control-work/production-control-voice/.stack-control/audit-runs/20260726T133108139Z-003-content-zone-segregation-after_implement
+govern: fleet — configured 2, produced 2
+govern:   claude: completed [enforced, monitored]
+govern:   codex: completed [enforced, monitored]
+govern: chunk 9c18fbd661c311bc barrage run-dir = /Users/orion/work/production-control-work/production-control-voice/.stack-control/audit-runs/20260726T133500271Z-003-content-zone-segregation-after_implement
+govern: fleet — configured 2, produced 2
+govern:   claude: completed [enforced, monitored]
+govern:   codex: completed [enforced, monitored]
+govern: chunk a8511fbd57b81464 barrage run-dir = /Users/orion/work/production-control-work/production-control-voice/.stack-control/audit-runs/20260726T133808222Z-003-content-zone-segregation-after_implement
+govern: fleet — configured 2, produced 2
+govern:   claude: completed [enforced, monitored]
+govern:   codex: completed [enforced, monitored]
+govern: chunk cc1f24a95e8a8ebd barrage run-dir = /Users/orion/work/production-control-work/production-control-voice/.stack-control/audit-runs/20260726T134019946Z-003-content-zone-segregation-after_implement
+govern: fleet — configured 2, produced 2
+govern:   claude: completed [enforced, monitored]
+govern:   codex: completed [enforced, monitored]
+govern: chunk ecfb4e19fe0283f1 barrage run-dir = /Users/orion/work/production-control-work/production-control-voice/.stack-control/audit-runs/20260726T134238200Z-003-content-zone-segregation-after_implement
+govern: fleet — configured 2, produced 2
+govern:   claude: completed [enforced, monitored]
+govern:   codex: completed [enforced, monitored]
+govern: chunk f33b7594b22b2dea barrage run-dir = /Users/orion/work/production-control-work/production-control-voice/.stack-control/audit-runs/20260726T134401619Z-003-content-zone-segregation-after_implement
+govern: fleet — configured 2, produced 2
+govern:   claude: completed [enforced, monitored]
+govern:   codex: completed [enforced, monitored]
+govern: chunk f4649b03d8299c11 barrage run-dir = /Users/orion/work/production-control-work/production-control-voice/.stack-control/audit-runs/20260726T134627400Z-003-content-zone-segregation-after_implement
+govern: fleet — configured 2, produced 2
+govern:   claude: completed [enforced, monitored]
+govern:   codex: completed [enforced, monitored]
+govern: lift-once — recorded 4 finding(s) as ONE section in /Users/orion/work/production-control-work/production-control-voice/specs/003-content-zone-segregation/audit-log.md (FR-026).
+govern: implementation NOT done — end-govern reconciled to 'override-eligible' (4 open finding(s) over 10 chunk(s), 1 round(s)). Fix the surfaced findings & re-govern, or record --override.
+govern: terminal-outcome=blocked

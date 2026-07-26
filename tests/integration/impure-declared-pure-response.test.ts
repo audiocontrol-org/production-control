@@ -120,7 +120,7 @@ describe(
       expect(await exists(path.join(dir, 'dist', 'voiceover.out'))).toBe(false);
 
       // Human-legible from the path alone (INV-2), agreeing with the machine-side record above.
-      expect(classifyZone(record.output.path)).toBe('ai-permitted');
+      expect(classifyZone(record.output.path, 'file')).toBe('ai-permitted');
     });
 
     it('`pc readme` files it under AI-generated, not under reproducible build outputs', async () => {

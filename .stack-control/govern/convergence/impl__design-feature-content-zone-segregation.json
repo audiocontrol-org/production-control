@@ -3,39 +3,29 @@
   "mode": "impl",
   "item": "design:feature/content-zone-segregation",
   "governedShaBase": "2c90a315d7228e759c0586df9b05d3289e4cad40",
-  "headSha": "45405671533b7a633322be14d07a27f7ec08e053",
+  "headSha": "fde3b0bb5d2eb05fbc8bf2329230596f72cfe424",
   "chunkIds": [
-    "35a25a79fbbf4380",
     "432428dbd2cb380a",
     "43fb043b7200a9d5",
+    "48cec5d91008d914",
     "4f99b83c979fa432",
+    "948fa36f2ea32f34",
     "9c18fbd661c311bc",
     "a8511fbd57b81464",
     "cc1f24a95e8a8ebd",
     "ecfb4e19fe0283f1",
-    "f33b7594b22b2dea",
-    "f4649b03d8299c11"
+    "f33b7594b22b2dea"
   ],
   "rounds": 1,
   "liftedFindings": [
     {
-      "id": "9c18fbd661c311bc::AUDIT-BARRAGE-claude-01",
-      "title": "\"No bytes written outside\" is asserted at exactly one filename, so a residual escape through the scratch path would still ship green",
+      "id": "4f99b83c979fa432::AUDIT-BARRAGE-claude-01",
+      "title": "`classifyZone('.ai')` and `classifyZone('.ai/')` disagree — the dot-zone root itself classifies human-safe, and no fixture pins it",
       "severity": "high"
     },
     {
-      "id": "a8511fbd57b81464::AUDIT-BARRAGE-claude-01",
-      "title": "The \"no cache directory is invented anywhere\" assertion is vacuous — it checks a directory the miner was never told about",
-      "severity": "high"
-    },
-    {
-      "id": "ecfb4e19fe0283f1::AUDIT-BARRAGE-claude-01",
-      "title": "Chunk ecfb4e19fe0283f1 dispatched with an empty diff body — this lane produced no coverage of `tests/integration/zoning.test.ts`",
-      "severity": "high"
-    },
-    {
-      "id": "f4649b03d8299c11::AUDIT-BARRAGE-claude-01",
-      "title": "`.gitignore` regression gate probes repo-root paths, not the nested paths artifacts actually occupy — a nested ignore rule breaks the guarantee with the gate still green",
+      "id": "948fa36f2ea32f34::AUDIT-BARRAGE-claude-01",
+      "title": "`classifyZone` silently reports `human-safe` for a directory path, and the \"append a trailing slash\" obligation is prose-only and unverifiable",
       "severity": "high"
     }
   ],
@@ -43,51 +33,23 @@
   "seamResult": {
     "boundaryPairs": [
       {
-        "a": "35a25a79fbbf4380",
-        "b": "432428dbd2cb380a"
-      },
-      {
-        "a": "35a25a79fbbf4380",
-        "b": "43fb043b7200a9d5"
-      },
-      {
-        "a": "35a25a79fbbf4380",
-        "b": "4f99b83c979fa432"
-      },
-      {
-        "a": "35a25a79fbbf4380",
-        "b": "9c18fbd661c311bc"
-      },
-      {
-        "a": "35a25a79fbbf4380",
-        "b": "a8511fbd57b81464"
-      },
-      {
-        "a": "35a25a79fbbf4380",
-        "b": "cc1f24a95e8a8ebd"
-      },
-      {
-        "a": "35a25a79fbbf4380",
-        "b": "ecfb4e19fe0283f1"
-      },
-      {
-        "a": "35a25a79fbbf4380",
-        "b": "f33b7594b22b2dea"
-      },
-      {
-        "a": "35a25a79fbbf4380",
-        "b": "f4649b03d8299c11"
-      },
-      {
         "a": "432428dbd2cb380a",
         "b": "43fb043b7200a9d5"
       },
       {
         "a": "432428dbd2cb380a",
+        "b": "48cec5d91008d914"
+      },
+      {
+        "a": "432428dbd2cb380a",
         "b": "4f99b83c979fa432"
       },
       {
         "a": "432428dbd2cb380a",
+        "b": "948fa36f2ea32f34"
+      },
+      {
+        "a": "432428dbd2cb380a",
         "b": "9c18fbd661c311bc"
       },
       {
@@ -107,8 +69,8 @@
         "b": "f33b7594b22b2dea"
       },
       {
-        "a": "432428dbd2cb380a",
-        "b": "f4649b03d8299c11"
+        "a": "43fb043b7200a9d5",
+        "b": "48cec5d91008d914"
       },
       {
         "a": "43fb043b7200a9d5",
@@ -116,6 +78,10 @@
       },
       {
         "a": "43fb043b7200a9d5",
+        "b": "948fa36f2ea32f34"
+      },
+      {
+        "a": "43fb043b7200a9d5",
         "b": "9c18fbd661c311bc"
       },
       {
@@ -135,8 +101,36 @@
         "b": "f33b7594b22b2dea"
       },
       {
-        "a": "43fb043b7200a9d5",
-        "b": "f4649b03d8299c11"
+        "a": "48cec5d91008d914",
+        "b": "4f99b83c979fa432"
+      },
+      {
+        "a": "48cec5d91008d914",
+        "b": "948fa36f2ea32f34"
+      },
+      {
+        "a": "48cec5d91008d914",
+        "b": "9c18fbd661c311bc"
+      },
+      {
+        "a": "48cec5d91008d914",
+        "b": "a8511fbd57b81464"
+      },
+      {
+        "a": "48cec5d91008d914",
+        "b": "cc1f24a95e8a8ebd"
+      },
+      {
+        "a": "48cec5d91008d914",
+        "b": "ecfb4e19fe0283f1"
+      },
+      {
+        "a": "48cec5d91008d914",
+        "b": "f33b7594b22b2dea"
+      },
+      {
+        "a": "4f99b83c979fa432",
+        "b": "948fa36f2ea32f34"
       },
       {
         "a": "4f99b83c979fa432",
@@ -159,8 +153,24 @@
         "b": "f33b7594b22b2dea"
       },
       {
-        "a": "4f99b83c979fa432",
-        "b": "f4649b03d8299c11"
+        "a": "948fa36f2ea32f34",
+        "b": "9c18fbd661c311bc"
+      },
+      {
+        "a": "948fa36f2ea32f34",
+        "b": "a8511fbd57b81464"
+      },
+      {
+        "a": "948fa36f2ea32f34",
+        "b": "cc1f24a95e8a8ebd"
+      },
+      {
+        "a": "948fa36f2ea32f34",
+        "b": "ecfb4e19fe0283f1"
+      },
+      {
+        "a": "948fa36f2ea32f34",
+        "b": "f33b7594b22b2dea"
       },
       {
         "a": "9c18fbd661c311bc",
@@ -179,10 +189,6 @@
         "b": "f33b7594b22b2dea"
       },
       {
-        "a": "9c18fbd661c311bc",
-        "b": "f4649b03d8299c11"
-      },
-      {
         "a": "a8511fbd57b81464",
         "b": "cc1f24a95e8a8ebd"
       },
@@ -195,10 +201,6 @@
         "b": "f33b7594b22b2dea"
       },
       {
-        "a": "a8511fbd57b81464",
-        "b": "f4649b03d8299c11"
-      },
-      {
         "a": "cc1f24a95e8a8ebd",
         "b": "ecfb4e19fe0283f1"
       },
@@ -207,20 +209,8 @@
         "b": "f33b7594b22b2dea"
       },
       {
-        "a": "cc1f24a95e8a8ebd",
-        "b": "f4649b03d8299c11"
-      },
-      {
         "a": "ecfb4e19fe0283f1",
         "b": "f33b7594b22b2dea"
-      },
-      {
-        "a": "ecfb4e19fe0283f1",
-        "b": "f4649b03d8299c11"
-      },
-      {
-        "a": "f33b7594b22b2dea",
-        "b": "f4649b03d8299c11"
       }
     ],
     "findings": [],

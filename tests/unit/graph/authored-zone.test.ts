@@ -22,8 +22,8 @@ describe('graph/validate — authored-direction zoning (US2, FR-006/D2b)', () =>
   it('sanity: the fixture paths below actually classify the way this test relies on', () => {
     // Guards the test against a classifier drift silently turning both cases below into false
     // positives — this test's fixtures must classify exactly as INV-2 defines the zones.
-    expect(classifyZone('.ai/draft.md')).toBe('ai-permitted');
-    expect(classifyZone('article.mdx')).toBe('human-safe');
+    expect(classifyZone('.ai/draft.md', 'file')).toBe('ai-permitted');
+    expect(classifyZone('article.mdx', 'file')).toBe('human-safe');
   });
 
   it('Scenario 7a: an authored node whose declared path is under a dot-zone is refused, naming the node', () => {

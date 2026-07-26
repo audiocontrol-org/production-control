@@ -1,0 +1,13 @@
+{
+  "handle": "2026-07-26T13-19-25-938Z-sle0",
+  "governArgs": [
+    "--mode",
+    "implement",
+    "--item",
+    "design:feature/content-zone-segregation"
+  ],
+  "cwd": "/Users/orion/work/production-control-work/production-control-voice",
+  "startedAt": "2026-07-26T13:19:25.938Z",
+  "pid": 34238,
+  "logPath": "/Users/orion/work/production-control-work/production-control-voice/.stack-control/govern/background/2026-07-26T13-19-25-938Z-sle0/govern.log"
+}

@@ -253,7 +253,7 @@ async function stage(
   // only way its real destination lands human-safe is a symlink — which (c) has now resolved. Pure
   // output legitimately lives under human-safe `dist/`, so this guard is impure-only.
   const resolvedRel = toPosix(path.relative(realEpisodeDir, resolved));
-  if (impure && classifyZone(resolvedRel) === 'human-safe') {
+  if (impure && classifyZone(resolvedRel, 'file') === 'human-safe') {
     throw zoningRefusal({ path: resolvedRel, target });
   }
 

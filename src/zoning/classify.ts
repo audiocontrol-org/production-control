@@ -25,9 +25,21 @@ export class ClassifyZoneInputError extends Error {
  *
  * Pure, total-WITH-REFUSAL, and lexical — no I/O, no configuration, nothing read but `relPath`.
  * The rule (specs/003-content-zone-segregation/contracts/zone-classifier.md, "any-dot-wins"): a
- * path is `ai-permitted` iff at least one of its DIRECTORY segments (every segment except the
- * basename) begins with `.`. The basename never participates on its own — `dist/.draft.md` is a
- * dot-FILE in a clean directory, and stays `human-safe`.
+ * path is `ai-permitted` iff at least one of its DIRECTORY segments begins with `.`. Which
+ * segments count as directory segments is decided by the REQUIRED `kind` parameter, never by a
+ * trailing `/`:
+ *   - `kind: 'directory'` — the path NAMES a directory, so EVERY segment is a directory segment and
+ *     participates in the check. `classifyZone('.ai', 'directory')` is `ai-permitted`: the bare
+ *     dot-zone root classifies as the zone it is the root of.
+ *   - `kind: 'file'` — the LAST segment is the basename and is EXCLUDED. The basename never
+ *     participates on its own, so `dist/.draft.md` (a dot-FILE in a clean directory) and a file
+ *     literally named `.ai` both stay `human-safe`.
+ *
+ * `kind` is compiler-enforced precisely because the type `(string) => Zone` made an omitted
+ * trailing slash on a directory path indistinguishable from a file path — and the failure landed
+ * on the PERMISSIVE side (a directory root like `.ai` misread as a human-safe dotfile). Requiring
+ * the caller to state file-vs-directory closes that footgun structurally (AUDIT-14/15), the same
+ * false-safe class as the `..` refusal below (AUDIT-01).
  *
  * `relPath`'s precondition is ENFORCED, not assumed: this function throws `ClassifyZoneInputError`
  * rather than classifying when the input is an ABSOLUTE path, or when it NORMALIZES to a path
@@ -40,14 +52,8 @@ export class ClassifyZoneInputError extends Error {
  * In the enforcement path the caller additionally `realpath`-resolves before calling, so a
  * symlink cannot be classified by a lexical alias (FR-010) — this function does no resolution
  * of its own, only the normalization and refusal above.
- *
- * Basename vs. directory segment is decided structurally, not by presence of a `.` in the
- * segment: a trailing `/` means every segment — including the last — names a directory (there is
- * no basename to exclude), so `dist/.ai/` classifies its trailing `.ai` segment same as any other
- * directory segment. A path with no trailing `/` treats its last segment as the basename, which
- * is excluded from the check no matter what it starts with.
  */
-export function classifyZone(relPath: string): Zone {
+export function classifyZone(relPath: string, kind: 'file' | 'directory'): Zone {
   if (path.posix.isAbsolute(relPath) || path.isAbsolute(relPath)) {
     throw new ClassifyZoneInputError(relPath, 'is an absolute path, not root-relative');
   }
@@ -65,11 +71,12 @@ export function classifyZone(relPath: string): Zone {
 
   // POSIX splitting only, as the contract requires. A leading './' is a no-op segment that must
   // not itself be mistaken for a dot-directory, so it is dropped along with any other empty
-  // segment produced by normalization quirks (leading '/', repeated '//').
+  // segment produced by normalization quirks (leading '/', repeated '//', a trailing '/').
   const rawSegments = normalized.split('/').filter((segment) => segment !== '' && segment !== '.');
 
-  const hasTrailingSlash = normalized.endsWith('/');
-  const directorySegments = hasTrailingSlash ? rawSegments : rawSegments.slice(0, -1);
+  // The `kind` parameter — not a trailing slash — governs which segments are directory segments:
+  // a directory path exposes every segment to the check; a file path excludes its basename.
+  const directorySegments = kind === 'directory' ? rawSegments : rawSegments.slice(0, -1);
 
   const isAiPermitted = directorySegments.some((segment) => segment.startsWith('.'));
   return isAiPermitted ? 'ai-permitted' : 'human-safe';
