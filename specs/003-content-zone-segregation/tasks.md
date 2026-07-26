@@ -75,7 +75,7 @@ Single TypeScript package: `src/` and `tests/` at repository root; `@/` import a
 ### Tests (RED first)
 
 - [ ] T015 [P] [US2] [tier:balanced] Unit test in `tests/unit/graph/authored-zone.test.ts`: an authored node whose declared path is under a dot-zone fails graph validation, naming it; an authored node under a human-safe path passes. (quickstart S7, FR-006/D2b)
-- [ ] T016 [P] [US2] [tier:fast] Unit test asserting `.cache`/`.tmp`/`.ai` classify identically and a dot **basename** does not zone — as a legibility regression guard co-located in `tests/unit/zoning/classify.test.ts` (extends T003 if simpler). (quickstart S6, FR-002/FR-016)
+- [ ] T016 [P] [US2] [tier:fast] Unit test asserting `.cache`/`.tmp`/`.ai` classify identically, a dot **basename** does not zone, and the **above-root exclusion** case — a dotted ancestor *above* the production root does not zone content inside it (FR-003) — as a legibility regression guard co-located in `tests/unit/zoning/classify.test.ts` (extends T003 if simpler). (quickstart S6, FR-002/FR-003/FR-016)
 
 ### Implementation
 
@@ -134,6 +134,17 @@ MVP = **US1** (Phases 1–3): the classifier, the `.ai/` rename, the build-time 
 ordering, and the pure-returns-impure refusal. That alone delivers the load-bearing guarantee (no
 impure bytes in a human-safe path). US2 adds the authored direction + legibility guards; US3 adds
 pre-build detection. Ship incrementally; each phase ends green and independently testable.
+
+## Coverage notes (from /speckit-analyze)
+
+- **FR-017** (no standalone file-type layer) is a **negative** requirement — satisfied by NOT
+  building one; T024 guards that nothing sneaks in. No implementation task by design.
+- **FR-020** (an AI artifact stays a valid reproducible target; a companion does not demote it) is
+  **inherent**: no code here demotes it and the graph is unchanged (FR-018/T024). No behavior task.
+- **FR-021** (directory-valued impure output classified from its root) is **forward-compatible and
+  blocked on `design:feature/directory-outputs`**: `classifyZone` (T004) accepts a root-relative path
+  so it composes when directory outputs land; it is not testable end-to-end until then, so no task
+  builds directory-output support here (out of scope per spec).
 
 ## Tier distribution (sanity)
 
