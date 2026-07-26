@@ -1,3 +1,70 @@
+## 2026-07-26: <!-- session title -->
+
+**Goal:** <!-- compose: what we set out to do -->
+
+**Accomplished:**
+- <!-- compose -->
+
+**Didn't Work:**
+- <!-- compose -->
+
+**Course Corrections:**
+- <!-- compose -->
+
+**Insights:**
+- <!-- compose -->
+
+**Quantitative (auto-derived from git; verify before publishing):**
+- Commits: 46
+  - spec(voice-editions): apply third-party review corrections (US1 guarantee scope, fidelity-contract wording, FR-020/025, SC-002, report-only tie-in, corroborate-not-infer regression)
+  - roadmap(voice-editions): record analyze-clean marker
+  - analyze(voice-editions): close FR-024 quote-bank conditional + FR-007 single-source coverage
+  - tasks(voice-editions): 26 tier-tagged tasks by user story (validator-first MVP)
+  - plan(voice-editions): fill plan + Phase 0/1 artifacts (research/data-model/contracts/quickstart)
+  - clarify(voice-editions): resolve 5 open targets to design defaults; record clarification session
+  - spec(voice-editions): author spec 004 from the approved design record (D1-D22)
+  - roadmap(voice-editions): record design-approved (operator approved; blocker shipped)
+  - docs(voice-editions): reconcile design with shipped content-zone-segregation (.ai sibling root; blocker resolved)
+  - workflow(graduate): design:feature/content-zone-segregation merging -> validating
+  - Merge pull request #7 from audiocontrol-org/feature/voice
+  - Merge remote-tracking branch 'origin/main' into feature/voice
+  - chore(govern): graduate content-zone-segregation by documented override
+  - test(zoning): media-extension trackability probes, honest kind docblock, ratified-invariant contract (AUDIT-17/18/19)
+  - docs(zoning): update classifier contract for the required file|directory kind (AUDIT-14/15)
+  - fix(zoning): require an explicit file|directory kind so the dot-zone root can't classify human-safe (AUDIT-14/15)
+  - chore(govern): record round-2 findings and convergence state
+  - test(editorial-tooling): scope no-cache run to a real cwd so the assertion can fail (AUDIT-11)
+  - test(zoning): probe .ai/dist git-trackability at nested episode depth (AUDIT-13)
+  - fix(zoning): guard the scratch root pre-invocation + assert escape dir is empty (AUDIT-10)
+  - chore(govern): record round-1 audit findings, fixes-vs-backlog disposition
+  - fix(zoning): classifyZone normalizes before refusing, matching RelativePathSchema (AUDIT-01/06 follow-up)
+  - fix(zoning): refuse a symlinked output root and pre-mkdir symlink escape (AUDIT-03/05)
+  - test(zoning): pin impure-decl/pure-response routing and .ai git-trackability (AUDIT-07/08)
+  - fix(zoning): classifyZone refuses .. and absolute input instead of failing open (AUDIT-01/06)
+  - chore(execute): complete content-zone-segregation (25/25); mark tasks done + persist ledger
+  - style(zoning): satisfy lint (prettier + preserve caught error cause)
+  - test(editorial-tooling): restore no-cache determinism assertion dropped in the split
+  - test(zoning): condense stale header comment under the 500-line gate
+  - refactor(editorial-tooling): split oversized miner-cache test under the 500-line gate
+  - test(zoning): regression for the .ai in-place-edit boundary (T023)
+  - docs(zoning): document the .ai convention and audit-zones verb (T025)
+  - feat(zoning): register audit-zones verb in the CLI (T021)
+  - feat(zoning): read-only routing-audit verb, lexical scope (T020)
+  - test(zoning): RED US3 routing-audit verb test (T019)
+  - feat(zoning): align refusal messages to asymmetric zone semantics (T018)
+  - feat(zoning): refuse authored node declared under a dot-zone (T017)
+  - test(zoning): RED US2 authored-direction refusal test (T015)
+  - test(zoning): US2 legibility regression guards for classifyZone (T016)
+  - Merge pull request #6 from audiocontrol-org/fix/cache-test-file-size
+  - test(quote-bank): split the cache suite to satisfy the 500-line file cap
+  - Merge pull request #5 from audiocontrol-org/feat/quote-bank-resumable-mining
+  - Merge pull request #3 from audiocontrol-org/fix/surface-provider-diagnostics
+  - backlog: capture operator-visibility findings (TASK-11/12)
+  - fix(validate): surface the validator's named errors, and record them in the ledger
+  - fix(providers): tee provider stderr to the operator instead of discarding it on success
+- Files changed: 72
+- Backlog touched: TASK-11, TASK-15, TASK-16, TASK-17, TASK-18
+
 ## 2026-07-26: Turn the codex voice experiment into features — voice-editions design, then content-zone-segregation end to end (design → spec → MVP)
 
 **Goal:** Review the nouvelle-france `spike/codex-authorship` voice experiment and turn it into a real production-control capability. This unfolded into three linked pieces: design `voice-editions`; discover and design its blocker `content-zone-segregation`; and drive that blocker through the full stack-control front door to a running MVP.
