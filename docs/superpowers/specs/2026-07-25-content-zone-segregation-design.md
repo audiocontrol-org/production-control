@@ -558,3 +558,15 @@ the code as real holes before acceptance:
   bytes of an out-of-band edit; TASK-15 must still be fixed).
 - Stale **open question 4 removed** (D5a settles it); provenance wording corrected so
   v1 claims no standalone file-type layer; a **normative test list** added.
+
+**Third review round (2026-07-25) — approved, no required changes.** The reviewer
+assessed the design as architecturally complete and recommended approval. One
+forward-looking observation — a possible future *fourth storage category* for
+machine-operational state (`.production/`, `.cache/`, `.work/`), a storage zone not a
+node kind, explicitly "not now" — was captured to the design inbox
+(`machine-operational-storage-zone`) rather than added here, per the reviewer's own
+guidance. **D2b remains flagged for operator veto** (it extends the operator's stated
+rule to the authored direction); the reviewer endorses it, but the operator's
+explicit position is still the deciding one and has not yet been recorded. The
+`design-approved:` marker remains the operator's to set (house rule: the operator
+judges, the gate checks the recorded fact).
