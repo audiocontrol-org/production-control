@@ -74,19 +74,46 @@ describe('classifyZone', () => {
       });
     });
 
-    describe('above-root exclusion (FR-003)', () => {
-      it('a root-relative path ignores any dot-segments above the production root', () => {
-        // FR-003 & S6: the function sees only a relative path; segments above the
-        // production root are never in its input. A path like `target/out.md` classifies
-        // human-safe from the root's perspective, even if its real filesystem location
-        // might sit under some `/home/.hidden/project/target/out.md` ancestor. The
-        // function only sees the root-relative `target/out.md`, so above-root ancestors
-        // have no effect.
-        expect(classifyZone('target/out.md')).toBe('human-safe');
-        expect(classifyZone('build/artifact.txt')).toBe('human-safe');
-        expect(classifyZone('dist/index.html')).toBe('human-safe');
+    describe('above-root exclusion (FR-003) — refusal, not permissive fail-open', () => {
+      // AUDIT-01: `classifyZone` is advertised as total. A violated precondition (input that
+      // climbs above the production root, or is absolute rather than root-relative) must NOT
+      // silently resolve to the PERMISSIVE verdict via "any-dot-wins" mistaking `..` for a
+      // dot-directory — that is a false-safe of exactly the shape the design set out to
+      // eliminate. Instead the function REFUSES (throws) a malformed input, so zoning still
+      // contributes defense-in-depth in the one case it exists for. One assertion per
+      // channel (channel-enumeration): `..` at the start, `..` mid-path (still escaping),
+      // a bare `..`, and an absolute path.
+      it('a leading ".." segment throws instead of classifying ai-permitted', () => {
+        expect(() => classifyZone('../secrets/out.wav')).toThrow();
+      });
 
-        // If there IS a dot-segment inside the root-relative path, it IS considered.
+      it('a mid-path ".." that still escapes the root throws', () => {
+        expect(() => classifyZone('a/../../b/c.md')).toThrow();
+      });
+
+      it('a bare ".." throws', () => {
+        expect(() => classifyZone('..')).toThrow();
+      });
+
+      it('an absolute path throws — the classifier requires root-relative input', () => {
+        // AUDIT-06: this is the exact false-permitted flip FR-003 exists to prevent — an
+        // absolute filesystem path whose ancestor happens to be a dotfile/dot-directory
+        // (here `.config`) must never be waved through as ai-permitted just because the
+        // caller failed to relativize it first.
+        expect(() => classifyZone('/Users/x/.config/project/dist/out.md')).toThrow();
+      });
+
+      // Positive control: a well-formed, root-relative, non-climbing path with no dot
+      // ancestors still classifies exactly as before — the refusal is additive, not a
+      // change to the classification of any currently-valid path.
+      it('a well-formed root-relative path with no dot ancestors stays human-safe', () => {
+        expect(classifyZone('dist/out.md')).toBe('human-safe');
+      });
+
+      // A legitimate dotfile-basename / dot-directory path (neither absolute nor
+      // ".."-bearing) still classifies exactly as the golden cases above pin — the throw is
+      // scoped to malformed input only, not to every path with a dot in it.
+      it('a legitimate dot-directory path (no escape, not absolute) still classifies ai-permitted', () => {
         expect(classifyZone('.ai/output/file.md')).toBe('ai-permitted');
         expect(classifyZone('build/.cache/temp.txt')).toBe('ai-permitted');
       });
