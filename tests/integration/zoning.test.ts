@@ -486,7 +486,10 @@ describe('T023: in-place edits to impure artifacts under `.ai/` report modified 
     const manifest = await loadEpisode(dir);
     const loaded = await loadProfile(manifest.profile, [dir, path.join(REPO_ROOT, 'profiles')]);
     const status = await resolveStatus({
-      episodeDir: dir, manifest, profile: loaded, ledger: await readLedger(dir),
+      episodeDir: dir,
+      manifest,
+      profile: loaded,
+      ledger: await readLedger(dir),
     });
     const voiceoverStatus = status.nodes.find((n) => n.id === 'voiceover');
     expect(voiceoverStatus?.state).toBe('modified');

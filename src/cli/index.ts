@@ -130,7 +130,9 @@ export function createProgram(deps: CliDeps): Command {
 
   program
     .command('audit-zones')
-    .description('Audit the routing policy over the manifest for zoning violations. Exits 0 if clean, 1 if violations found.')
+    .description(
+      'Audit the routing policy over the manifest for zoning violations. Exits 0 if clean, 1 if violations found.'
+    )
     .option(EPISODE_FLAG, EPISODE_HELP)
     .option(JSON_FLAG, JSON_HELP)
     .action(async (...args: unknown[]): Promise<void> => {

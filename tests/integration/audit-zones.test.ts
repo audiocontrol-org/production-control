@@ -105,7 +105,7 @@ function parseJsonOrFail(text: string): unknown {
   try {
     return parseJsonText(text);
   } catch (error) {
-    throw new Error(`--json output was not well-formed JSON: ${text}\n${String(error)}`);
+    throw new Error(`--json output was not well-formed JSON: ${text}`, { cause: error });
   }
 }
 
