@@ -95,6 +95,15 @@ describe('classifyZone', () => {
         expect(() => classifyZone('..')).toThrow();
       });
 
+      // Contrast: an INTERIOR ".." that normalizes back inside the root is NOT an escape and
+      // must NOT throw — it agrees with `RelativePathSchema`, which accepts `a/../b.md`. The
+      // refusal is scoped to a genuine climb (normal form leads with ".."), not any raw "..".
+      it('an interior ".." that stays within the root classifies its normal form (no throw)', () => {
+        expect(classifyZone('a/../b.md')).toBe('human-safe');
+        // `.hidden` is entered then escaped back out, so the file lands at the root — human-safe.
+        expect(classifyZone('.hidden/../x.md')).toBe('human-safe');
+      });
+
       it('an absolute path throws — the classifier requires root-relative input', () => {
         // AUDIT-06: this is the exact false-permitted flip FR-003 exists to prevent — an
         // absolute filesystem path whose ancestor happens to be a dotfile/dot-directory

@@ -30,13 +30,16 @@ export class ClassifyZoneInputError extends Error {
  * dot-FILE in a clean directory, and stays `human-safe`.
  *
  * `relPath`'s precondition is ENFORCED, not assumed: this function throws `ClassifyZoneInputError`
- * rather than classifying when the input is an ABSOLUTE path, or when any segment is exactly
- * `..` (a path climbing above the production root). A violated precondition must never resolve
- * to the PERMISSIVE verdict — treating `..` as a dot-directory via "any-dot-wins" would fail
- * OPEN, which defeats zoning as defense-in-depth in exactly the case it exists for (AUDIT-01).
+ * rather than classifying when the input is an ABSOLUTE path, or when it NORMALIZES to a path
+ * that climbs above the production root (a leading `..`). A violated precondition must never
+ * resolve to the PERMISSIVE verdict — treating `..` as a dot-directory via "any-dot-wins" would
+ * fail OPEN, which defeats zoning as defense-in-depth in exactly the case it exists for (AUDIT-01).
+ * The check is normalize-THEN-refuse (not a raw-segment scan) so it agrees with the manifest's
+ * `RelativePathSchema`, which accepts an interior `..` that normalizes back inside the root
+ * (`a/../b.md` → `b.md`, `human-safe`) and refuses only a value whose normal form escapes.
  * In the enforcement path the caller additionally `realpath`-resolves before calling, so a
  * symlink cannot be classified by a lexical alias (FR-010) — this function does no resolution
- * of its own, only the refusal above.
+ * of its own, only the normalization and refusal above.
  *
  * Basename vs. directory segment is decided structurally, not by presence of a `.` in the
  * segment: a trailing `/` means every segment — including the last — names a directory (there is
@@ -49,19 +52,23 @@ export function classifyZone(relPath: string): Zone {
     throw new ClassifyZoneInputError(relPath, 'is an absolute path, not root-relative');
   }
 
-  // POSIX splitting only, as the contract requires. A leading './' is a no-op segment that must
-  // not itself be mistaken for a dot-directory, so it is dropped along with any other empty
-  // segment produced by normalization quirks (leading '/', repeated '//').
-  const rawSegments = relPath.split('/').filter((segment) => segment !== '' && segment !== '.');
-
-  if (rawSegments.some((segment) => segment === '..')) {
+  // Normalize first, so an interior `..` that stays within the root collapses away (`a/../b.md`
+  // → `b.md`) — matching `RelativePathSchema`'s normalize-then-check semantics — while a genuine
+  // climb survives as a leading `..` and is refused below (never classified as ai-permitted).
+  const normalized = path.posix.normalize(relPath);
+  if (normalized === '..' || normalized.startsWith('../')) {
     throw new ClassifyZoneInputError(
       relPath,
-      'contains a ".." segment that climbs above the production root'
+      'normalizes to a path that climbs above the production root'
     );
   }
 
-  const hasTrailingSlash = relPath.endsWith('/');
+  // POSIX splitting only, as the contract requires. A leading './' is a no-op segment that must
+  // not itself be mistaken for a dot-directory, so it is dropped along with any other empty
+  // segment produced by normalization quirks (leading '/', repeated '//').
+  const rawSegments = normalized.split('/').filter((segment) => segment !== '' && segment !== '.');
+
+  const hasTrailingSlash = normalized.endsWith('/');
   const directorySegments = hasTrailingSlash ? rawSegments : rawSegments.slice(0, -1);
 
   const isAiPermitted = directorySegments.some((segment) => segment.startsWith('.'));
