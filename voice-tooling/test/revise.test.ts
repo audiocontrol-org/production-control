@@ -11,7 +11,9 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { createHash } from 'node:crypto';
 import { parseReviseRequest } from '@/revise/request.ts';
+import { buildRevisePrompt, invokeModel } from '@/revise/model.ts';
 import { emitEdition } from '@/revise/emit.ts';
+import { loadVoice } from '@/schema/voice.ts';
 import { withTempDir } from './support.ts';
 
 /**
@@ -224,6 +226,48 @@ test('parseReviseRequest (AUDIT-20260726-12): refuses, naming the input, when a 
         'hash, and the actual hash',
     );
   });
+});
+
+test('buildRevisePrompt: presents the source as numbered units and demands the ModelReviseOutput protocol', () => {
+  const voice = loadVoice(VALID_VOICE_YAML);
+  const sourceText = 'First unit line one.\nFirst unit line two.\n\nSecond unit only line.\n';
+  const prompt = buildRevisePrompt({
+    target: 'edition',
+    source: { identity: 'draft', text: sourceText },
+    voice: { identity: 'style', doc: voice },
+  });
+
+  // The two source units appear, in order, with their exact bytes between markers.
+  assert.match(prompt, /\[SOURCE UNIT 0\]\nFirst unit line one\.\nFirst unit line two\.\n\[\/SOURCE UNIT 0\]/);
+  assert.match(prompt, /\[SOURCE UNIT 1\]\nSecond unit only line\.\n\[\/SOURCE UNIT 1\]/);
+
+  // Every voice trait directive is stated so the model can honour the voice.
+  assert.ok(prompt.includes('narrator_distance:'), 'states narrator_distance');
+  assert.ok(prompt.includes('quote_handling:'), 'states quote_handling');
+  assert.ok(prompt.includes('avoid:'), 'states avoid');
+  assert.ok(prompt.includes('present-tense narration'), 'includes an avoid item');
+
+  // The fidelity contract and the required output shape are stated.
+  assert.ok(/VERBATIM \(byte-exact\)/.test(prompt), 'states the byte-exact fidelity contract');
+  assert.ok(prompt.includes('"edition"') && prompt.includes('"coverage"'), 'names the output shape');
+  assert.ok(prompt.includes('0-based indices'), 'demands 0-based edition-unit indices');
+});
+
+test('invokeModel: writes the prompt on stdin and returns the raw stdout', async () => {
+  // Echo stdin back to stdout, verifying the prompt is delivered on stdin and the
+  // exact stdout is returned for parseModelOutput. `command`/`args` are supplied
+  // directly (bypassing resolveModelCommand's whitespace tokenizer).
+  const cmd = {
+    command: process.execPath,
+    args: ['-e', 'process.stdin.on("data", (d) => process.stdout.write(d));'],
+  };
+  const out = await invokeModel(cmd, 'THE PROMPT PAYLOAD');
+  assert.equal(out, 'THE PROMPT PAYLOAD');
+});
+
+test('invokeModel: fails loud on a non-zero model exit', async () => {
+  const cmd = { command: process.execPath, args: ['-e', 'process.exit(3)'] };
+  await assert.rejects(() => invokeModel(cmd, 'x'), /exited with code 3/);
 });
 
 test('emit: writes the edition and returns an impure BuildResponse naming the target file, with no validation verdict', async () => {
