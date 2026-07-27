@@ -1,3 +1,69 @@
+## 2026-07-27: <!-- session title -->
+
+**Goal:** <!-- compose: what we set out to do -->
+
+**Accomplished:**
+- <!-- compose -->
+
+**Didn't Work:**
+- <!-- compose -->
+
+**Course Corrections:**
+- <!-- compose -->
+
+**Insights:**
+- <!-- compose -->
+
+**Quantitative (auto-derived from git; verify before publishing):**
+- Commits: 45
+  - feat(voice-lab): subject-agnostic voice reader generator (discover + render + CLI)
+  - feat(voice-lab): recognize [PB-###] citation markers + derive allow-list from sources: frontmatter (FR-020)
+  - feat(voice-lab): real producer protocol — model declares index mapping, provider builds hash-keyed ledger (TASK-29)
+  - design(voice-lab): Nouvelle-France voice lab spike plan
+  - fix(voice): close fix-introduced false-cleans — verbatim consumes supply, verdict withheld on any unclassified failure, unresolved-dest vs survival, null/array request guard (AUDIT-20260727 03/18/29/28/05)
+  - fix(voice): verify declared input hashes; validator refuses (not throws) on bad source/request; real profile commands (AUDIT 12/18/21/07/10)
+  - chore(voice): track fixtures .gitattributes disabling EOL normalization (AUDIT-20260726-01)
+  - fix(voice): verdict requires full check set; abort is its own blocking state (AUDIT 13/16/14)
+  - fix(voice): cross-unit multiset, numeric-in-citation, structured failure kinds, empty-destination guard (AUDIT 17/08/11/23/19)
+  - chore(execute): mark T001-T026 complete + ledger T024-T026 (voice-editions implementation complete)
+  - chore(voice): whole-suite verification gate — tests/typecheck/eslint green, ceilings + typing verified (T026)
+  - docs(voice-tooling): full v1 docs — entry points, .ai lifecycle, coverage-report semantics (T025)
+  - test(voice-tooling): golden fixtures pinning deriveUnits behavior on deferred markdown constructs (T024)
+  - chore(execute): ledger T022-T023 (voice-editions US3 complete)
+  - test(voice): voice-edit restales edition (report-only), model-version change is drift not stale (FR-027/D18) (T023)
+  - test(voice): voice as declared input + follows companion accepted, dot-zone authored refused (FR-001) (T022)
+  - chore(execute): ledger T018-T021 (voice-editions US2 complete)
+  - test(voice): regression — voice edition confined to .ai/, audit-zones reports mis-zoning pre-build (FR-028/029, SC-005) (T021)
+  - feat(voice): enforce v1 exactly-one-source-draft, named refusal (FR-007/D5) (T020)
+  - feat(voice): impure voice-revise provider + CLI, deterministic test stub model — US2 build green (T019)
+  - test(voice): RED US2 voice-revise provider integration — impure, ledger, .ai routing, validator gate (T018)
+  - chore(execute): ledger T011-T017 (voice-editions US1 complete, validator green)
+  - docs(voice-tooling): validator honest boundary — no semantic/voice conformance in v1 (T017)
+  - feat(voice-tooling): fidelity orchestrator (run.ts) + coverage report + voice-fidelity CLI — US1 green (T016)
+  - feat(voice-tooling): citation no-fabrication + allow-list + D14 quote-dialect conditional (T015)
+  - feat(voice-tooling): per-op mechanical obligations, corroborate-not-infer (T013)
+  - feat(voice-tooling): unit-local multiset payload extraction + matching (T014)
+  - feat(voice-tooling): unit-accounting check — exactly one disposition per source unit (T012)
+  - feat(voice-tooling): fidelity pre-checks -- source-hash, ledger-structure, source citation allow-list (T011)
+  - chore(execute): ledger T008-T010 (voice-editions US1 RED tests)
+  - test(voice-tooling): RED US1 uncorroborated-but-passing, report-only count (T010)
+  - test(voice-tooling): RED US1 refusal cases + no-verdict cannot-decide (T009)
+  - test(voice-tooling): RED US1 faithful-edition pass + D22 corroborate-not-infer guard (T008)
+  - chore(execute): ledger T005-T007 (voice-editions foundational complete)
+  - feat(voice-tooling): coverage-report types + report-assembly helpers (T007)
+  - feat(voice-tooling): voice-document schema + loader, documented no-author refusal (T006)
+  - feat(voice-tooling): carrier-independent coverage-ledger schema + loader (T005)
+  - chore(execute): ledger T003+T004 (voice-editions)
+  - feat(voice-tooling): byte-exact source-unit derivation core, D6 (T004)
+  - test(voice-tooling): RED source-unit derivation tests, D6 + FR-011 edition invariant (T003)
+  - chore(execute): ledger T002 (voice-editions)
+  - test(voice-tooling): fixtures dir + shared test-support module (T002)
+  - chore(execute): ledger T001 (voice-editions)
+  - feat(voice-tooling): scaffold TypeScript package skeleton (T001)
+  - analyze(voice-editions): reconcile plan↔tasks structural drift found by speckit-analyze
+- Files changed: 107
+- Backlog touched: TASK-29
+
 ## 2026-07-26: Finish content-zone-segregation (execute → govern → ship) and author the whole voice-editions spec (design → runnable)
 
 **Goal:** Pick up the paused content-zone-segregation execution at its US1 MVP boundary, drive it to a shipped feature, then return to voice-editions (its now-unblocked original driver) and take it through the full stack-control front door to a runnable spec.

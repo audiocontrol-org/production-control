@@ -8,3 +8,6 @@
 ## session-end 2026-07-26
 - govern empty-diff chunk dispatch: a chunk with a declared file but zero-hunk diff body was counted as a participating audit lane (AUDIT-09/12, recurred every round on tests/integration/zoning.test.ts). Filed upstream: audiocontrol-org/deskwork#532; local TASK-17.
 - govern is long (10-40 min); the background --status poll loop was externally killed ~3x mid-run and had to be manually restarted. A resumable/notify-on-complete poll would help.
+
+## session-end 2026-07-27
+- audit-barrage repeatedly emits false-positive 'fixtures/editions not committed' findings (AUDIT-20260726-01/-15, -20260727-04/-20) because lane agents see only the chunked diff and cannot run git to verify tracking; wasted review effort across two govern rounds. Consider surfacing tracked-file state in chunk metadata, or letting a lane verify git ls-files.
