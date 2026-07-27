@@ -360,10 +360,40 @@ function finalize(
     );
   }
 
+  withholdVerdictOnUnclassifiedFailures(checks, failures);
   const verdict = computeVerdict({ checks });
   const isPassed = verdict === 'passed';
   const report: CoverageReport = isPassed ? { verdict: 'passed', checks } : { checks };
   return { report, passed: isPassed, decided, failures };
+}
+
+/**
+ * AUDIT-20260727-18/-29: a `passed` verdict must NEVER coexist with a recorded
+ * failure. `computeVerdict` derives the verdict from the named-check map ALONE
+ * and never consults `failures[]`; `classifyOpFailures` buckets only the four
+ * payload kinds (quote/citation/numeric/lexicon) into named checks. An
+ * op-obligation failure whose kind buckets into NONE of them -- a `structural`
+ * kind (empty destination, arity, source-not-found, merged-no-shared-destination)
+ * or any FUTURE unmapped kind -- therefore flips no check, letting a run return
+ * `passed` alongside a non-empty `failures[]` (the trust-anchor false-clean).
+ *
+ * That is an orchestrator classification defect, not a decidable pass. Per the
+ * project's fail-loud/no-fallback rule it is surfaced as a DECIDED FAILURE: a
+ * named `op_obligations` check is marked `failed` carrying the unclassified
+ * messages, which STRUCTURALLY withholds the verdict (a failed check blocks it).
+ * Keyed on `failures.length`, never on a specific kind, so it closes the whole
+ * class -- including kinds that do not exist yet -- rather than the symptom.
+ */
+export function withholdVerdictOnUnclassifiedFailures(
+  checks: Record<string, CheckResult>,
+  failures: readonly string[],
+): void {
+  if (computeVerdict({ checks }) === 'passed' && failures.length > 0) {
+    checks['op_obligations'] = failed(
+      `op obligations: ${failures.length} recorded failure(s) flipped no named check -- ` +
+        `verdict withheld as a decided failure (AUDIT-20260727-18/-29): ${failures.join('; ')}`,
+    );
+  }
 }
 
 function cannotDecide(diagnostic: string): FidelityResult {

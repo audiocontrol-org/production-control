@@ -115,6 +115,43 @@ export function checkOpObligations(
   const payloadChecked = { quotes: 0, citations: 0, numerics: 0, lexiconTerms: 0 };
   let uncorroboratedUnits = 0;
 
+  // AUDIT-20260727-03: verbatim's obligation is byte IDENTITY -- it spends the
+  // ENTIRE declared destination unit, so that destination's payload must NOT
+  // remain available to corroborate any OTHER source unit in the same component.
+  // buildComponentRemaining unions verbatim destinations into the shared supply
+  // too, but verbatim is checked by byte-equality and never consumed -- so
+  // pre-fix a represented/merged entry sharing a verbatim destination was
+  // dischargeable by the verbatim copy's bytes, its own payload never needing to
+  // appear elsewhere (the cross-unit false-clean AUDIT-20260726-17, via verbatim).
+  // Consume each BYTE-EQUAL verbatim destination's payload here, in a SEPARATE
+  // pre-pass, so it is withdrawn before ANY represented/merged entry claims it --
+  // regardless of ledger order.
+  ledger.coverage.forEach((entry, index) => {
+    if (entry.op !== 'verbatim') {
+      return;
+    }
+    const destRefs = entry.edition_units ?? [];
+    if (destRefs.length !== 1) {
+      return; // arity fault -- reported by checkVerbatim in the main loop
+    }
+    const [destRef] = destRefs;
+    if (destRef === undefined) {
+      return;
+    }
+    const destContent = editionByKey.get(unitRefKey(destRef));
+    if (destContent === undefined) {
+      return; // unresolved destination -- supplies nothing; the not-found stands
+    }
+    const sourceContent = sourceByKey.get(unitRefKey(entry.source_unit));
+    if (sourceContent === undefined || sourceContent !== destContent) {
+      // source-not-found / byte-mismatch -- both reported in the main loop; a
+      // NON-verbatim (mismatched) destination is not "spent" by an identity copy.
+      return;
+    }
+    const remaining = componentRemaining(remainingByRoot, rootByEntry, index);
+    consumeAgainstRemaining(remaining, extractPayload(destContent, lexicon));
+  });
+
   ledger.coverage.forEach((entry, index) => {
     opCounts[entry.op] += 1;
 

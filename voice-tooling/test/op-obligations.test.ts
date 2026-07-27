@@ -344,6 +344,57 @@ test('AUDIT-20260726-17 (FIX 1): two merged entries sharing ONE destination cann
   );
 });
 
+test('AUDIT-20260727-03: a verbatim destination cannot doubly-corroborate a represented entry sharing it', () => {
+  // verbatim S_A -> D (byte-equal), represented S_B -> D. Both declare D, so
+  // they land in ONE component whose shared supply is D's payload. Pre-fix the
+  // verbatim entry DONATED D's payload to the pool but never consumed it (it is
+  // checked by byte-equality), so S_B could be discharged by the verbatim copy's
+  // bytes -- S_B's OWN payload (here a numeric AND a citation) need never appear
+  // anywhere else in the edition. Post-fix, verbatim SPENDS its destination's
+  // payload first, so S_B has nothing to consume and its obligation fails.
+  const src = deriveUnits(
+    'The crew counted 1978 items and cited [^a].\n\nRecords note 1978 and cite [^a].\n',
+    'src',
+  );
+  const [sA, sB] = src;
+  assert.ok(sA && sB, 'expected 2 source units');
+
+  // ONE edition unit, byte-identical to S_A. S_B's payload (1978, [^a]) does not
+  // appear anywhere ELSE in the edition -- only inside the verbatim copy of S_A.
+  const ed = deriveUnits('The crew counted 1978 items and cited [^a].\n', 'ed');
+  const [d] = ed;
+  assert.ok(d);
+  assert.equal(d.content, sA.content, 'the edition unit must be byte-identical to the verbatim source');
+
+  const result = checkOpObligations(
+    ledgerOf([
+      { source_unit: ref(sA), op: 'verbatim', edition_units: [ref(d)] },
+      { source_unit: ref(sB), op: 'represented', edition_units: [ref(d)] },
+    ]),
+    src,
+    ed,
+  );
+
+  assert.equal(
+    result.ok,
+    false,
+    `S_B must not be discharged by the verbatim copy's bytes; got: ${result.failures.map((f) => f.message).join(' | ')}`,
+  );
+  // The verbatim entry itself passes byte-equality -- so every failure is S_B's,
+  // and it spans MORE THAN ONE payload kind (numeric + citation).
+  const kinds = new Set(result.failures.map((f) => f.kind));
+  assert.equal(kinds.has('numeric'), true, 'S_B\'s numeric 1978 must not survive');
+  assert.equal(kinds.has('citation'), true, 'S_B\'s citation [^a] must not survive');
+  assert.equal(kinds.has('verbatim'), false, 'the verbatim entry is byte-equal and must not itself fail');
+  for (const failure of result.failures) {
+    assert.match(
+      failure.message,
+      new RegExp(`sha256:${sB.contentHash}`),
+      `every shortfall must be attributed to S_B, not the verbatim entry; got: ${failure.message}`,
+    );
+  }
+});
+
 test('AUDIT-20260726-19 (FIX 4): a non-cut entry with zero declared destinations fails, naming the unit', () => {
   // loadLedger rejects an empty edition_units for a non-cut entry; construct the
   // checker input DIRECTLY to exercise the defensive guard. Without it, the

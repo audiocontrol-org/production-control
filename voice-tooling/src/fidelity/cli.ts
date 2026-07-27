@@ -66,8 +66,22 @@ function isValidateRequestWire(value: unknown): value is ValidateRequestWire {
  * already returned `false` -- this never needs to describe a valid shape.
  */
 function describeRequestShapeError(value: unknown): string {
+  // AUDIT-20260727-05: `JSON.parse` legitimately returns `null`, an array, or a
+  // scalar (number/string/boolean) for well-formed-but-wrong-shape stdin, and
+  // `typeof null === 'object'`. `isRecord` already rejects all three (it checks
+  // `!== null && !Array.isArray`), so `isValidateRequestWire` refuses them and
+  // no field is ever read off a non-object -- but distinguish each channel here
+  // so the refusal names WHY, never a bare "must be a JSON object", and so the
+  // defense against the `typeof null === 'object'` TypeError class is explicit
+  // at the call site rather than resting silently on `isRecord`'s internals.
   if (!isRecord(value)) {
-    return 'ValidateRequest must be a JSON object';
+    if (value === null) {
+      return 'ValidateRequest must be a JSON object (got null)';
+    }
+    if (Array.isArray(value)) {
+      return 'ValidateRequest must be a JSON object (got a JSON array)';
+    }
+    return `ValidateRequest must be a JSON object (got a JSON ${typeof value})`;
   }
   if (value['version'] !== 1) {
     return `ValidateRequest.version must be the literal 1 (got ${JSON.stringify(value['version'])})`;

@@ -15,7 +15,20 @@ import * as assert from 'node:assert/strict';
 import { deriveUnits } from '@/units/derive.ts';
 import type { SourceUnit } from '@/units/derive.ts';
 import { checkOpObligations } from '@/fidelity/check-op-obligations.ts';
-import { classifyOpFailures } from '@/fidelity/classify-op-failures.ts';
+import {
+  classifyOpFailures,
+  findUnresolvedDestinationChecks,
+} from '@/fidelity/classify-op-failures.ts';
+import { withholdVerdictOnUnclassifiedFailures } from '@/fidelity/run.ts';
+import { indexSourceUnits } from '@/fidelity/run-support.ts';
+import {
+  computeVerdict,
+  passed,
+  notRun,
+  reported,
+  notCheckable,
+  type CheckResult,
+} from '@/fidelity/report.ts';
 import type { CoverageEntry, CoverageLedger, UnitRef } from '@/schema/ledger.ts';
 
 const PLACEHOLDER_HASH = `sha256:${'0'.repeat(64)}`;
@@ -66,4 +79,151 @@ test('AUDIT-20260726-23 (FIX 3): a dropped quoted span whose text contains "nume
     false,
     'the word "numeric" in the quoted span must NOT flip numeric_literals',
   );
+});
+
+/**
+ * A complete required-check set, every entry in a NON-blocking passing state, so
+ * `computeVerdict` would return 'passed' unless something withholds it. Mirrors
+ * report-types.test.ts's `fullChecks`.
+ */
+function fullPassingChecks(): Record<string, CheckResult> {
+  return {
+    source_hash: passed(),
+    ledger_structure: passed(),
+    unit_accounting: passed({ total: 3 }),
+    verbatim_quotes: passed({ checked: 0 }),
+    citations: passed({ checked: 0 }),
+    numeric_literals: passed({ checked: 0 }),
+    lexicon: notRun('no lexicon declared'),
+    uncorroborated_units: reported({ count: 0 }),
+    semantic_claim_fidelity: notCheckable('not provable under D4 — declared out of scope for v1'),
+    voice_conformance: notCheckable('not provable under D16 — declared out of scope for v1'),
+  };
+}
+
+test('AUDIT-20260727-18/-29: a `structural` op-failure (outside the four payload buckets) withholds the verdict -- never passed-with-failures', () => {
+  // Drive a REAL checkOpObligations run to a `structural` failure: a non-cut
+  // entry with ZERO declared destinations (the AUDIT-20260726-19 empty-
+  // destination guard). This kind buckets into NONE of the four named payload
+  // checks, so classifyOpFailures returns it EMPTY -- exactly the channel that
+  // pre-fix let a run compute `passed` while carrying a non-empty failures[].
+  const src = deriveUnits('Some prose that would be silently dropped.\n', 'src');
+  const ed = deriveUnits('Unrelated edition content.\n', 'ed');
+  const [s0] = src;
+  assert.ok(s0);
+
+  const opResult = checkOpObligations(
+    ledgerOf([{ source_unit: ref(s0), op: 'represented', edition_units: [] }]),
+    src,
+    ed,
+  );
+  assert.equal(opResult.ok, false);
+  assert.deepEqual(opResult.failures.map((f) => f.kind), ['structural']);
+
+  // The structural failure flips NO named payload check -- proving the gap.
+  const affected = classifyOpFailures(opResult.failures);
+  assert.equal(affected.size, 0, 'a structural failure buckets into no named payload check');
+
+  // The orchestrator invariant: with every named check passing but a recorded
+  // failure present, the verdict is WITHHELD (a decided failure), never passed.
+  const checks = fullPassingChecks();
+  assert.equal(computeVerdict({ checks }), 'passed', 'precondition: the named-check map alone would pass');
+  withholdVerdictOnUnclassifiedFailures(checks, opResult.failures.map((f) => f.message));
+  assert.equal(
+    computeVerdict({ checks }),
+    undefined,
+    'a recorded failure that flipped no named check must withhold the verdict',
+  );
+  assert.equal(checks['op_obligations']?.state, 'failed', 'the unclassified failure is surfaced as a decided op_obligations failure');
+
+  // Structural closure: the guard keys on failures.length, so a HYPOTHETICAL
+  // future unmapped kind (an opaque message that no classifier recognizes) is
+  // withheld identically -- this is not special-cased to `structural`.
+  const future = fullPassingChecks();
+  withholdVerdictOnUnclassifiedFailures(future, ['op obligation: some FUTURE unmapped failure kind']);
+  assert.equal(computeVerdict({ checks: future }), undefined, 'any future unmapped failure kind is withheld too');
+});
+
+test('AUDIT-20260727-18/-29: with no recorded failures, a full passing check set still passes (no false withhold)', () => {
+  const checks = fullPassingChecks();
+  withholdVerdictOnUnclassifiedFailures(checks, []);
+  assert.equal(computeVerdict({ checks }), 'passed', 'an empty failures[] must never withhold a legitimate pass');
+  assert.equal('op_obligations' in checks, false, 'no op_obligations check is injected when there are no failures');
+});
+
+test('AUDIT-20260727-28: a partially-unresolved entry whose payload SURVIVES in the resolved destination names the unresolved reference, NOT a fabricated non-survival', () => {
+  // represented entry with TWO declared destinations: D1 resolves and carries
+  // BOTH the source citation [^a] and the numeric 1978; D2 is a dangling
+  // reference. The payload demonstrably SURVIVES in D1, so the ONLY real fault
+  // is the unresolved D2 reference. Pre-fix, ANY dangling reference caused EVERY
+  // payload item to be reported as "does not survive" -- fabricating a survival
+  // failure. Post-fix, survival is evaluated against the RESOLVED union only.
+  const src = deriveUnits('Beta cites [^a] and counts 1978.\n', 'src');
+  const ed = deriveUnits('Rewritten beta citing [^a] with 1978.\n', 'ed');
+  const [s0] = src;
+  const [d1] = ed;
+  assert.ok(s0 && d1);
+
+  const dangling: UnitRef = { hash: `sha256:${'e'.repeat(64)}`, occurrence: 0 };
+  const ledger = ledgerOf([
+    { source_unit: ref(s0), op: 'represented', edition_units: [ref(d1), dangling] },
+  ]);
+
+  const failures: string[] = [];
+  const affected = findUnresolvedDestinationChecks(
+    ledger,
+    indexSourceUnits(src),
+    indexSourceUnits(ed),
+    undefined,
+    failures,
+  );
+
+  assert.equal(
+    failures.some((f) => /does not survive/.test(f)),
+    false,
+    `no payload item may be reported as "does not survive" when it survives in the resolved destination; got: ${failures.join(' | ')}`,
+  );
+  assert.ok(
+    failures.some((f) => /does not resolve to an edition unit/.test(f)),
+    `the reported fault must name the unresolved reference; got: ${failures.join(' | ')}`,
+  );
+  // Something still flips so the verdict is withheld (belt-and-suspenders with FIX 2).
+  assert.ok(affected.size > 0, 'the entry still flips a named check for the unresolved reference');
+});
+
+test('AUDIT-20260727-28: a partially-unresolved entry whose payload does NOT survive in the resolved destination still reports the genuine shortfall', () => {
+  // Same two-destination shape, but D1 resolves WITHOUT the source's citation
+  // [^a] (it survives nowhere resolved), while the numeric 1978 does survive in
+  // D1. The fix must still report the genuine [^a] shortfall AND must not
+  // fabricate a 1978 shortfall.
+  const src = deriveUnits('Beta cites [^a] and counts 1978.\n', 'src');
+  const ed = deriveUnits('Rewritten beta with only 1978, no marker.\n', 'ed');
+  const [s0] = src;
+  const [d1] = ed;
+  assert.ok(s0 && d1);
+
+  const dangling: UnitRef = { hash: `sha256:${'e'.repeat(64)}`, occurrence: 0 };
+  const ledger = ledgerOf([
+    { source_unit: ref(s0), op: 'represented', edition_units: [ref(d1), dangling] },
+  ]);
+
+  const failures: string[] = [];
+  const affected = findUnresolvedDestinationChecks(
+    ledger,
+    indexSourceUnits(src),
+    indexSourceUnits(ed),
+    undefined,
+    failures,
+  );
+
+  assert.ok(
+    failures.some((f) => /citation \[\^a\] does not survive/.test(f)),
+    `the genuinely-missing citation must still be reported; got: ${failures.join(' | ')}`,
+  );
+  assert.equal(
+    failures.some((f) => /numeric 1978 does not survive/.test(f)),
+    false,
+    `the numeric survives in the resolved destination and must NOT be reported missing; got: ${failures.join(' | ')}`,
+  );
+  assert.equal(affected.has('citations'), true, 'the citations check flips for the genuine shortfall');
 });

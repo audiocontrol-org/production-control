@@ -6,6 +6,8 @@
 
 import type { CoverageLedger, UnitRef } from '@/schema/ledger.ts';
 import { extractPayload } from '@/payload/extract.ts';
+import type { UnitPayload } from '@/payload/extract.ts';
+import { payloadSurvives, unionPayload } from '@/payload/match.ts';
 import { normalizeHash, unitRefKey } from '@/fidelity/run-support.ts';
 import type { OpFailure, OpFailureKind } from '@/fidelity/check-op-obligations.ts';
 
@@ -86,11 +88,17 @@ const PAYLOAD_KINDS: readonly (keyof typeof KIND_LABEL)[] = [
  *
  * A `verbatim` entry's unresolved destination is always classified under
  * `verbatim_quotes` regardless of payload (verbatim's obligation is byte
- * identity, not a specific payload kind). A `represented`/`merged` entry
- * with NO extractable payload at all also falls back to `verbatim_quotes` —
- * there is no dedicated named check for edition-side destination accounting
- * in the ten-check schema, and this case is otherwise unreachable given the
- * fixtures this validator has been proven against.
+ * identity, not a specific payload kind).
+ *
+ * For a `represented`/`merged` entry, survival is evaluated against the union of
+ * its RESOLVED destinations only (AUDIT-20260727-28): a payload item is reported
+ * as "does not survive" ONLY when it is genuinely absent from every resolved
+ * destination -- never merely because a sibling reference is dangling. When the
+ * payload DOES survive across the resolved destinations (or there is no
+ * extractable payload at all), the sole fault is the unresolved destination
+ * REFERENCE, which is named as such and falls back to `verbatim_quotes` (there
+ * is no dedicated named check for edition-side destination accounting in the
+ * ten-check schema).
  */
 export function findUnresolvedDestinationChecks(
   ledger: CoverageLedger,
@@ -121,30 +129,53 @@ export function findUnresolvedDestinationChecks(
       continue;
     }
 
+    // AUDIT-20260727-28: distinguish two genuinely different faults that the
+    // pre-fix code conflated. A payload item "does not survive" ONLY when it is
+    // absent from the union of the entry's RESOLVED destinations -- not merely
+    // because SOME sibling destination reference is dangling. Pre-fix, ANY
+    // unresolved reference caused EVERY source payload item to be reported as
+    // "does not survive", fabricating a survival failure even when the payload
+    // demonstrably survives in a resolved sibling destination (the false-clean
+    // INVERSION). Here we compute survival against the resolved union only, and
+    // report a "does not survive" for the genuinely-missing items alone.
     const content = sourceByKey.get(unitRefKey(entry.source_unit));
     const payload = content !== undefined ? extractPayload(content, lexicon) : undefined;
-    let matchedAny = false;
+    const resolvedDestPayloads: UnitPayload[] = [];
+    for (const ref of destRefs) {
+      const destContent = editionByKey.get(unitRefKey(ref));
+      if (destContent !== undefined) {
+        resolvedDestPayloads.push(extractPayload(destContent, lexicon));
+      }
+    }
+
+    let reportedGenuineShortfall = false;
     if (payload !== undefined) {
+      const { missingByKind } = payloadSurvives(payload, unionPayload(resolvedDestPayloads));
       for (const kind of PAYLOAD_KINDS) {
         if (kind === 'lexiconTerms' && !(lexicon !== undefined && lexicon.length > 0)) {
           continue;
         }
-        for (const item of payload[kind]) {
+        for (const item of missingByKind[kind]) {
           affected.add(KIND_TO_CHECK[kind]);
-          matchedAny = true;
+          reportedGenuineShortfall = true;
           failures.push(
             `op obligation: entry for source unit ${srcRefLabel}, op=${entry.op}: ${KIND_LABEL[kind]} ${item} does not survive into declared destinations (destination unresolved)`,
           );
         }
       }
     }
-    if (!matchedAny) {
-      // No extractable payload at all: there is no dedicated named check for
-      // edition-side destination accounting in the ten-check schema, so this
-      // falls back to `verbatim_quotes` (see this function's doc comment).
+    if (!reportedGenuineShortfall) {
+      // The entry's payload (if any) DOES survive across the resolved
+      // destinations -- the only fault is the unresolved destination REFERENCE
+      // itself (a `destination`/structural fault already reported verbatim by
+      // `checkOpObligations`). Name THAT accurately rather than fabricating a
+      // survival failure; there is no dedicated named check for edition-side
+      // destination accounting in the ten-check schema, so it attributes to
+      // `verbatim_quotes` (see this function's doc comment). The verdict is
+      // additionally withheld structurally by `withholdVerdictOnUnclassifiedFailures`.
       affected.add('verbatim_quotes');
       failures.push(
-        `op obligation: entry for source unit ${srcRefLabel}, op=${entry.op}: declared destination is absent from the edition -- its content no longer matches any edition unit`,
+        `op obligation: entry for source unit ${srcRefLabel}, op=${entry.op}: a declared destination reference does not resolve to an edition unit (the payload survives across the resolved destinations; the unresolved reference is the fault)`,
       );
     }
   }

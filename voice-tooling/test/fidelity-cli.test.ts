@@ -101,3 +101,40 @@ test('voice-fidelity CLI (AUDIT-20260726-21): a request whose "artifact" is a mi
   );
   assert.doesNotMatch(stderr, /TypeError|Cannot read propert/);
 });
+
+// AUDIT-20260727-05: `JSON.parse` returns not only objects but `null`, arrays,
+// and scalars for well-formed-but-wrong-shape stdin -- and `typeof null ===
+// 'object'`. A shape guard that assumed "parsed => object" would read a field
+// off a non-object and throw the very raw TypeError (empty stdout) the guard
+// exists to close. Each channel below must be refused BY NAME, with empty
+// stdout and a non-zero exit, never a raw crash. (These are the sibling channels
+// to the `{}` / missing-inputs / bad-artifact cases above, which are already
+// records; these exercise the NON-record parse results specifically.)
+for (const { label, stdin } of [
+  { label: 'null', stdin: 'null' },
+  { label: 'an array ([])', stdin: '[]' },
+  { label: 'a bare number (42)', stdin: '42' },
+  { label: 'a bare string ("a string")', stdin: '"a string"' },
+  { label: 'a bare boolean (true)', stdin: 'true' },
+]) {
+  test(`voice-fidelity CLI (AUDIT-20260727-05): a non-object ValidateRequest (${label}) is refused by name, never a raw TypeError`, () => {
+    const { code, stdout, stderr } = runFidelityBin(stdin);
+
+    assert.notEqual(code, 0, `a non-object request (${label}) must never exit 0`);
+    assert.equal(
+      stdout.trim(),
+      '',
+      `no ValidateResponse is ever written to stdout for a non-object request (${label})`,
+    );
+    assert.match(
+      stderr,
+      /voice-fidelity: ValidateRequest must be a JSON object/,
+      `expected a named refusal for a non-object request (${label}); got stderr: ${stderr}`,
+    );
+    assert.doesNotMatch(
+      stderr,
+      /TypeError|Cannot read propert/,
+      `a non-object request (${label}) must be a named refusal, never a raw uncaught TypeError`,
+    );
+  });
+}
