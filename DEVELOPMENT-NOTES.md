@@ -1,18 +1,29 @@
-## 2026-07-27: <!-- session title -->
+## 2026-07-27: voice-editions execute → govern-blocked; then a working voice lab on the Nouvelle-France ebook
 
-**Goal:** <!-- compose: what we set out to do -->
+**Goal:** Take the runnable voice-editions spec through the stack-control front door (analyze → execute → govern), then — at the operator's direction — exercise the shipped capability for real: author a catalog of narration voices and produce fidelity-gated voice editions of the Nouvelle-France ebook, readable on a phone.
 
 **Accomplished:**
-- <!-- compose -->
+- `/speckit-analyze` via the `extend` front door: reconciled plan↔tasks structural drift (the granular `fidelity/` module split that later kept every file under T026's 500-line ceiling).
+- Executed all 26 voice-editions tasks via model-sized subagent dispatch (haiku/sonnet/opus per declared tier), fresh subagent per task, durable ledger, commit+push per phase boundary. Delivered US1 (deterministic `voice fidelity` validator), US2 (impure `voice revise` provider + `.ai/` routing + gate), US3 (voice-as-input + honest restale/drift). Package suite 158→200 green.
+- Two whole-feature govern rounds (cross-model audit barrage, claude+codex). Round 1: 31 HIGH findings → fixed the correctness subset (9 false-cleans/contract-breaks) + cheap wins, backlogged 15. Round 2 (re-govern): 33 findings → caught 2 fix-INTRODUCED false-cleans, which I then closed invariant-first.
+- Voice lab (operator-directed): authored an 8-voice catalog in nouvelle-france `content/voices/`; built the real producer protocol (model declares an index mapping, provider builds the hash-keyed ledger — TASK-29); extended citation extraction for `[PB-###]` markers + `sources:`-as-allowlist. Ran the full epilogue through all 8 voices on a live `claude` model → all 8 passed fidelity (8 quotes, 3 citations, 7 figures preserved byte-exact across 28 units).
+- Built a subject-agnostic `voice reader` generator (discover + render + CLI, 247 tests green) and published a mobile artifact reader from it; relocated editions to `productions/ebook/voice-editions/<chapter>/<voice>.md` per the artifact-type convention; created a paired `nouvelle-france-voice` worktree.
 
 **Didn't Work:**
-- <!-- compose -->
+- voice-editions did NOT reach a graduate-eligible govern verdict — REFUSED both rounds; remains `override-eligible`/blocked with 24 backlog items (TASK-19…42: test-quality holes + robustness hardening).
+- My round-1 correctness fixes INTRODUCED 2 new false-cleans (verbatim donating multiset supply without consuming → re-opened AUDIT-17; verdict passing on an unclassified failure kind) — classic myopic convergence: fixed the cited example without enumerating adjacent channels. Round 2 caught them.
+- The audit-barrage background poller kept being reaped by the harness between turns (govern itself stayed healthy); relaunched repeatedly.
 
 **Course Corrections:**
-- <!-- compose -->
+- Governance is genuinely multi-round; per operator direction, scoped remediation to the correctness subset and backlogged the rest rather than chasing full convergence in-session.
+- First artifact was subject-coupled (hardcoded nouvelle-france) — rebuilt as a subject-agnostic craft tool (Constitution VII); the project supplies only data.
+- Fixed edition placement twice (root `.ai/` → a fake episode dir → `productions/ebook/voice-editions/`) to match the artifact-type-in-path convention.
 
 **Insights:**
-- <!-- compose -->
+- A language model cannot emit hash-keyed coverage ledgers; the correct producer design is a model↔provider protocol — the model declares an index mapping, the provider derives units and computes the hashes. That is the real shape of TASK-29, not "add a prompt string."
+- The fidelity gate earned its keep on real prose: eight voices re-narrated a whole chapter while every quoted primary source, citation, and figure survived byte-exact. Fidelity ≠ prose quality — the gate proves the evidence, not the narration — but the evidence guarantee held.
+- Applying the 029 process drivers (channel-enumeration, round-0 self-red-team, invariant-first) is not optional: skipping them in round 1 is exactly what produced the two fix-induced regressions round 2 found.
+- Audit-barrage recurs a false-positive class ("fixtures not committed") because lane agents see only the chunked diff and cannot run git — captured as tooling friction.
 
 **Quantitative (auto-derived from git; verify before publishing):**
 - Commits: 45
