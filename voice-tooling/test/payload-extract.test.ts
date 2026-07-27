@@ -38,6 +38,28 @@ test('AUDIT-20260726-08 (FIX 2): a prose numeral beside a digit-labeled citation
   assert.deepEqual(payload.citations, ['[^1]']);
 });
 
+test('citations: a bracketed source marker like [PB-P056] extracts as a citation, not a numeric', () => {
+  const payload = extractPayload('The prospectus promised the land[PB-P056].');
+  assert.deepEqual(payload.citations, ['[PB-P056]']);
+  assert.deepEqual(payload.numerics, []);
+});
+
+test('citations: source marker beside a prose numeral -- text [PB-P056] and 1879 extracts both, correctly split', () => {
+  const payload = extractPayload('text [PB-P056] and 1879');
+  assert.deepEqual(payload.citations, ['[PB-P056]']);
+  assert.deepEqual(payload.numerics, ['1879']);
+});
+
+test('citations: a repeated [PB-P056] marker preserves multiplicity and document order', () => {
+  const payload = extractPayload('First cite [PB-P056] and again [PB-P056] and also [PB-P092].');
+  assert.deepEqual(payload.citations, ['[PB-P056]', '[PB-P056]', '[PB-P092]']);
+});
+
+test('citations: footnote markers still work alongside source markers in the same content', () => {
+  const payload = extractPayload('A footnote[^1] and a source marker[PB-P056].');
+  assert.deepEqual(payload.citations, ['[^1]', '[PB-P056]']);
+});
+
 test('quotes: one entry per blockquote line, remainder byte-exact', () => {
   const content = '> First quoted line\n> Second quoted line\nplain text\n';
   const payload = extractPayload(content);

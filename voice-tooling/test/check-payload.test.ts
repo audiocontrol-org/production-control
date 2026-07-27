@@ -108,6 +108,36 @@ test('checkCitations: no citations in the edition -> ok with checked 0', () => {
   assert.deepEqual(result.failures, []);
 });
 
+// ---------------------------------------------------------------------------
+// FR-020: `[PB-P###]`-style bracketed source markers (Nouvelle-France ebook)
+// go through the SAME checkCitations obligations as footnote markers, since
+// `extractPayload` (payload/extract.ts) now recognizes both marker styles.
+// ---------------------------------------------------------------------------
+
+test('checkCitations: an edition citing [PB-P056], present in both the source and the allow-list, passes no-fabrication', () => {
+  const source = 'The prospectus promised the land[PB-P056].\n';
+  const edition = 'The land was promised in the prospectus[PB-P056].\n';
+
+  const result = checkCitations(source, edition, ['[PB-P056]']);
+
+  assert.equal(result.ok, true, `unexpected failures: ${result.failures.join(' | ')}`);
+  assert.deepEqual(result.failures, []);
+  assert.equal(result.checked, 1);
+});
+
+test('checkCitations: an edition citing [PB-P099], absent from the source and the allow-list, is refused for both fabrication and allow-list resolution', () => {
+  const source = 'The prospectus promised the land[PB-P056].\n';
+  const edition = 'The rewritten claim invents a source[PB-P099].\n';
+
+  const result = checkCitations(source, edition, ['[PB-P056]']);
+
+  assert.equal(result.ok, false);
+  assert.deepEqual(result.failures, [
+    'citation preservation: edition contains citation [PB-P099] absent from the source (fabrication)',
+    'citation preservation: edition citation [PB-P099] does not resolve within the frontmatter allow-list',
+  ]);
+});
+
 test('resolveQuoteObligation: false (no quote bank declared, the v1 case) -> exact-block', () => {
   assert.equal(resolveQuoteObligation(false), 'exact-block');
 });

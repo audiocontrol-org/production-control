@@ -1,5 +1,6 @@
 import { parse as parseYamlText, stringify as stringifyYaml } from 'yaml';
 import { loadLedger, type CoverageLedger } from '@/schema/ledger.ts';
+import { extractPayload } from '@/payload/extract.ts';
 
 /**
  * Pre-checks that run before any unit obligation is evaluated (contract
@@ -18,7 +19,6 @@ import { loadLedger, type CoverageLedger } from '@/schema/ledger.ts';
  */
 
 const FRONTMATTER_PATTERN = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/;
-const CITATION_MARKER_PATTERN = /\[\^[^\]]+\]/g;
 
 export interface LedgerStructureCheckResult {
   ok: boolean;
@@ -74,12 +74,17 @@ export function extractLedgerYaml(editionBytes: string | Uint8Array): string {
 }
 
 /**
- * D13.4 precondition (contract step 6): confirm every citation marker
- * (footnote-style, `[^label]`) present in the SOURCE's body resolves within
- * the source's own frontmatter `citation_allowlist`. A source whose citations
- * fall outside its own allow-list is refused before edition validation
- * begins. A source with no declared allow-list but which contains citation
- * markers also fails -- markers must be declared, not merely present.
+ * D13.4 precondition (contract step 6): confirm every citation marker --
+ * footnote-style (`[^label]`) OR bracketed source-marker style (`[PB-P056]`,
+ * FR-020) -- present in the SOURCE's body resolves within the source's own
+ * frontmatter allow-list (`citation_allowlist`, and/or markers derived from a
+ * declared `sources:` list -- see `parseCitationAllowlist`). A source whose
+ * citations fall outside its own allow-list is refused before edition
+ * validation begins. A source with no declared allow-list but which contains
+ * citation markers also fails -- markers must be declared, not merely
+ * present. Marker extraction delegates to `extractPayload` (the SAME
+ * extraction `@/payload/extract.ts` uses elsewhere) rather than
+ * re-implementing a citation-marker regex here, so the two never drift apart.
  */
 export function checkSourceCitationAllowlist(
   sourceBytes: string | Uint8Array,
@@ -89,7 +94,7 @@ export function checkSourceCitationAllowlist(
   const allowlist = block === undefined ? [] : parseCitationAllowlist(block.yamlText);
   const body = block === undefined ? text : block.body;
 
-  const markers = body.match(CITATION_MARKER_PATTERN) ?? [];
+  const markers = extractPayload(body).citations;
   for (const marker of markers) {
     if (!allowlist.includes(marker)) {
       return {
@@ -128,11 +133,31 @@ export function extractFrontmatterBlock(text: string): FrontmatterBlock | undefi
   };
 }
 
+/**
+ * Resolve a source's allow-list of citation markers (D13.4/FR-020). Two
+ * frontmatter shapes are recognized and, when both are present, UNIONED
+ * (either form is accepted):
+ *
+ * - `citation_allowlist:` -- an explicit list of literal markers, e.g.
+ *   `["[^1]"]` (the original footnote-only shape).
+ * - `sources:` -- a list of bare source ids, e.g. `[PB-P056, PB-P092]` (the
+ *   Nouvelle-France ebook shape); each id `PB-P056` derives the marker
+ *   `[PB-P056]`. This is a DERIVATION, not a second independent allow-list --
+ *   a corpus that declares its allowed sources this way gets the same
+ *   allow-list guarantee without also having to spell out
+ *   `citation_allowlist` redundantly.
+ */
 export function parseCitationAllowlist(frontmatterYaml: string): string[] {
   const parsed = parseYamlText(frontmatterYaml);
   if (!isRecord(parsed)) {
     return [];
   }
+  const declared = parseDeclaredCitationAllowlist(parsed);
+  const derived = deriveSourcesAllowlist(parsed);
+  return unionPreservingOrder(declared, derived);
+}
+
+function parseDeclaredCitationAllowlist(parsed: Record<string, unknown>): string[] {
   const value = parsed['citation_allowlist'];
   if (value === undefined) {
     return [];
@@ -146,6 +171,40 @@ export function parseCitationAllowlist(frontmatterYaml: string): string[] {
     }
     return item;
   });
+}
+
+/**
+ * Derive allow-listed markers from a frontmatter `sources:` list (FR-020):
+ * each bare id `PB-P056` becomes the bracketed marker `[PB-P056]`, matching
+ * the source-marker style `@/payload/extract.ts`'s `CITATION_RE` recognizes.
+ */
+function deriveSourcesAllowlist(parsed: Record<string, unknown>): string[] {
+  const value = parsed['sources'];
+  if (value === undefined) {
+    return [];
+  }
+  if (!Array.isArray(value)) {
+    throw new Error('source citation allow-list: sources must be a list when present');
+  }
+  return value.map((item, index) => {
+    if (typeof item !== 'string') {
+      throw new Error(`source citation allow-list: sources[${index}] must be a string`);
+    }
+    return `[${item}]`;
+  });
+}
+
+/** Union two marker lists, preserving `a`'s order then appending `b`'s novel entries in order. */
+function unionPreservingOrder(a: readonly string[], b: readonly string[]): string[] {
+  const seen = new Set(a);
+  const out = [...a];
+  for (const item of b) {
+    if (!seen.has(item)) {
+      seen.add(item);
+      out.push(item);
+    }
+  }
+  return out;
 }
 
 export function decodeText(input: string | Uint8Array): string {

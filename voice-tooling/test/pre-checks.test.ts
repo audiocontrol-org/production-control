@@ -25,6 +25,7 @@ import {
   checkLedgerStructure,
   checkSourceCitationAllowlist,
   extractLedgerYaml,
+  parseCitationAllowlist,
 } from '@/fidelity/check-ledger-structure.ts';
 import { readFixture } from './support.ts';
 
@@ -218,4 +219,74 @@ test('checkSourceCitationAllowlist: works on raw bytes (Uint8Array), not just st
   const result = checkSourceCitationAllowlist(bytes);
 
   assert.equal(result.ok, true);
+});
+
+// ---------------------------------------------------------------------------
+// FR-020: allow-list DERIVED from a frontmatter `sources:` list (the
+// Nouvelle-France ebook shape -- `sources: [PB-P056, PB-P092]` rather than
+// `citation_allowlist: ["[^1]"]`), and the union of both forms when present.
+// ---------------------------------------------------------------------------
+
+test('parseCitationAllowlist: derives bracketed markers from a frontmatter "sources:" list when no citation_allowlist is declared', () => {
+  const frontmatter = 'sources: [PB-P056, PB-P092, PB-P086]\n';
+
+  const allowlist = parseCitationAllowlist(frontmatter);
+
+  assert.deepEqual(allowlist, ['[PB-P056]', '[PB-P092]', '[PB-P086]']);
+});
+
+test('parseCitationAllowlist: unions citation_allowlist and sources when both are declared', () => {
+  const frontmatter = [
+    'citation_allowlist:',
+    '  - "[^1]"',
+    'sources: [PB-P056]',
+    '',
+  ].join('\n');
+
+  const allowlist = parseCitationAllowlist(frontmatter);
+
+  assert.deepEqual(allowlist, ['[^1]', '[PB-P056]']);
+});
+
+test('parseCitationAllowlist: no citation_allowlist and no sources -> empty list', () => {
+  assert.deepEqual(parseCitationAllowlist('title: untitled\n'), []);
+});
+
+test('parseCitationAllowlist: sources present but not a list throws', () => {
+  assert.throws(() => parseCitationAllowlist('sources: PB-P056\n'), /sources must be a list/);
+});
+
+test('parseCitationAllowlist: a non-string sources entry throws', () => {
+  assert.throws(() => parseCitationAllowlist('sources: [123]\n'), /sources\[0\] must be a string/);
+});
+
+test('checkSourceCitationAllowlist: a chapter whose frontmatter declares "sources:" and whose body cites the same id passes the D13.4 precondition', () => {
+  const source = [
+    '---',
+    'id: epilogue',
+    'sources: [PB-P056, PB-P092]',
+    '---',
+    'The prospectus promised the land[PB-P056], and the record disputed the toll[PB-P092].',
+    '',
+  ].join('\n');
+
+  const result = checkSourceCitationAllowlist(source);
+
+  assert.equal(result.ok, true, `expected ok; got failure: ${result.failure}`);
+});
+
+test('checkSourceCitationAllowlist: a marker not covered by "sources:" fails, naming the marker', () => {
+  const source = [
+    '---',
+    'id: epilogue',
+    'sources: [PB-P056]',
+    '---',
+    'The prospectus promised the land[PB-P056], but this claim invents[PB-P099].',
+    '',
+  ].join('\n');
+
+  const result = checkSourceCitationAllowlist(source);
+
+  assert.equal(result.ok, false);
+  assert.ok(result.failure?.includes('[PB-P099]'), `expected the failure to name [PB-P099]; got: ${result.failure}`);
 });

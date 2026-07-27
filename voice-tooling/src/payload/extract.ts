@@ -16,7 +16,10 @@
 export interface UnitPayload {
   /** Verbatim quoted spans (blockquote-line remainders for the current corpus). */
   quotes: string[];
-  /** Footnote-style citation markers, e.g. `[^1]`, `[^PB-P076]`. */
+  /**
+   * Citation markers, e.g. `[^1]`, `[^PB-P076]` (footnote-style) or
+   * `[PB-P056]` (bracketed source-marker style, no caret).
+   */
   citations: string[];
   /** Maximal numeric-literal tokens, e.g. `1978`, `3.14`, `1,000`. */
   numerics: string[];
@@ -27,8 +30,17 @@ export interface UnitPayload {
 /** Maximal numeric-literal tokens: digit runs joined by `.`/`,` (byte-exact). */
 const NUMERIC_RE = /\d+(?:[.,]\d+)*/g;
 
-/** Footnote-style citation markers: `[^` then one-or-more non-`]`/non-space. */
-const CITATION_RE = /\[\^[^\]\s]+\]/g;
+/**
+ * Citation markers: EITHER a footnote-style marker (`[^` then one-or-more
+ * non-`]`/non-space, e.g. `[^1]`, `[^PB-P076]`) OR a bracketed source-marker
+ * (e.g. `[PB-P056]`, `[XYZ-12A]`): an uppercase-initial alpha prefix, a
+ * hyphen, then an alphanumeric/hyphen tail. The source-marker branch is
+ * deliberately narrow (uppercase-initial prefix + hyphen required) so it
+ * matches corpora like Nouvelle-France's `[PB-P056]` inline source citations
+ * without swallowing ordinary bracketed markdown (e.g. `[link text]`,
+ * `[TODO]`).
+ */
+const CITATION_RE = /\[\^[^\]\s]+\]|\[[A-Z][A-Z0-9]*-[A-Z0-9-]+\]/g;
 
 /**
  * A blockquote physical line: up to three leading spaces, `>`, one optional
@@ -68,6 +80,10 @@ export function extractPayload(
  * and a legitimate footnote renumber could read as a numeric shortfall). Masking
  * the citation-marker spans before applying `NUMERIC_RE` makes extraction itself
  * correct at the single source of truth, so a bare `[^1]` yields a citation only.
+ * The mask is built from `CITATION_RE.source`/`.flags` (not a re-declared
+ * pattern), so extending `CITATION_RE` with the `[PB-P056]`-style source-marker
+ * branch masks those spans too automatically -- `[PB-P056]` yields a citation
+ * only, never a stray `056` numeral.
  */
 function extractNumerics(content: string): string[] {
   const withoutCitationMarkers = content.replace(
