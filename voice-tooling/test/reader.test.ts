@@ -109,6 +109,26 @@ test('discoverEditions: finds both chapters, sorted, with prettified titles', as
   });
 });
 
+test('discoverEditions: orders chapters for reading -- prologue first, numbered by value (ch2 < ch10), epilogue last (AUDIT-20260728-29)', async () => {
+  await withTempDir((tmpDir) => {
+    const editionsRoot = path.join(tmpDir, 'editions');
+    const voicesDir = path.join(tmpDir, 'voices');
+    fs.mkdirSync(voicesDir, { recursive: true });
+    // created in a lexicographically-misleading order; ch2/ch10 unpadded so a
+    // lexicographic sort would place ch10 before ch2 (proving numeric ordering).
+    for (const slug of ['epilogue', 'ch10', 'ch2', 'prologue']) {
+      const dir = path.join(editionsRoot, slug);
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(path.join(dir, 'voice-alpha.md'), EDITION_A, 'utf8');
+    }
+    const model = discoverEditions({ editionsRoot, voicesDir });
+    assert.deepEqual(
+      model.chapters.map((c) => c.slug),
+      ['prologue', 'ch2', 'ch10', 'epilogue'],
+    );
+  });
+});
+
 test('discoverEditions: each chapter has both voices, sorted by filename', async () => {
   await withTempDir((tmpDir) => {
     const { editionsRoot, voicesDir } = buildFixture(tmpDir);

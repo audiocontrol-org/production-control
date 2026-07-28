@@ -77,7 +77,7 @@ export function discoverEditions(args: DiscoverEditionsArgs): ReaderModel {
     throw new Error(`discoverEditions: editionsRoot "${editionsRoot}" does not exist (or is not a directory)`);
   }
 
-  const chapterSlugs = listSubdirectories(editionsRoot);
+  const chapterSlugs = listSubdirectories(editionsRoot).sort(compareChapterSlugs);
   if (chapterSlugs.length === 0) {
     throw new Error(`discoverEditions: editionsRoot "${editionsRoot}" contains no chapter subdirectories`);
   }
@@ -221,6 +221,41 @@ function firstSentence(text: string): string {
     return text.trim();
   }
   return text.slice(0, index + 1).trim();
+}
+
+// Generic book-structure slug vocabulary (NOT a project's content) used only to
+// ORDER chapters for reading. Subject-agnostic per Constitution VII.
+const FRONT_MATTER = new Set([
+  'front-matter', 'frontmatter', 'cover', 'title', 'copyright', 'dedication', 'epigraph',
+  'preface', 'foreword', 'introduction', 'intro', 'prologue', 'prelude', 'proem',
+]);
+const BACK_MATTER = new Set([
+  'epilogue', 'afterword', 'conclusion', 'coda', 'postscript', 'appendix', 'glossary',
+  'notes', 'bibliography', 'index', 'acknowledgements', 'acknowledgments', 'back-matter',
+]);
+
+/**
+ * Reading-order key for a chapter slug: front-matter/prologue class FIRST,
+ * numbered chapters by their embedded number (so ch2 precedes ch10, not the
+ * lexicographic reverse), unknown slugs in the middle (lexicographic),
+ * epilogue/back-matter LAST. Keys off generic structure vocabulary + an
+ * embedded integer only -- never a project's subject (AUDIT-20260728-29).
+ */
+function chapterOrderKey(slug: string): [number, number, string] {
+  const lower = slug.toLowerCase();
+  if (FRONT_MATTER.has(lower)) return [0, 0, lower];
+  if (BACK_MATTER.has(lower)) return [3, 0, lower];
+  const match = /\d+/.exec(lower);
+  if (match !== null) return [1, Number.parseInt(match[0], 10), lower];
+  return [2, 0, lower];
+}
+
+function compareChapterSlugs(a: string, b: string): number {
+  const ka = chapterOrderKey(a);
+  const kb = chapterOrderKey(b);
+  if (ka[0] !== kb[0]) return ka[0] - kb[0];
+  if (ka[1] !== kb[1]) return ka[1] - kb[1];
+  return ka[2] < kb[2] ? -1 : ka[2] > kb[2] ? 1 : 0;
 }
 
 /** Title Case, hyphens -> spaces (e.g. "chapter-one" -> "Chapter One"). */
