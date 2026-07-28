@@ -1,0 +1,160 @@
+govern clone-step: 17 clone group(s) in this codebase; 17 NEW (no baseline yet).
+  NEW clone 78bec65fbd1c (34 lines)
+    /Users/orion/work/production-control-work/production-control-voice/voice-tooling/src/schema/ledger.ts:243:276
+    /Users/orion/work/production-control-work/production-control-voice/voice-tooling/src/schema/voice.ts:160:193
+  NEW clone a686786ca221 (18 lines)
+    /Users/orion/work/production-control-work/production-control-voice/voice-tooling/src/schema/ledger.ts:285:302
+    /Users/orion/work/production-control-work/production-control-voice/voice-tooling/src/schema/voice.ts:190:207
+  NEW clone 7010ab0d4ab5 (9 lines)
+    /Users/orion/work/production-control-work/production-control-voice/voice-tooling/src/fidelity/run.ts:185:193
+    /Users/orion/work/production-control-work/production-control-voice/voice-tooling/src/fidelity/run.ts:266:274
+  NEW clone 5b6892dad50c (13 lines)
+    /Users/orion/work/production-control-work/production-control-voice/voice-tooling/src/fidelity/cli.ts:113:125
+    /Users/orion/work/production-control-work/production-control-voice/voice-tooling/src/revise/cli.ts:23:31
+  NEW clone 937bbfafe010 (9 lines)
+    /Users/orion/work/production-control-work/production-control-voice/voice-tooling/src/fidelity/check-op-obligations.ts:453:461
+    /Users/orion/work/production-control-work/production-control-voice/voice-tooling/src/fidelity/run-support.ts:54:62
+  NEW clone 356c76d6cc82 (6 lines)
+    /Users/orion/work/production-control-work/production-control-voice/tests/integration/support.ts:162:167
+    /Users/orion/work/production-control-work/production-control-voice/tests/unit/state/support.ts:27:32
+  NEW clone bccefdbec2ac (6 lines)
+    /Users/orion/work/production-control-work/production-control-voice/src/providers/run.ts:111:116
+    /Users/orion/work/production-control-work/production-control-voice/src/providers/validate-run.ts:110:114
+  NEW clone 07a6d5cd6999 (22 lines)
+    /Users/orion/work/production-control-work/production-control-voice/src/providers/run.ts:117:138
+    /Users/orion/work/production-control-work/production-control-voice/src/providers/validate-run.ts:114:134
+  NEW clone 208f519df3e2 (12 lines)
+    /Users/orion/work/production-control-work/production-control-voice/src/providers/run.ts:201:212
+    /Users/orion/work/production-control-work/production-control-voice/src/providers/validate-run.ts:68:77
+  NEW clone 8b9458fe9cf0 (8 lines)
+    /Users/orion/work/production-control-work/production-control-voice/src/manifest/load.ts:113:120
+    /Users/orion/work/production-control-work/production-control-voice/src/providers/contract.ts:126:133
+  NEW clone 35e2a730467e (38 lines)
+    /Users/orion/work/production-control-work/production-control-voice/src/ledger/store.ts:137:174
+    /Users/orion/work/production-control-work/production-control-voice/src/manifest/load.ts:74:111
+  NEW clone 755394449568 (14 lines)
+    /Users/orion/work/production-control-work/production-control-voice/src/ledger/store.ts:175:188
+    /Users/orion/work/production-control-work/production-control-voice/src/manifest/load.ts:112:125
+  NEW clone a7f8e2b8a6de (6 lines)
+    /Users/orion/work/production-control-work/production-control-voice/src/cli/index.ts:114:119
+    /Users/orion/work/production-control-work/production-control-voice/src/cli/index.ts:229:234
+  NEW clone f7450fbb5ae3 (24 lines)
+    /Users/orion/work/production-control-work/production-control-voice/src/cli/asset.ts:159:182
+    /Users/orion/work/production-control-work/production-control-voice/src/manifest/load.ts:85:96
+  NEW clone e7916441c40a (13 lines)
+    /Users/orion/work/production-control-work/production-control-voice/src/assets/pointer.ts:151:163
+    /Users/orion/work/production-control-work/production-control-voice/src/manifest/load.ts:81:96
+  NEW clone 160052a39bb1 (7 lines)
+    /Users/orion/work/production-control-work/production-control-voice/src/assets/pointer.ts:163:169
+    /Users/orion/work/production-control-work/production-control-voice/src/manifest/load.ts:97:103
+  NEW clone dbfe0f5d17d4 (9 lines)
+    /Users/orion/work/production-control-work/production-control-voice/src/assets/pointer.ts:173:181
+    /Users/orion/work/production-control-work/production-control-voice/src/manifest/load.ts:112:120
+govern: code-only scoping active — excluded 42 documentation file(s) from the audit payload.
+govern: chunk 0168cfc126e69be9 barrage run-dir = /Users/orion/work/production-control-work/production-control-voice/.stack-control/audit-runs/20260728T014742339Z-005-voice-producer-protocol-after_implement
+govern: fleet — configured 2, produced 2
+govern:   claude: completed [enforced, monitored]
+govern:   codex: completed [enforced, monitored]
+govern: chunk 0946dd77af3ad23f barrage run-dir = /Users/orion/work/production-control-work/production-control-voice/.stack-control/audit-runs/20260728T015208005Z-005-voice-producer-protocol-after_implement
+govern: fleet — configured 2, produced 2
+govern:   claude: completed [enforced, monitored]
+govern:   codex: completed [enforced, monitored]
+govern: chunk 18354d85ce4a36b2 barrage run-dir = /Users/orion/work/production-control-work/production-control-voice/.stack-control/audit-runs/20260728T015502608Z-005-voice-producer-protocol-after_implement
+govern: fleet — configured 2, produced 2
+govern:   claude: completed [enforced, monitored]
+govern:   codex: completed [enforced, monitored]
+govern: chunk 18bdd3df2ee060e2 barrage run-dir = /Users/orion/work/production-control-work/production-control-voice/.stack-control/audit-runs/20260728T015822566Z-005-voice-producer-protocol-after_implement
+govern: fleet — configured 2, produced 2
+govern:   claude: completed [enforced, monitored]
+govern:   codex: completed [enforced, monitored]
+govern: chunk 2a9ae87a10c3a763 barrage run-dir = /Users/orion/work/production-control-work/production-control-voice/.stack-control/audit-runs/20260728T020016056Z-005-voice-producer-protocol-after_implement
+govern: fleet — configured 2, produced 2
+govern:   claude: completed [enforced, monitored]
+govern:   codex: completed [enforced, monitored]
+govern: chunk 2dffd55e56ad504d barrage run-dir = /Users/orion/work/production-control-work/production-control-voice/.stack-control/audit-runs/20260728T020253967Z-005-voice-producer-protocol-after_implement
+govern: fleet — configured 2, produced 2
+govern:   claude: completed [enforced, monitored]
+govern:   codex: completed [enforced, monitored]
+govern: chunk 322b59e20e70e5b0 barrage run-dir = /Users/orion/work/production-control-work/production-control-voice/.stack-control/audit-runs/20260728T020620514Z-005-voice-producer-protocol-after_implement
+govern: fleet — configured 2, produced 2
+govern:   claude: completed [enforced, monitored]
+govern:   codex: completed [enforced, monitored]
+govern: chunk 32e0b10390f85a61 barrage run-dir = /Users/orion/work/production-control-work/production-control-voice/.stack-control/audit-runs/20260728T020927213Z-005-voice-producer-protocol-after_implement
+govern: fleet — configured 2, produced 2
+govern:   claude: completed [enforced, monitored]
+govern:   codex: completed [enforced, monitored]
+govern: chunk 343e020293434f91 barrage run-dir = /Users/orion/work/production-control-work/production-control-voice/.stack-control/audit-runs/20260728T021449438Z-005-voice-producer-protocol-after_implement
+govern: fleet — configured 2, produced 2
+govern:   claude: completed [enforced, monitored]
+govern:   codex: completed [enforced, monitored]
+govern: chunk 41f2a0f4b9a813e7 barrage run-dir = /Users/orion/work/production-control-work/production-control-voice/.stack-control/audit-runs/20260728T021857734Z-005-voice-producer-protocol-after_implement
+govern: fleet — configured 2, produced 2
+govern:   claude: completed [enforced, monitored]
+govern:   codex: completed [enforced, monitored]
+govern: chunk 42bd5653485663b0 barrage run-dir = /Users/orion/work/production-control-work/production-control-voice/.stack-control/audit-runs/20260728T022331358Z-005-voice-producer-protocol-after_implement
+govern: fleet — configured 2, produced 2
+govern:   claude: completed [enforced, monitored]
+govern:   codex: completed [enforced, monitored]
+govern: chunk 4c02fad1ec3c47f4 barrage run-dir = /Users/orion/work/production-control-work/production-control-voice/.stack-control/audit-runs/20260728T022624289Z-005-voice-producer-protocol-after_implement
+govern: fleet — configured 2, produced 2
+govern:   claude: completed [enforced, monitored]
+govern:   codex: completed [enforced, monitored]
+govern: chunk 51f884a51186d562 barrage run-dir = /Users/orion/work/production-control-work/production-control-voice/.stack-control/audit-runs/20260728T022850904Z-005-voice-producer-protocol-after_implement
+govern: fleet — configured 2, produced 2
+govern:   claude: completed [enforced, monitored]
+govern:   codex: completed [enforced, monitored]
+govern: chunk 6c9e0010785d9e83 barrage run-dir = /Users/orion/work/production-control-work/production-control-voice/.stack-control/audit-runs/20260728T023321028Z-005-voice-producer-protocol-after_implement
+govern: fleet — configured 2, produced 2
+govern:   claude: completed [enforced, monitored]
+govern:   codex: completed [enforced, monitored]
+govern: chunk 7f6b5b0e60aad79f barrage run-dir = /Users/orion/work/production-control-work/production-control-voice/.stack-control/audit-runs/20260728T023619398Z-005-voice-producer-protocol-after_implement
+govern: fleet — configured 2, produced 2
+govern:   claude: completed [enforced, monitored]
+govern:   codex: completed [enforced, monitored]
+govern: chunk 8af3d376655b0383 barrage run-dir = /Users/orion/work/production-control-work/production-control-voice/.stack-control/audit-runs/20260728T024023971Z-005-voice-producer-protocol-after_implement
+govern: fleet — configured 2, produced 2
+govern:   claude: completed [enforced, monitored]
+govern:   codex: completed [enforced, monitored]
+govern: chunk 99eb9a5f83bad255 barrage run-dir = /Users/orion/work/production-control-work/production-control-voice/.stack-control/audit-runs/20260728T024424703Z-005-voice-producer-protocol-after_implement
+govern: fleet — configured 2, produced 2
+govern:   claude: completed [enforced, monitored]
+govern:   codex: completed [enforced, monitored]
+govern: chunk 9ea434654257d148 barrage run-dir = /Users/orion/work/production-control-work/production-control-voice/.stack-control/audit-runs/20260728T024844577Z-005-voice-producer-protocol-after_implement
+govern: fleet — configured 2, produced 2
+govern:   claude: completed [enforced, monitored]
+govern:   codex: completed [enforced, monitored]
+govern: chunk ac767d83a6b91407 barrage run-dir = /Users/orion/work/production-control-work/production-control-voice/.stack-control/audit-runs/20260728T025306418Z-005-voice-producer-protocol-after_implement
+govern: fleet — configured 2, produced 2
+govern:   claude: completed [enforced, monitored]
+govern:   codex: completed [enforced, monitored]
+govern: chunk ad8db5047aa1bf10 barrage run-dir = /Users/orion/work/production-control-work/production-control-voice/.stack-control/audit-runs/20260728T025518571Z-005-voice-producer-protocol-after_implement
+govern: fleet — configured 2, produced 2
+govern:   claude: completed [enforced, monitored]
+govern:   codex: completed [enforced, monitored]
+govern: chunk b17e2d7d340c1e69 barrage run-dir = /Users/orion/work/production-control-work/production-control-voice/.stack-control/audit-runs/20260728T025730425Z-005-voice-producer-protocol-after_implement
+govern: fleet — configured 2, produced 2
+govern:   claude: completed [enforced, monitored]
+govern:   codex: completed [enforced, monitored]
+govern: chunk c73dca09420d3d75 barrage run-dir = /Users/orion/work/production-control-work/production-control-voice/.stack-control/audit-runs/20260728T030152238Z-005-voice-producer-protocol-after_implement
+govern: fleet — configured 2, produced 2
+govern:   claude: completed [enforced, monitored]
+govern:   codex: completed [enforced, monitored]
+govern: chunk df2bb1acc234420c barrage run-dir = /Users/orion/work/production-control-work/production-control-voice/.stack-control/audit-runs/20260728T030602692Z-005-voice-producer-protocol-after_implement
+govern: fleet — configured 2, produced 2
+govern:   claude: completed [enforced, monitored]
+govern:   codex: completed [enforced, monitored]
+govern: chunk e8e6870fc62e6522 barrage run-dir = /Users/orion/work/production-control-work/production-control-voice/.stack-control/audit-runs/20260728T030920442Z-005-voice-producer-protocol-after_implement
+govern: fleet — configured 2, produced 2
+govern:   claude: completed [enforced, monitored]
+govern:   codex: completed [enforced, monitored]
+govern: chunk e9449c10a93dde62 barrage run-dir = /Users/orion/work/production-control-work/production-control-voice/.stack-control/audit-runs/20260728T031211303Z-005-voice-producer-protocol-after_implement
+govern: fleet — configured 2, produced 2
+govern:   claude: completed [enforced, monitored]
+govern:   codex: completed [enforced, monitored]
+govern: chunk f2899e55152f2223 barrage run-dir = /Users/orion/work/production-control-work/production-control-voice/.stack-control/audit-runs/20260728T031551537Z-005-voice-producer-protocol-after_implement
+govern: fleet — configured 2, produced 2
+govern:   claude: completed [enforced, monitored]
+govern:   codex: completed [enforced, monitored]
+govern: lift-once — recorded 35 finding(s) as ONE section in /Users/orion/work/production-control-work/production-control-voice/specs/005-voice-producer-protocol/audit-log.md (FR-026).
+govern: implementation NOT done — end-govern reconciled to 'override-eligible' (35 open finding(s) over 26 chunk(s), 1 round(s)). Fix the surfaced findings & re-govern, or record --override.
+govern: terminal-outcome=blocked
