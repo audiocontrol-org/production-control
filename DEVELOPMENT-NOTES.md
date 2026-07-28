@@ -1,18 +1,29 @@
-## 2026-07-28: <!-- session title -->
+## 2026-07-28: formalize + ship voice-editions (specs 004+005); full-ebook empirical run; prototype compose-from-spine
 
-**Goal:** <!-- compose: what we set out to do -->
+**Goal:** Formalize the spike's producer-protocol + citation tooling through the governed front door and ship the voice stack; then — per the operator's "override governance and actually use our tooling" direction — validate it empirically on the whole ebook and prototype the next extension (composing chapters from the story spine).
 
 **Accomplished:**
-- <!-- compose -->
+- Formalized the producer-protocol work through the full front door: roadmap item created + TASK-29 promoted; **design** (as-built captured, approved, exit gate 7/7) → **define** (`specs/005` full authoring chain: spec/plan/research/data-model/contract/quickstart/tasks, runnable) → **analyze-clean** → **execute** (adopt-and-ratify: all 13 tasks ratified; the ratification found + filled a real FR-005 test gap; 258 tests green).
+- `005` govern (round 3) caught **4 fix-induced regressions** in my earlier multiset/verdict remediation; fixed them invariant-first — per-destination shared supply (an entry is corroborated ONLY by its own declared destinations), verdict from the check-map (not `failures.length`), unresolved-dest always fails — 257 green, all prior regressions (AUDIT-17/-03/-19, D22) re-confirmed.
+- **Overrode governance** for both `004` and `005` (recorded, honest reasons) and **shipped**: PR #8 merged to `main`, both recorded `status: shipped` welded to the merge.
+- Ran the **full ebook (56 editions)** through the live model: **54/56 fidelity-passed**; the gate caught 2 real infidelities (the model altered a unit it declared `verbatim`). Regenerated the multi-chapter reader (fixed chapter ordering, closed TASK-46) and republished.
+- **Prototyped compose-from-spine**: an env-gated compose mode that expands the source-cited spine into a chapter, forbidding `verbatim`; Ep 1 fidelity-passed (10 numerals + 3 citations preserved), resolving the verbatim-drift for that path. Captured TASK-51 to formalize.
 
 **Didn't Work:**
-- <!-- compose -->
+- `005` govern REFUSED (35 findings), but ~26 chunks re-audited the WHOLE spike surface — mostly re-surfaced `004` backlog + premature reader findings, not `005`. Everything on one long-lived branch makes clean per-feature govern impossible.
+- The multiset/verdict remediation was genuinely multi-round: round-2's fixes opened round-3's regressions (`-04/-14/-24/-28`). Three generations of fixes on the same code before it converged — the myopic-convergence trap, repeatedly.
+- The harness kept reaping `run_in_background` tasks (govern pollers + the 56-call ebook run), killing long work mid-flight — relaunched repeatedly until the `nohup` fix.
 
 **Course Corrections:**
-- <!-- compose -->
+- Stopped the govern spiral per operator direction — overrode, shipped, and validated empirically instead of chasing barrage convergence.
+- Long-running work: switched from `run_in_background` (reaped) to **`nohup`-detached + resumable + a reap-tolerant watcher** (operator's tip; now a standing instruction in the global CLAUDE.md).
+- Caught + removed an AI-attribution footer the harness default injected into the PR body — the operator's standing no-attribution rule wins.
 
 **Insights:**
-- <!-- compose -->
+- **Empirical use beat the barrage**: the full-ebook run found a concrete, consistent infidelity class (verbatim-drift, 2/56) the audit-barrage never surfaced — and 54/56 faithful is real validation the tooling holds on a whole book.
+- **The spine is itself a source-cited document**, so compose-from-spine reuses the ENTIRE fidelity + producer machinery unchanged — the "extension" is a compose prompt mode, not a new system. Validated in a single probe.
+- **The right framing removes a whole failure class**: forbidding `verbatim` in compose mode both fits the task (expansion is never copying) AND eliminates the verbatim-drift failure.
+- Per-feature govern on a shared long-lived branch re-audits the whole surface; clean convergence needs isolated per-increment diffs — a branch-topology lesson for the next increment.
 
 **Quantitative (auto-derived from git; verify before publishing):**
 - Commits: 11
