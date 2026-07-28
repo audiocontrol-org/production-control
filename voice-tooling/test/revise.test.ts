@@ -11,7 +11,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { createHash } from 'node:crypto';
 import { parseReviseRequest } from '@/revise/request.ts';
-import { buildRevisePrompt, invokeModel } from '@/revise/model.ts';
+import { buildRevisePrompt, invokeModel, resolveModelCommand } from '@/revise/model.ts';
 import { emitEdition } from '@/revise/emit.ts';
 import { loadVoice } from '@/schema/voice.ts';
 import { withTempDir } from './support.ts';
@@ -251,6 +251,73 @@ test('buildRevisePrompt: presents the source as numbered units and demands the M
   assert.ok(/VERBATIM \(byte-exact\)/.test(prompt), 'states the byte-exact fidelity contract');
   assert.ok(prompt.includes('"edition"') && prompt.includes('"coverage"'), 'names the output shape');
   assert.ok(prompt.includes('0-based indices'), 'demands 0-based edition-unit indices');
+});
+
+// ---- resolveModelCommand (FR-005 / SC-002) --------------------------------
+//
+// The model command is operator-supplied via VOICE_REVISE_MODEL; there is NO
+// baked-in default and NO fallback output. These tests pin the fail-loud
+// refusal (US1 Acceptance Scenario 2 / SC-002) and the two resolution paths.
+// Each mutates the process-global env var and restores it in a `finally` so it
+// never leaks into a sibling test.
+
+function withEnvVar(value: string | undefined, body: () => void): void {
+  const saved = process.env.VOICE_REVISE_MODEL;
+  try {
+    if (value === undefined) {
+      delete process.env.VOICE_REVISE_MODEL;
+    } else {
+      process.env.VOICE_REVISE_MODEL = value;
+    }
+    body();
+  } finally {
+    if (saved === undefined) {
+      delete process.env.VOICE_REVISE_MODEL;
+    } else {
+      process.env.VOICE_REVISE_MODEL = saved;
+    }
+  }
+}
+
+test('resolveModelCommand: fails loud naming VOICE_REVISE_MODEL when neither an explicit command nor the env var is set (FR-005/SC-002)', () => {
+  withEnvVar(undefined, () => {
+    assert.throws(
+      () => resolveModelCommand(undefined),
+      (err: unknown) => {
+        assert.ok(err instanceof Error);
+        assert.match(err.message, /VOICE_REVISE_MODEL/, 'must name the missing environment variable');
+        assert.match(
+          err.message,
+          /never invents a default model|falls back to mock output/,
+          'must state there is no default model / no fallback',
+        );
+        return true;
+      },
+      'an unset VOICE_REVISE_MODEL with no explicit command must refuse, naming the missing configuration',
+    );
+  });
+});
+
+test('resolveModelCommand: an empty/whitespace VOICE_REVISE_MODEL is still a refusal (no silent fallback)', () => {
+  withEnvVar('   ', () => {
+    assert.throws(() => resolveModelCommand(undefined), /VOICE_REVISE_MODEL/);
+  });
+});
+
+test('resolveModelCommand: reads the VOICE_REVISE_MODEL env var and tokenizes it into command + args', () => {
+  withEnvVar('my-model --flag', () => {
+    const cmd = resolveModelCommand(undefined);
+    assert.equal(cmd.command, 'my-model');
+    assert.deepEqual(cmd.args, ['--flag']);
+  });
+});
+
+test('resolveModelCommand: an explicit command wins over the env var and is tokenized', () => {
+  withEnvVar('env-model', () => {
+    const cmd = resolveModelCommand('claude -p --model sonnet');
+    assert.equal(cmd.command, 'claude');
+    assert.deepEqual(cmd.args, ['-p', '--model', 'sonnet']);
+  });
 });
 
 test('invokeModel: writes the prompt on stdin and returns the raw stdout', async () => {
