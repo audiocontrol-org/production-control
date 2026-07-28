@@ -3,7 +3,7 @@
 **Roadmap item:** `design:feature/voice-editions`
 **Date:** 2026-07-25 (revised same day after third-party review)
 **Status:** awaiting operator approval (`design-approved:` marker)
-**Blocked by:** `design:feature/content-zone-segregation`
+**Blocker:** `design:feature/content-zone-segregation` — **SHIPPED** (merged 2026-07-26, PR #7; status: shipped). The enforced boundary D19 depends on now exists: impure output routes to the dot-zoned `.ai/` root, an authored node declared under a dot-zone is refused (graph validation), and `pc audit-zones` reports routing violations pre-build. The dependency is satisfied; this design is unblocked pending the approval marker.
 
 ## Problem domain
 
@@ -430,8 +430,11 @@ and is superseded.** Two facts drove the correction:
 2. The operator set a stricter rule than adoption: **AI-generated content must never
    be written to a human-safe area, and an AI draft is never taken over by a human.**
 
-So an edition is treated as a machine artifact throughout its life, written to a
-dot-zoned (AI-permitted) path under `dist/` and never edited in place. A human who
+So an edition is treated as a machine artifact throughout its life, written to the
+dot-zoned (AI-permitted) `.ai/` root — a sibling of `dist/` directly under the episode
+dir, per what content-zone-segregation shipped (the impure root is `.ai/`, NOT a
+`dist/.ai/` nesting; the original nested model was corrected to a sibling root during
+that feature's implementation) — and never edited in place. A human who
 wants to work on the prose authors a **separate companion document in a human-safe
 area**, which the manifest's existing `follows` advisory edge already models ("is a
 response to," distinct from a build dependency, FR-019). The companion is authored

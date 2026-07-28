@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "mode": "impl",
+  "item": "design:feature/voice-editions",
+  "governedShaBase": "override-short-circuit",
+  "headSha": "override-short-circuit",
+  "chunkIds": [],
+  "rounds": 0,
+  "liftedFindings": [],
+  "closedInLoopFindings": [],
+  "seamResult": {
+    "boundaryPairs": [],
+    "findings": [],
+    "suppressedCompatible": 0
+  },
+  "splitClusterRefs": [],
+  "outcome": "override-eligible",
+  "anchorRoot": "/Users/orion/work/production-control-work/production-control-voice",
+  "override": true,
+  "overrideReason": "Shipped alongside 005 on the same branch. The round-1/round-2 correctness false-cleans were fixed and re-confirmed; remaining findings are test-quality + hardening tracked as TASK-19..42. Implementation is green (258 package tests + repo integration) and empirically validated by the full-ebook 8-voice run (54/56 faithful, 2 correctly refused). Operator ship decision."
+}

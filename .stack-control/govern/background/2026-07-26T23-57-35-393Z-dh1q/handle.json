@@ -1,0 +1,11 @@
+{
+  "handle": "2026-07-26T23-57-35-393Z-dh1q",
+  "governArgs": [
+    "--mode",
+    "implement"
+  ],
+  "cwd": "/Users/orion/work/production-control-work/production-control-voice",
+  "startedAt": "2026-07-26T23:57:35.393Z",
+  "pid": 93864,
+  "logPath": "/Users/orion/work/production-control-work/production-control-voice/.stack-control/govern/background/2026-07-26T23-57-35-393Z-dh1q/govern.log"
+}

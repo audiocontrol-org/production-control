@@ -60,6 +60,14 @@ const SHARED_PROFILE_FIXTURES = [
   'asset',
 ] as const;
 
+/**
+ * Deliberate exceptions to the shared profile, each validated by its own dedicated test below
+ * rather than the generic loop: `cycle` on purpose refuses; `voice-revise` (specs/004-voice-
+ * editions US2, T018) uses its OWN `profiles/voice-editions.yaml`, not `editorial-audio.yaml` —
+ * a source draft and a voice document have nothing to do with the podcast/epub/web recipe.
+ */
+const OTHER_FIXTURES = ['cycle', 'voice-revise'] as const;
+
 describe('the fixtures on disk, through the real load → build → validate path', () => {
   it('the fixture list is not stale — every episode directory on disk is accounted for here', () => {
     // A fixture added later must not sit unvalidated just because this list was not updated.
@@ -71,7 +79,7 @@ describe('the fixtures on disk, through the real load → build → validate pat
       .filter((name) => fs.existsSync(path.join(FIXTURES, name, 'episode.yaml')))
       .sort();
 
-    expect(onDisk).toEqual([...SHARED_PROFILE_FIXTURES, 'cycle'].sort());
+    expect(onDisk).toEqual([...SHARED_PROFILE_FIXTURES, ...OTHER_FIXTURES].sort());
   });
 
   describe('every episode sharing the generic editorial-audio profile validates (FR-004)', () => {
@@ -199,6 +207,24 @@ describe('the fixtures on disk, through the real load → build → validate pat
     expect(manifest.authored.spoken).toBeDefined();
     expect(graph.nodes.has('transcript')).toBe(false);
   });
+
+  it(
+    'voice-revise validates through its OWN `voice-editions` profile, not the shared one ' +
+      '(specs/004-voice-editions US2, T018)',
+    async () => {
+      const { manifest, profile } = await loadFixture('voice-revise');
+
+      expect(manifest.profile).toBe('voice-editions');
+      expect(manifest.targets).toEqual(['edition']);
+      expect(() => validateGraph(manifest, profile)).not.toThrow();
+
+      const graph = buildGraph(manifest, profile);
+      expect([...graph.nodes.keys()].sort()).toEqual(['edition', 'source', 'voice']);
+      expect(graph.nodes.get('edition')?.kind).toBe('derived');
+      expect(graph.nodes.get('source')?.kind).toBe('authored');
+      expect(graph.nodes.get('voice')?.kind).toBe('authored');
+    }
+  );
 
   it('cycle is still REFUSED, naming the cycle (FR-005)', async () => {
     // The one fixture that must not validate. Its `a -> b -> c -> a` is reachable from its

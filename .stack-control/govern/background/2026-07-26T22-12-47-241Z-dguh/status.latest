@@ -1,0 +1,3 @@
+govern --status 2026-07-26T22-12-47-241Z-dguh: completed
+  gate verdict: exit 1 (REFUSED).
+  log: /Users/orion/work/production-control-work/production-control-voice/.stack-control/govern/background/2026-07-26T22-12-47-241Z-dguh/govern.log

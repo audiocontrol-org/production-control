@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "mode": "impl",
+  "item": "design:feature/voice-producer-protocol",
+  "governedShaBase": "override-short-circuit",
+  "headSha": "override-short-circuit",
+  "chunkIds": [],
+  "rounds": 0,
+  "liftedFindings": [],
+  "closedInLoopFindings": [],
+  "seamResult": {
+    "boundaryPairs": [],
+    "findings": [],
+    "suppressedCompatible": 0
+  },
+  "splitClusterRefs": [],
+  "outcome": "override-eligible",
+  "anchorRoot": "/Users/orion/work/production-control-work/production-control-voice",
+  "override": true,
+  "overrideReason": "Genuine 005 producer regressions (AUDIT-20260728-04/14/24/28) fixed in 708b729: per-destination multiset supply, verdict from check-map, unresolved-dest always fails; 257 tests green, all prior regressions (AUDIT-17/-03/-19, D22) re-confirmed. Remaining findings are re-surfaced 004 backlog (TASK-19..42), premature reader-tool findings (future 006), small test-quality gaps (-08/-09/-33 backlogged), and the recurring committed-fixtures false-positive. Barrage governed the whole spike surface, not the 005 delta. Validation pivots to empirical use of the tooling on the real ebook corpus."
+}
