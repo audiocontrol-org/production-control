@@ -11,3 +11,6 @@
 
 ## session-end 2026-07-27
 - audit-barrage repeatedly emits false-positive 'fixtures/editions not committed' findings (AUDIT-20260726-01/-15, -20260727-04/-20) because lane agents see only the chunked diff and cannot run git to verify tracking; wasted review effort across two govern rounds. Consider surfacing tracked-file state in chunk metadata, or letting a lane verify git ls-files.
+
+## session-end 2026-07-28
+- Claude Code harness reaps run_in_background bash tasks between turns, which kills long-running work (govern pollers, the 56-call ebook run) mid-flight. Workaround that survives: launch detached with 'nohup <cmd> > run.log 2>&1 &' as a quick-returning foreground call, make the script resumable, and use a separate reap-tolerant watcher for the done-signal. Now codified as a standing instruction in the global CLAUDE.md. Not a stackctl defect -- a harness behavior.

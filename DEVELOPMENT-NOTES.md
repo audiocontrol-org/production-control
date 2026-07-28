@@ -1,3 +1,35 @@
+## 2026-07-28: <!-- session title -->
+
+**Goal:** <!-- compose: what we set out to do -->
+
+**Accomplished:**
+- <!-- compose -->
+
+**Didn't Work:**
+- <!-- compose -->
+
+**Course Corrections:**
+- <!-- compose -->
+
+**Insights:**
+- <!-- compose -->
+
+**Quantitative (auto-derived from git; verify before publishing):**
+- Commits: 11
+  - feat(voice-lab): env-gated compose mode -- expand a source-cited spine into a chapter (validated: Ep1 fidelity-passed, 10 numerals + 3 citations preserved, no verbatim-drift); prototype for the compose-from-spine increment
+  - govern(voice): override 004 + 005 to graduated (operator ship decision); findings tracked in backlog
+  - backlog: close TASK-46 (reader chapter ordering, fixed); capture TASK-50 (voice-revise verbatim-drift, empirical)
+  - fix(voice-lab): reader orders chapters for reading -- prologue first, numbered by value, epilogue last (AUDIT-20260728-29)
+  - govern(voice-producer-protocol): override recorded (graduated); backlog 005 test-gaps + future-006 reader findings
+  - fix(voice): per-destination multiset supply (entry corroborated only by its own declared dests); verdict from check-map not failures.length; unresolved-dest always fails (AUDIT-20260728 04/14/24/28)
+  - chore(execute): mark T001-T013 ratified + ledger (voice-producer-protocol adopt-and-ratify complete)
+  - ratify(voice-producer-protocol): pin spec-005 acceptance gaps; whole-suite green (T001-T013)
+  - analyze(voice-producer-protocol): record analyze-clean marker (spec 005 consistent, coverage complete)
+  - define(voice-producer-protocol): author specs/005 (spec+plan+artifacts+tasks) — runnable, adopt-and-ratify
+  - design(voice-producer-protocol): capture as-built producer protocol + citation design; approved, in-flight
+- Files changed: 48
+- Backlog touched: TASK-46, TASK-50
+
 ## 2026-07-27: voice-editions execute → govern-blocked; then a working voice lab on the Nouvelle-France ebook
 
 **Goal:** Take the runnable voice-editions spec through the stack-control front door (analyze → execute → govern), then — at the operator's direction — exercise the shipped capability for real: author a catalog of narration voices and produce fidelity-gated voice editions of the Nouvelle-France ebook, readable on a phone.
