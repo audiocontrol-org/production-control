@@ -94,38 +94,85 @@ export function buildRevisePrompt(input: ModelInput): string {
     `- avoid: ${voice.avoid.join('; ')}`,
   ].join('\n');
 
+  // Two modes (035-ff / TASK-50): `revise` re-narrates an already-rendered source
+  // draft; `compose` expands a structured, source-cited SPINE (beats) into a full
+  // chapter -- where nothing is ever `verbatim` (you are expanding, not copying).
+  const compose = process.env['VOICE_REVISE_MODE'] === 'compose';
+
+  const intro = compose
+    ? [
+        'You are COMPOSING a full narrative chapter FROM a structured, source-cited SPINE',
+        '(the numbered beat-units below) into a given VOICE. Expand each beat into flowing',
+        'narrative prose in the voice -- do NOT merely rephrase the bullet -- while carrying',
+        'every asserted fact and preserving every citation and numeral the beats hold.',
+      ]
+    : [
+        'You are rewriting the narration of a SOURCE draft into a given VOICE, producing a',
+        'faithful voice edition. Revise the surrounding narration -- paragraphing, transitions,',
+        'exposition -- while preserving every quoted, cited, and numeric payload byte-for-byte.',
+      ];
+
+  const task = compose
+    ? `TASK: compose the spine below into a chapter in the voice "${voice.label}" (${voice.id}).`
+    : `TASK: rewrite the source below in the voice "${voice.label}" (${voice.id}).`;
+
+  const fidelity = compose
+    ? [
+        'FIDELITY CONTRACT -- disciplined narrative nonfiction (the composed chapter MUST satisfy this):',
+        '- Every citation marker (e.g. [PB-P076]) and every numeral in a source beat MUST survive',
+        '  BYTE-EXACT into that beat\'s composed destination unit(s); every asserted fact must be carried.',
+        '- Invent NOTHING beyond what the beats and their sources support: NO invented dialogue, NO',
+        '  composite or fictional characters. Voice promotional/defense claims as ASSERTIONS ("the',
+        '  prospectus claimed", "the defense argued"), never as established fact.',
+        '- Preserve any "open question" flag as a flagged gap; never paper it over with invented',
+        '  connective tissue.',
+        '- Account for EVERY source beat with exactly one disposition, in source order.',
+      ]
+    : [
+        'FIDELITY CONTRACT (the edition MUST satisfy this):',
+        '- Every blockquote and quoted span, every citation marker (e.g. [PB-P056] and [^1]), and',
+        '  every numeral in a source unit MUST survive VERBATIM (byte-exact) into that unit\'s',
+        '  declared destination edition unit(s).',
+        '- You MAY revise the surrounding narration, but NOT the quoted/cited/numeric payload.',
+        '- Account for EVERY source unit with exactly one disposition, in source order.',
+        '- Do not add or drop a blockquote/citation/numeral relative to what the disposition claims.',
+      ];
+
+  const opGuidance = compose
+    ? '- "coverage" has EXACTLY ONE entry per source beat, in source order. Because you are EXPANDING'
+      + ' beats into prose, every entry\'s op is "represented" (or "merged" where beats fuse) -- NEVER'
+      + ' "verbatim" (you are not copying) and NEVER "cut" a beat that carries a fact or citation.'
+      + ' Give "edition_units" as the 0-based indices (into the edition units you wrote) the beat lands in.'
+    : '- "coverage" has EXACTLY ONE entry per source unit, in source order. For a non-cut op, give'
+      + ' "edition_units" as the 0-based indices (into the edition units you wrote) the source unit'
+      + ' lands in. For "cut", omit "edition_units" and give a non-empty "reason" instead.';
+
+  const sourceLabel = compose
+    ? 'SPINE (numbered beat-units, exact bytes between the [SOURCE UNIT n] ... [/SOURCE UNIT n] markers):'
+    : 'SOURCE (numbered units, exact bytes between the [SOURCE UNIT n] ... [/SOURCE UNIT n] markers):';
+
   return [
-    'You are rewriting the narration of a SOURCE draft into a given VOICE, producing a',
-    'faithful voice edition. Revise the surrounding narration -- paragraphing, transitions,',
-    'exposition -- while preserving every quoted, cited, and numeric payload byte-for-byte.',
+    ...intro,
     '',
-    `TASK: rewrite the source below in the voice "${voice.label}" (${voice.id}).`,
+    task,
     '',
     'VOICE DIRECTIVES:',
     directives,
     '',
-    'FIDELITY CONTRACT (the edition MUST satisfy this):',
-    '- Every blockquote and quoted span, every citation marker (e.g. [PB-P056] and [^1]), and',
-    '  every numeral in a source unit MUST survive VERBATIM (byte-exact) into that unit\'s',
-    '  declared destination edition unit(s).',
-    '- You MAY revise the surrounding narration, but NOT the quoted/cited/numeric payload.',
-    '- Account for EVERY source unit with exactly one disposition, in source order.',
-    '- Do not add or drop a blockquote/citation/numeral relative to what the disposition claims.',
+    ...fidelity,
     '',
-    'SOURCE (numbered units, exact bytes between the [SOURCE UNIT n] ... [/SOURCE UNIT n] markers):',
+    sourceLabel,
     numbered,
     '',
     'OUTPUT FORMAT: output ONLY a JSON object of the form',
     '  {',
-    '    "edition": "<the full revised markdown body>",',
+    `    "edition": "<the full ${compose ? 'composed' : 'revised'} markdown body>",`,
     '    "coverage": [ { "op": "verbatim|represented|merged|cut", "edition_units": [<0-based indices>] } ]',
     '  }',
     'where:',
-    '- "edition" is the full revised body, each edition unit SEPARATED BY A BLANK LINE, in reading',
-    '  order, so edition unit indices are unambiguous.',
-    '- "coverage" has EXACTLY ONE entry per source unit, in source order. For a non-cut op, give',
-    '  "edition_units" as the 0-based indices (into the edition units you wrote) the source unit',
-    '  lands in. For "cut", omit "edition_units" and give a non-empty "reason" instead.',
+    '- "edition" is the full body, each edition unit SEPARATED BY A BLANK LINE, in reading order, so',
+    '  edition unit indices are unambiguous.',
+    opGuidance,
     '',
   ].join('\n');
 }
