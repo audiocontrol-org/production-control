@@ -71,6 +71,7 @@ Enforce strict segregation between human-authored, mechanically-generated, and A
 
 ## design:feature/voice-producer-protocol
 - status: in-flight
+- spec: specs/005-voice-producer-protocol
 - design-approved: yes
 - design: docs/superpowers/specs/2026-07-27-voice-producer-protocol-design.md
 - depends-on: design:feature/voice-editions
