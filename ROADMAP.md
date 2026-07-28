@@ -70,7 +70,7 @@ A capability to produce voice-varied editions of a source-locked draft: an expli
 Enforce strict segregation between human-authored, mechanically-generated, and AI-generated content by directory-naming convention, so the three never blur. The load-bearing invariant: impure-provider (AI) output may never be written to a human-safe path. Zoning is decided by directory name (any-dot-wins): a path is AI-permitted iff at least one of its directory segments is dot-prefixed; a path with no dot segment is human-safe and must never receive impure output. dist/ stays the build root, but impure artifacts must land in a dot-prefixed subdirectory under it (dist/.ai/...); pure/mechanical output may sit anywhere, including human-safe areas (a generated README, a YAML). Enforced defense-in-depth: production-control routes impure output to a dot-zoned location and refuses at build if an impure output resolves to a dot-free path (beside run.ts's existing path-safety refusal), plus a standalone audit verb that catches violations before a build. Supersedes the earlier "artifact-adoption" framing: rather than a verb to bless a human edit of an AI artifact after the fact, the collision is prevented — an AI draft is never hand-edited in place; a human who wants to work on prose authors a separate document in a human-safe area (the manifest's existing `follows` advisory edge models "is a response to"). Surfaced while designing design:feature/voice-editions; blocks it, because a voice edition is prose and the editorial workflow must not be able to land AI bytes in a human's working area.
 
 ## design:feature/voice-producer-protocol
-- status: in-flight
+- status: shipped
 - analyze-clean: yes
 - spec: specs/005-voice-producer-protocol
 - design-approved: yes

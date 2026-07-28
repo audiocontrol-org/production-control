@@ -208,3 +208,4 @@ workflow(graduate): design:feature/episode-production-contract merging -> valida
 workflow(graduate): design:feature/quote-bank merging -> validating
 workflow(graduate): design:feature/content-zone-segregation merging -> validating
 workflow(graduate): design:feature/voice-editions merging -> validating
+workflow(graduate): design:feature/voice-producer-protocol merging -> validating
