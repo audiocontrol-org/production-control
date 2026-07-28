@@ -138,6 +138,51 @@ export function consumeAgainstRemaining(
 }
 
 /**
+ * Consume ONE entry's source payload against a LIST of per-destination-unit
+ * remaining supplies (the entry's OWN declared, deduped, resolved destination
+ * units), MUTATING the shared supplies in place, and return the per-kind
+ * shortfall (source items no declared destination unit can supply, in source
+ * document order — an item short by k copies appears k times).
+ *
+ * For each source item (per kind, in source order) the FIRST declared
+ * destination unit that still holds an available occurrence discharges it and is
+ * decremented. Because each supply is shared per-destination-unit and mutated in
+ * place, an occurrence consumed here is unavailable to any later entry that
+ * declares the same destination unit — this is what preserves the merged
+ * cross-unit constraint (AUDIT-20260726-17) WITHOUT pooling supply the entry
+ * never declared (AUDIT-20260728-04). An entry is corroborated ONLY by the
+ * destination units it itself declared.
+ */
+export function consumeAcrossDestinations(
+  destinationSupplies: readonly RemainingSupply[],
+  sourcePayload: UnitPayload,
+): Record<PayloadKind, string[]> {
+  const missing: Record<PayloadKind, string[]> = {
+    quotes: [],
+    citations: [],
+    numerics: [],
+    lexiconTerms: [],
+  };
+  for (const kind of PAYLOAD_KINDS) {
+    for (const item of sourcePayload[kind]) {
+      let satisfied = false;
+      for (const supply of destinationSupplies) {
+        const count = supply[kind].get(item) ?? 0;
+        if (count > 0) {
+          supply[kind].set(item, count - 1);
+          satisfied = true;
+          break;
+        }
+      }
+      if (!satisfied) {
+        missing[kind].push(item);
+      }
+    }
+  }
+  return missing;
+}
+
+/**
  * Run multiset survival per payload kind against a destination union and
  * aggregate. `ok` is true only when every kind survives; `missingByKind` names
  * the shortfall for each kind (empty arrays where that kind survived).

@@ -139,6 +139,48 @@ test('fidelity-refuse (US1, Acceptance Scenario 2, SC-001): a missing unit dispo
   );
 });
 
+test('fidelity-refuse (AUDIT-20260728-24): an unresolved destination for a NO-PAYLOAD paragraph is refused -- an absent destination can never pass, and the fault names the unresolved reference (no "survives" blessing)', () => {
+  const { source, edition } = loadFaithfulFixture();
+
+  // E3 is the shared `merged` destination for U4/U5, whose source units are
+  // ordinary prose with NO extractable payload. Edit E3's bytes so its
+  // content-derived identity changes -- the ledger's E3 references now resolve to
+  // nothing. Pre-fix, a no-payload entry whose destination is simply ABSENT was
+  // "blessed" ("the payload survives across the resolved destinations") and the
+  // run's verdict could be withheld only by the removed failures.length coupling.
+  // Post-fix, an unresolved reference is ALWAYS a decided failure via the
+  // op_obligations catch-all, regardless of payload.
+  const mutatedEdition = mustReplace(
+    edition,
+    "Repair crews restored the east face's mortar while leaving the west face untouched.",
+    "Repair crews rebuilt the east face's mortar while leaving the west face untouched.",
+  );
+
+  const result = runFidelity({
+    source,
+    sourceIdentity: SOURCE_IDENTITY,
+    edition: mutatedEdition,
+  });
+
+  assert.equal(result.passed, false, 'an absent (unresolved) destination paragraph must never pass');
+  assert.equal(result.decided, true, 'this is a deterministic, decided failure -- not a no-verdict abort');
+  assert.equal(result.report.verdict, undefined, 'no passed verdict alongside an unresolved destination');
+  assert.equal(
+    result.report.checks.op_obligations?.state,
+    'failed',
+    'the unresolved destination flips the op_obligations catch-all check',
+  );
+  assert.ok(
+    result.failures.some((f: string) => /not found in edition|does not resolve to an edition unit/.test(f)),
+    `expected a failure naming the unresolved destination reference; got: ${JSON.stringify(result.failures)}`,
+  );
+  assert.equal(
+    result.failures.some((f: string) => /survives across the resolved destinations/.test(f)),
+    false,
+    `no "survives" blessing may be emitted for an absent destination; got: ${JSON.stringify(result.failures)}`,
+  );
+});
+
 test('fidelity-refuse (US1, Acceptance Scenario 5, SC-003): a source.hash mismatch is refused BEFORE any unit obligation is evaluated', () => {
   const { source, edition } = loadFaithfulFixture();
 

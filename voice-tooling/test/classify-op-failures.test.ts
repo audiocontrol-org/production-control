@@ -18,17 +18,33 @@ import { checkOpObligations } from '@/fidelity/check-op-obligations.ts';
 import {
   classifyOpFailures,
   findUnresolvedDestinationChecks,
+  type NamedCheck,
 } from '@/fidelity/classify-op-failures.ts';
-import { withholdVerdictOnUnclassifiedFailures } from '@/fidelity/run.ts';
 import { indexSourceUnits } from '@/fidelity/run-support.ts';
 import {
   computeVerdict,
   passed,
+  failed,
   notRun,
   reported,
   notCheckable,
   type CheckResult,
 } from '@/fidelity/report.ts';
+
+/**
+ * Mirror the orchestrator's verdict-from-check-map mapping (AUDIT-20260728-28):
+ * every named check a set of op-failures flips becomes `failed`; the
+ * `op_obligations` catch-all is added ONLY when present. The verdict then derives
+ * from the check map ALONE -- there is no `failures.length` coupling.
+ */
+function applyOpFailureChecks(
+  checks: Record<string, CheckResult>,
+  affected: ReadonlySet<NamedCheck>,
+): void {
+  for (const name of affected) {
+    checks[name] = failed(`${name}: op obligation not satisfied; see failures[]`);
+  }
+}
 import type { CoverageEntry, CoverageLedger, UnitRef } from '@/schema/ledger.ts';
 
 const PLACEHOLDER_HASH = `sha256:${'0'.repeat(64)}`;
@@ -101,12 +117,12 @@ function fullPassingChecks(): Record<string, CheckResult> {
   };
 }
 
-test('AUDIT-20260727-18/-29: a `structural` op-failure (outside the four payload buckets) withholds the verdict -- never passed-with-failures', () => {
+test('AUDIT-20260727-18/-29, AUDIT-20260728-28: a `structural` op-failure maps to the op_obligations catch-all and withholds the verdict via the check map -- never passed-with-failures', () => {
   // Drive a REAL checkOpObligations run to a `structural` failure: a non-cut
   // entry with ZERO declared destinations (the AUDIT-20260726-19 empty-
-  // destination guard). This kind buckets into NONE of the four named payload
-  // checks, so classifyOpFailures returns it EMPTY -- exactly the channel that
-  // pre-fix let a run compute `passed` while carrying a non-empty failures[].
+  // destination guard). This kind maps to no PAYLOAD check -- pre-fix it flipped
+  // nothing and let a run compute `passed` alongside a non-empty failures[]. The
+  // new total classifier routes it to the `op_obligations` catch-all instead.
   const src = deriveUnits('Some prose that would be silently dropped.\n', 'src');
   const ed = deriveUnits('Unrelated edition content.\n', 'ed');
   const [s0] = src;
@@ -120,35 +136,43 @@ test('AUDIT-20260727-18/-29: a `structural` op-failure (outside the four payload
   assert.equal(opResult.ok, false);
   assert.deepEqual(opResult.failures.map((f) => f.kind), ['structural']);
 
-  // The structural failure flips NO named payload check -- proving the gap.
+  // The structural failure now flips the `op_obligations` catch-all named check
+  // (not a payload check) -- so it is visible to computeVerdict via the map.
   const affected = classifyOpFailures(opResult.failures);
-  assert.equal(affected.size, 0, 'a structural failure buckets into no named payload check');
+  assert.deepEqual([...affected], ['op_obligations'], 'a structural failure maps to the op_obligations catch-all');
 
-  // The orchestrator invariant: with every named check passing but a recorded
-  // failure present, the verdict is WITHHELD (a decided failure), never passed.
+  // The orchestrator invariant: with every payload check passing but a structural
+  // op-failure present, applying the check map marks op_obligations `failed`, and
+  // the verdict -- derived from the check map ALONE -- is WITHHELD.
   const checks = fullPassingChecks();
   assert.equal(computeVerdict({ checks }), 'passed', 'precondition: the named-check map alone would pass');
-  withholdVerdictOnUnclassifiedFailures(checks, opResult.failures.map((f) => f.message));
+  applyOpFailureChecks(checks, affected);
   assert.equal(
     computeVerdict({ checks }),
     undefined,
-    'a recorded failure that flipped no named check must withhold the verdict',
+    'a failure that flipped the op_obligations catch-all must withhold the verdict',
   );
-  assert.equal(checks['op_obligations']?.state, 'failed', 'the unclassified failure is surfaced as a decided op_obligations failure');
-
-  // Structural closure: the guard keys on failures.length, so a HYPOTHETICAL
-  // future unmapped kind (an opaque message that no classifier recognizes) is
-  // withheld identically -- this is not special-cased to `structural`.
-  const future = fullPassingChecks();
-  withholdVerdictOnUnclassifiedFailures(future, ['op obligation: some FUTURE unmapped failure kind']);
-  assert.equal(computeVerdict({ checks: future }), undefined, 'any future unmapped failure kind is withheld too');
+  assert.equal(checks['op_obligations']?.state, 'failed', 'the structural failure is surfaced as a decided op_obligations failure');
 });
 
-test('AUDIT-20260727-18/-29: with no recorded failures, a full passing check set still passes (no false withhold)', () => {
+test('AUDIT-20260728-28: an all-checks-pass run yields `passed` from the check map alone -- nothing is coupled to failures.length', () => {
+  // No op-failures at all: the classifier flips nothing, no op_obligations check
+  // is added, and the verdict passes purely from the named-check map. There is no
+  // `failures.length` side-channel that could withhold a legitimate pass.
+  const affected = classifyOpFailures([]);
+  assert.equal(affected.size, 0, 'no failures flip no checks');
   const checks = fullPassingChecks();
-  withholdVerdictOnUnclassifiedFailures(checks, []);
-  assert.equal(computeVerdict({ checks }), 'passed', 'an empty failures[] must never withhold a legitimate pass');
+  applyOpFailureChecks(checks, affected);
   assert.equal('op_obligations' in checks, false, 'no op_obligations check is injected when there are no failures');
+  assert.equal(computeVerdict({ checks }), 'passed', 'an all-pass check map yields passed');
+});
+
+test('AUDIT-20260728-28: a single `failed` named check blocks the verdict via the check map', () => {
+  // The verdict derives from the check map ALONE: any one `failed` check blocks
+  // it, with no advisory or failures.length coupling required.
+  const checks = fullPassingChecks();
+  checks['citations'] = failed('a citation obligation was not satisfied');
+  assert.equal(computeVerdict({ checks }), undefined, 'a failed named check blocks the verdict');
 });
 
 test('AUDIT-20260727-28: a partially-unresolved entry whose payload SURVIVES in the resolved destination names the unresolved reference, NOT a fabricated non-survival', () => {
@@ -189,6 +213,49 @@ test('AUDIT-20260727-28: a partially-unresolved entry whose payload SURVIVES in 
   );
   // Something still flips so the verdict is withheld (belt-and-suspenders with FIX 2).
   assert.ok(affected.size > 0, 'the entry still flips a named check for the unresolved reference');
+});
+
+test('AUDIT-20260728-24: a represented entry with a SINGLE unresolved destination and an ordinary-prose (no-payload) source FAILS, naming the unresolved reference -- never a "survives" blessing', () => {
+  // The entry's ONLY declared destination is dangling, and the source is ordinary
+  // connective prose with NO extractable payload -- exactly the case pre-fix
+  // "blessed" with "the payload survives across the resolved destinations; the
+  // unresolved reference is the fault" (there ARE no resolved destinations, so
+  // that message is vacuous nonsense that passes off an absent paragraph as fine).
+  // Post-fix: the unresolved reference is ALWAYS a fault -- it flips the
+  // op_obligations catch-all so the verdict is withheld -- and the message names
+  // the unresolved reference honestly, with no "survives" language.
+  const src = deriveUnits('Plain connective prose with no literals at all.\n', 'src');
+  const ed = deriveUnits('An unrelated edition paragraph.\n', 'ed');
+  const [s0] = src;
+  assert.ok(s0);
+
+  const dangling: UnitRef = { hash: `sha256:${'e'.repeat(64)}`, occurrence: 0 };
+  const ledger = ledgerOf([
+    { source_unit: ref(s0), op: 'represented', edition_units: [dangling] },
+  ]);
+
+  const failures: string[] = [];
+  const affected = findUnresolvedDestinationChecks(
+    ledger,
+    indexSourceUnits(src),
+    indexSourceUnits(ed),
+    undefined,
+    failures,
+  );
+
+  assert.equal(
+    failures.some((f) => /survives/.test(f)),
+    false,
+    `no "survives" blessing may be emitted for a totally-absent destination; got: ${failures.join(' | ')}`,
+  );
+  assert.ok(
+    failures.some((f) => /does not resolve to an edition unit/.test(f)),
+    `the reported fault must name the unresolved reference; got: ${failures.join(' | ')}`,
+  );
+  assert.ok(
+    affected.has('op_obligations'),
+    'the unresolved reference flips the op_obligations catch-all so the verdict is withheld',
+  );
 });
 
 test('AUDIT-20260727-28: a partially-unresolved entry whose payload does NOT survive in the resolved destination still reports the genuine shortfall', () => {

@@ -395,6 +395,107 @@ test('AUDIT-20260727-03: a verbatim destination cannot doubly-corroborate a repr
   }
 });
 
+test('AUDIT-20260728-04: an entry is corroborated ONLY by its OWN declared destinations, never a sibling\'s in the same shared-destination group', () => {
+  // S_A declares [E_shared, E_x]; S_B declares [E_shared] ONLY. S_B's payload
+  // ("1978") is present in E_x -- a destination S_B did NOT declare -- and absent
+  // from E_shared. Pre-fix, the union-find component (S_A and S_B connected via
+  // the shared E_shared) pooled BOTH destinations' payloads, so S_B's "1978" was
+  // discharged by E_x though S_B never declared it: a cross-unit false-clean.
+  // Post-fix, supply is per-destination-unit and S_B consumes only from its OWN
+  // declared destinations (E_shared), where "1978" is absent -> a survival FAIL.
+  const src = deriveUnits('Alpha counts 2001.\n\nBeta counts 1978.\n', 'src');
+  const [sA, sB] = src;
+  assert.ok(sA && sB, 'expected 2 source units');
+
+  const ed = deriveUnits(
+    'Shared destination prose with no literals.\n\nExtra destination records 2001 and 1978.\n',
+    'ed',
+  );
+  const [eShared, eX] = ed;
+  assert.ok(eShared && eX, 'expected 2 edition units');
+  assert.notEqual(eShared.contentHash, eX.contentHash);
+
+  const result = checkOpObligations(
+    ledgerOf([
+      { source_unit: ref(sA), op: 'represented', edition_units: [ref(eShared), ref(eX)] },
+      { source_unit: ref(sB), op: 'represented', edition_units: [ref(eShared)] },
+    ]),
+    src,
+    ed,
+  );
+
+  assert.equal(
+    result.ok,
+    false,
+    `S_B must NOT be corroborated by E_x, a destination it never declared; got: ${result.failures.map((f) => f.message).join(' | ')}`,
+  );
+  const numericShortfalls = result.failures.filter((f) => f.kind === 'numeric');
+  assert.equal(numericShortfalls.length, 1, 'exactly one numeric obligation (S_B\'s 1978) goes unmet');
+  const shortfall = numericShortfalls[0];
+  assert.ok(shortfall);
+  assert.equal(
+    shortfall.message,
+    `op obligation: entry for source unit (sha256:${sB.contentHash}, occurrence 0), op=represented: numeric 1978 does not survive into declared destinations`,
+  );
+});
+
+test('AUDIT-20260728-14: a destination named TWICE by one entry is ONE unit -- its payload once cannot satisfy the source\'s two occurrences', () => {
+  // One entry declares edition_units [e0, e0] (the same destination unit named
+  // twice) and its source carries "1978" TWICE, while e0 carries "1978" ONCE.
+  // A destination named twice must contribute its supply ONCE (it is a single
+  // unit), so the second source occurrence has nothing to consume -> a FAIL.
+  const src = deriveUnits('Entry counts 1978 and again 1978.\n', 'src');
+  const [s0] = src;
+  assert.ok(s0);
+
+  const ed = deriveUnits('Destination records 1978 once.\n', 'ed');
+  const [e0] = ed;
+  assert.ok(e0);
+
+  const result = checkOpObligations(
+    ledgerOf([{ source_unit: ref(s0), op: 'represented', edition_units: [ref(e0), ref(e0)] }]),
+    src,
+    ed,
+  );
+
+  assert.equal(
+    result.ok,
+    false,
+    `[e0, e0] must not double-count e0's single "1978"; got: ${result.failures.map((f) => f.message).join(' | ')}`,
+  );
+  const numericShortfalls = result.failures.filter((f) => f.kind === 'numeric');
+  assert.equal(numericShortfalls.length, 1, 'exactly one numeric occurrence goes unmet');
+  assert.equal(
+    numericShortfalls[0]?.message,
+    `op obligation: entry for source unit (sha256:${s0.contentHash}, occurrence 0), op=represented: numeric 1978 does not survive into declared destinations`,
+  );
+});
+
+test('AUDIT-20260728-14: a destination named twice whose payload covers BOTH source occurrences survives', () => {
+  // Companion to the FAIL case: when e0 genuinely carries "1978" TWICE, the two
+  // source occurrences are both satisfied by e0's own supply -> PASS. Proves the
+  // dedup is about not INVENTING supply, not about capping a unit's real payload.
+  const src = deriveUnits('Entry counts 1978 and again 1978.\n', 'src');
+  const [s0] = src;
+  assert.ok(s0);
+
+  const ed = deriveUnits('Destination records 1978 and also 1978.\n', 'ed');
+  const [e0] = ed;
+  assert.ok(e0);
+
+  const result = checkOpObligations(
+    ledgerOf([{ source_unit: ref(s0), op: 'represented', edition_units: [ref(e0), ref(e0)] }]),
+    src,
+    ed,
+  );
+
+  assert.equal(
+    result.ok,
+    true,
+    `e0's two genuine "1978" occurrences discharge both obligations; got: ${result.failures.map((f) => f.message).join(' | ')}`,
+  );
+});
+
 test('AUDIT-20260726-19 (FIX 4): a non-cut entry with zero declared destinations fails, naming the unit', () => {
   // loadLedger rejects an empty edition_units for a non-cut entry; construct the
   // checker input DIRECTLY to exercise the defensive guard. Without it, the

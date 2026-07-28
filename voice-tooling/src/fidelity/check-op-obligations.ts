@@ -18,7 +18,7 @@ import type { SourceUnit } from '@/units/derive.ts';
 import type { CoverageLedger, CoverageEntry, UnitRef } from '@/schema/ledger.ts';
 import { extractPayload } from '@/payload/extract.ts';
 import type { UnitPayload } from '@/payload/extract.ts';
-import { buildRemaining, consumeAgainstRemaining } from '@/payload/match.ts';
+import { buildRemaining, consumeAgainstRemaining, consumeAcrossDestinations } from '@/payload/match.ts';
 import type { RemainingSupply } from '@/payload/match.ts';
 
 /**
@@ -99,16 +99,20 @@ export function checkOpObligations(
   const editionByKey = indexUnits(editionUnits);
   const destinationOwners = buildDestinationOwners(ledger.coverage);
 
-  // AUDIT-20260726-17: group non-cut entries into connected components by
-  // SHARED destination refs, then build ONE remaining-supply multiset per
-  // component from the UNION of that component's (unique) destination-unit
-  // payloads. Merged entries that share a destination consume that supply
-  // ONCE across the whole group -- one destination occurrence can no longer
-  // discharge two source obligations (the cross-unit false-clean). Verbatim
-  // (byte-equality) and represented (its own destinations, usually a singleton
-  // group) flow through the SAME grouped path so the invariant is structural.
-  const rootByEntry = assignComponents(ledger.coverage);
-  const remainingByRoot = buildComponentRemaining(ledger.coverage, rootByEntry, editionByKey, lexicon);
+  // The invariant (AUDIT-20260728-04/-14; AUDIT-20260726-17). Build ONE mutable
+  // remaining-supply multiset PER DISTINCT DESTINATION UNIT referenced by a
+  // non-cut entry (keyed by unitRefKey), each seeded with THAT unit's extracted
+  // payload exactly once. There is no component/union-find pooling: each entry
+  // is corroborated ONLY by the destination units IT declared (fixes -04), and a
+  // destination named twice by one entry is still ONE unit contributing its
+  // supply once (fixes -14). Because the per-unit supplies are SHARED and
+  // decremented in place, a single destination occurrence consumed by one entry
+  // is unavailable to a later entry that declares the same destination unit --
+  // preserving the merged cross-unit constraint (AUDIT-20260726-17). Verbatim
+  // spends its destination's supply too (a separate pre-pass below), so a
+  // represented/merged sibling sharing it cannot be discharged by the verbatim
+  // copy's bytes (AUDIT-20260727-03).
+  const remainingByDest = buildDestinationSupplies(ledger.coverage, editionByKey, lexicon);
 
   const failures: OpFailure[] = [];
   const opCounts = { verbatim: 0, represented: 0, merged: 0, cut: 0 };
@@ -117,16 +121,11 @@ export function checkOpObligations(
 
   // AUDIT-20260727-03: verbatim's obligation is byte IDENTITY -- it spends the
   // ENTIRE declared destination unit, so that destination's payload must NOT
-  // remain available to corroborate any OTHER source unit in the same component.
-  // buildComponentRemaining unions verbatim destinations into the shared supply
-  // too, but verbatim is checked by byte-equality and never consumed -- so
-  // pre-fix a represented/merged entry sharing a verbatim destination was
-  // dischargeable by the verbatim copy's bytes, its own payload never needing to
-  // appear elsewhere (the cross-unit false-clean AUDIT-20260726-17, via verbatim).
-  // Consume each BYTE-EQUAL verbatim destination's payload here, in a SEPARATE
-  // pre-pass, so it is withdrawn before ANY represented/merged entry claims it --
-  // regardless of ledger order.
-  ledger.coverage.forEach((entry, index) => {
+  // remain available to corroborate any OTHER source unit that shares it. Consume
+  // each BYTE-EQUAL verbatim destination's payload here, in a SEPARATE pre-pass,
+  // so it is withdrawn from that destination's shared supply before ANY
+  // represented/merged entry claims it -- regardless of ledger order.
+  ledger.coverage.forEach((entry) => {
     if (entry.op !== 'verbatim') {
       return;
     }
@@ -138,7 +137,8 @@ export function checkOpObligations(
     if (destRef === undefined) {
       return;
     }
-    const destContent = editionByKey.get(unitRefKey(destRef));
+    const destKey = unitRefKey(destRef);
+    const destContent = editionByKey.get(destKey);
     if (destContent === undefined) {
       return; // unresolved destination -- supplies nothing; the not-found stands
     }
@@ -148,8 +148,10 @@ export function checkOpObligations(
       // NON-verbatim (mismatched) destination is not "spent" by an identity copy.
       return;
     }
-    const remaining = componentRemaining(remainingByRoot, rootByEntry, index);
-    consumeAgainstRemaining(remaining, extractPayload(destContent, lexicon));
+    const remaining = remainingByDest.get(destKey);
+    if (remaining !== undefined) {
+      consumeAgainstRemaining(remaining, extractPayload(destContent, lexicon));
+    }
   });
 
   ledger.coverage.forEach((entry, index) => {
@@ -210,12 +212,14 @@ export function checkOpObligations(
     if (entry.op === 'verbatim') {
       checkVerbatim(entry, destRefs, editionByKey, anyDestMissing, sourceContent, failures);
     } else {
-      // represented / merged: payload must survive across the SHARED component
-      // supply. Skip when a destination is unresolved -- an incomplete declared
-      // set cannot be fairly corroborated (the missing-destination failure stands).
+      // represented / merged: the source payload must survive within THIS
+      // entry's OWN declared destination units' shared remaining supply. Skip
+      // when a destination is unresolved -- an incomplete declared set cannot be
+      // fairly corroborated (the missing-destination failure stands, and the
+      // resolved subset is attributed for KIND downstream in classify-op-failures).
       if (!anyDestMissing) {
-        const remaining = componentRemaining(remainingByRoot, rootByEntry, index);
-        checkGroupedSurvival(entry, remaining, sourcePayload, failures);
+        const supplies = entryDestinationSupplies(entry, remainingByDest);
+        checkGroupedSurvival(entry, supplies, sourcePayload, failures);
       }
       if (entry.op === 'merged') {
         checkMergedSharedDestination(entry, index, destinationOwners, failures);
@@ -269,16 +273,17 @@ function checkVerbatim(
 }
 
 /**
- * represented/merged: source payload survives (multiset) against the group's
- * SHARED remaining supply, decrementing it in place (AUDIT-20260726-17).
+ * represented/merged: source payload survives (multiset) within THIS entry's own
+ * declared destination units' SHARED remaining supplies, decrementing them in
+ * place (AUDIT-20260728-04/-14, AUDIT-20260726-17).
  */
 function checkGroupedSurvival(
   entry: CoverageEntry,
-  remaining: RemainingSupply,
+  supplies: readonly RemainingSupply[],
   sourcePayload: UnitPayload,
   failures: OpFailure[],
 ): void {
-  const missingByKind = consumeAgainstRemaining(remaining, sourcePayload);
+  const missingByKind = consumeAcrossDestinations(supplies, sourcePayload);
   // One failure per missing item, kinds in fixed order, items in source order.
   // Per-source attribution stays in the message (which source unit went unmet).
   for (const kind of PAYLOAD_KINDS) {
@@ -319,131 +324,68 @@ function checkMergedSharedDestination(
 }
 
 
-// ---- grouping (AUDIT-20260726-17) -----------------------------------------
+// ---- per-destination-unit supply (AUDIT-20260728-04/-14, AUDIT-20260726-17) --
 
 /**
- * Union-find over the NON-cut coverage entries: two entries are in the same
- * connected component iff they (transitively) share a declared destination
- * ref. Returns a map from each non-cut entry index to its component root.
+ * Build ONE mutable `RemainingSupply` per DISTINCT destination unit referenced
+ * by any non-cut entry, keyed by `unitRefKey` and seeded with THAT unit's
+ * extracted payload exactly once. A destination named by several entries (or
+ * named twice by one entry) still yields a single shared supply for that unit --
+ * there is no union-find pooling across entries. Unresolved destinations are
+ * omitted (they supply nothing; their per-entry not-found failure stands).
  */
-function assignComponents(coverage: readonly CoverageEntry[]): Map<number, number> {
-  const parent = new Map<number, number>();
-  coverage.forEach((entry, index) => {
-    if (entry.op !== 'cut') {
-      parent.set(index, index);
-    }
-  });
-
-  const find = (start: number): number => {
-    let root = start;
-    for (;;) {
-      const next = parent.get(root);
-      if (next === undefined) {
-        throw new Error(`op obligation: union-find root missing for entry index ${start}`);
-      }
-      if (next === root) {
-        return root;
-      }
-      root = next;
-    }
-  };
-  const union = (a: number, b: number): void => {
-    const ra = find(a);
-    const rb = find(b);
-    if (ra !== rb) {
-      parent.set(ra, rb);
-    }
-  };
-
-  const entriesByDest = new Map<string, number[]>();
-  coverage.forEach((entry, index) => {
+function buildDestinationSupplies(
+  coverage: readonly CoverageEntry[],
+  editionByKey: Map<string, string>,
+  lexicon: readonly string[] | undefined,
+): Map<string, RemainingSupply> {
+  const byKey = new Map<string, RemainingSupply>();
+  for (const entry of coverage) {
     if (entry.op === 'cut') {
-      return;
+      continue;
     }
     for (const destRef of entry.edition_units ?? []) {
       const key = unitRefKey(destRef);
-      const indexes = entriesByDest.get(key) ?? [];
-      indexes.push(index);
-      entriesByDest.set(key, indexes);
-    }
-  });
-  for (const indexes of entriesByDest.values()) {
-    const [first, ...rest] = indexes;
-    if (first === undefined) {
-      continue;
-    }
-    for (const other of rest) {
-      union(first, other);
-    }
-  }
-
-  const rootByEntry = new Map<number, number>();
-  coverage.forEach((entry, index) => {
-    if (entry.op !== 'cut') {
-      rootByEntry.set(index, find(index));
-    }
-  });
-  return rootByEntry;
-}
-
-/**
- * Build ONE `RemainingSupply` per component root from the UNION of that
- * component's UNIQUE resolved destination-unit payloads. A destination named by
- * several entries in the group contributes its supply exactly once; unresolved
- * destinations contribute nothing (their per-entry not-found failure stands).
- */
-function buildComponentRemaining(
-  coverage: readonly CoverageEntry[],
-  rootByEntry: Map<number, number>,
-  editionByKey: Map<string, string>,
-  lexicon: readonly string[] | undefined,
-): Map<number, RemainingSupply> {
-  const destKeysByRoot = new Map<number, Set<string>>();
-  coverage.forEach((entry, index) => {
-    if (entry.op === 'cut') {
-      return;
-    }
-    const root = rootByEntry.get(index);
-    if (root === undefined) {
-      return;
-    }
-    const keys = destKeysByRoot.get(root) ?? new Set<string>();
-    for (const destRef of entry.edition_units ?? []) {
-      keys.add(unitRefKey(destRef));
-    }
-    destKeysByRoot.set(root, keys);
-  });
-
-  const remainingByRoot = new Map<number, RemainingSupply>();
-  for (const [root, destKeys] of destKeysByRoot) {
-    const destPayloads: UnitPayload[] = [];
-    for (const key of destKeys) {
+      if (byKey.has(key)) {
+        continue;
+      }
       const content = editionByKey.get(key);
       if (content === undefined) {
         continue; // unresolved destination -- supplies nothing
       }
-      destPayloads.push(extractPayload(content, lexicon));
+      byKey.set(key, buildRemaining([extractPayload(content, lexicon)]));
     }
-    remainingByRoot.set(root, buildRemaining(destPayloads));
   }
-  return remainingByRoot;
+  return byKey;
 }
 
-/** Resolve a non-cut entry's shared component supply; fail loud if absent. */
-function componentRemaining(
-  remainingByRoot: Map<number, RemainingSupply>,
-  rootByEntry: Map<number, number>,
-  index: number,
-): RemainingSupply {
-  const root = rootByEntry.get(index);
-  if (root === undefined) {
-    throw new Error(`op obligation: no component assigned for entry index ${index}`);
+/**
+ * Resolve THIS entry's OWN declared destination units to their shared remaining
+ * supplies, DEDUPED by unit (a destination named twice is one unit -- fixes
+ * AUDIT-20260728-14). Callers reach this only when every declared destination
+ * resolves, so a missing supply would be a builder invariant break -- fail loud.
+ */
+function entryDestinationSupplies(
+  entry: CoverageEntry,
+  remainingByDest: Map<string, RemainingSupply>,
+): RemainingSupply[] {
+  const seen = new Set<string>();
+  const supplies: RemainingSupply[] = [];
+  for (const destRef of entry.edition_units ?? []) {
+    const key = unitRefKey(destRef);
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    const supply = remainingByDest.get(key);
+    if (supply === undefined) {
+      throw new Error(
+        `op obligation: no remaining supply built for declared destination ${refStr(destRef)}`,
+      );
+    }
+    supplies.push(supply);
   }
-  const remaining = remainingByRoot.get(root);
-  if (remaining === undefined) {
-    throw new Error(`op obligation: no remaining supply built for component root ${root}`);
-  }
-  return remaining;
+  return supplies;
 }
 
 
