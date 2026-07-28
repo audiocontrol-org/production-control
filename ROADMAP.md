@@ -53,7 +53,7 @@ A reproducible capability to build a quote bank — verbatim, source-cited, fabr
 Generalize the quote bank into a metadata-rich, queryable store of production assets — quotes, images, maps, audio excerpts, timeline events — each carrying per-asset-type provenance that is deterministically checkable (a byte-exact text span, a content-hashed source file, a sample-exact time range, or citation-backing) PLUS editorial metadata (significance, themes) that is impure/LLM-annotated and exists for retrieval. A human or the system can then request assets suitable for a particular beat of an output (a video shot, an ebook chapter). Two layers with different trust models: per-type provenance (mostly deterministic) and an impure editorial-metadata + retrieval layer over it. The quote bank is asset-type #1 and the fully-deterministic corner; this depends on it so the general design is grounded in one working instance rather than guessed from zero. The reusable "impure discovery → deterministic grounding → independent validation" pattern is extracted here, with the second asset type, not in the quote-bank design.
 
 ## design:feature/voice-editions
-- status: planned
+- status: shipped
 - analyze-clean: yes
 - spec: specs/004-voice-editions
 - design-approved: yes
