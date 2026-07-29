@@ -25,6 +25,7 @@ import { resolveModelCommand, invokeModel, buildModelPrompt } from '@/revise/mod
 import type { ProducerMode } from '@/revise/model.ts';
 import { parseModelOutput } from '@/revise/protocol.ts';
 import { buildEdition } from '@/revise/ledger-build.ts';
+import { runPreflight } from '@/revise/preflight.ts';
 import { emitEdition } from '@/revise/emit.ts';
 import { helpText } from '@/revise/help.ts';
 
@@ -141,7 +142,7 @@ export async function runProducer(
     // The PROVIDER builds the hash-keyed ledger from the model's index-based
     // coverage (the model cannot compute sha256 references): source + edition
     // units are derived mechanically here.
-    const { editionText } = buildEdition({
+    const { editionText, ledger, sourceUnits, editionUnits } = buildEdition({
       sourceText,
       sourceIdentity: parsed.source.identity,
       sourceHash: parsed.source.hash,
@@ -150,6 +151,16 @@ export async function runProducer(
       model,
       mode,
     });
+
+    // Pre-emit self-check (contracts/voice-compose-cli.md, Principle V): an
+    // INDEPENDENT invocation of the shared grounding policy over the just-
+    // composed edition, BEFORE any write. On any violation, refuse loudly
+    // (the offending unit is named in each refusal) and write NOTHING -- the
+    // producer's success grants the paired validator nothing (Principle VI).
+    const preflight = runPreflight(mode, ledger.grounding, editionUnits, sourceUnits);
+    if (!preflight.ok) {
+      throw new Error(`pre-emit self-check refused before any write -- ${preflight.refusals.join('; ')}`);
+    }
 
     const toolVersion = readPackageVersion();
     const response = await emitEdition(

@@ -58,7 +58,20 @@ export interface BuildEditionArgs {
  *   and the model declared a `grounding` anyway, or a `grounding` entry's
  *   `edition_unit`/`beats` index is out of range.
  */
-export function buildEdition(args: BuildEditionArgs): { editionText: string } {
+/**
+ * The built edition text PLUS the mechanically-derived units and ledger the
+ * producer's pre-emit self-check (`@/revise/preflight.ts`, spec 006 T018) needs
+ * -- so it can re-run the shared grounding policy over the SAME units and
+ * grounding records this build resolved, without re-deriving them itself.
+ */
+export interface BuiltEdition {
+  readonly editionText: string;
+  readonly ledger: CoverageLedger;
+  readonly sourceUnits: readonly SourceUnit[];
+  readonly editionUnits: readonly SourceUnit[];
+}
+
+export function buildEdition(args: BuildEditionArgs): BuiltEdition {
   const sourceUnits = deriveUnits(args.sourceText, args.sourceIdentity);
   const editionUnits = deriveUnits(args.model.edition, EDITION_IDENTITY);
 
@@ -126,7 +139,7 @@ export function buildEdition(args: BuildEditionArgs): { editionText: string } {
 
   const ledgerYaml = stringifyYaml({ ledger });
   const editionText = `---\n${ledgerYaml}---\n${args.model.edition}`;
-  return { editionText };
+  return { editionText, ledger, sourceUnits, editionUnits };
 }
 
 /**

@@ -26,6 +26,7 @@ import {
 } from '@/fidelity/check-ledger-structure.ts';
 import { checkUnitAccounting } from '@/fidelity/check-unit-accounting.ts';
 import { checkOpObligations } from '@/fidelity/check-op-obligations.ts';
+import { checkEditionGrounding } from '@/fidelity/check-edition-grounding.ts';
 import { checkCitations, assertQuoteDialectSupported } from '@/fidelity/check-payload.ts';
 import type { Mode } from '@/schema/ledger.ts';
 import {
@@ -332,6 +333,31 @@ export function runFidelity(input: FidelityInput): FidelityResult {
       'one or more op obligations (verbatim byte-identity, unresolved destination, ' +
         'or a structural fault) were not satisfied; see failures[]',
     );
+  }
+
+  // ---- edition_grounding (contracts/fidelity-mode-agreement.md check
+  // ordering step 4, COMPOSE-ONLY) -----------------------------------------
+  // Runs AFTER every source-side check (source_hash -> ledger_structure ->
+  // citation-allowlist -> unit_accounting -> op-obligations -> payload/
+  // citations). The ledger's grounding records must EXHAUSTIVELY and
+  // EXCLUSIVELY account for the derived edition units, and every grounded
+  // `beats` reference must resolve to a real derived source unit.
+  //
+  // `checkEditionGrounding` reads the ledger's own `mode` and is a no-op
+  // (`applicable: false`) for revise, so this line is unconditional. It is an
+  // INDEPENDENT invocation of the shared pure `@/policy/grounding.ts` (the same
+  // policy the producer's pre-emit self-check calls -- neither entry point
+  // depends on the other, Principle VI). A failure contributes a named
+  // `edition_grounding` check and folds its failures into `failures[]`,
+  // withholding the pass -- present-and-`failed` ONLY on a real compose failure,
+  // mirroring the `op_obligations` catch-all discipline so it never appears in a
+  // passing revise report.
+  const groundingResult = checkEditionGrounding(ledger, editionUnits, sourceUnits);
+  if (groundingResult.applicable && !groundingResult.ok) {
+    checks['edition_grounding'] = failed(
+      'one or more edition units are not exhaustively/exclusively grounded; see failures[]',
+    );
+    failures.push(...groundingResult.failures);
   }
 
   // ---- 6. uncorroborated_units (D12/FR-022) -------------------------------
