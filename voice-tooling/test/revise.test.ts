@@ -11,7 +11,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { createHash } from 'node:crypto';
 import { parseReviseRequest } from '@/revise/request.ts';
-import { buildRevisePrompt, invokeModel, resolveModelCommand } from '@/revise/model.ts';
+import { buildModelPrompt, invokeModel, resolveModelCommand } from '@/revise/model.ts';
 import { emitEdition } from '@/revise/emit.ts';
 import { loadVoice } from '@/schema/voice.ts';
 import { withTempDir } from './support.ts';
@@ -228,10 +228,10 @@ test('parseReviseRequest (AUDIT-20260726-12): refuses, naming the input, when a 
   });
 });
 
-test('buildRevisePrompt: presents the source as numbered units and demands the ModelReviseOutput protocol', () => {
+test('buildModelPrompt(revise): presents the source as numbered units and demands the ModelReviseOutput protocol', () => {
   const voice = loadVoice(VALID_VOICE_YAML);
   const sourceText = 'First unit line one.\nFirst unit line two.\n\nSecond unit only line.\n';
-  const prompt = buildRevisePrompt({
+  const prompt = buildModelPrompt('revise', {
     target: 'edition',
     source: { identity: 'draft', text: sourceText },
     voice: { identity: 'style', doc: voice },

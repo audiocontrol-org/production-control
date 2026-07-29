@@ -11,7 +11,7 @@ import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isRecord } from '@/util/is-record.ts';
 import { parseReviseRequest } from '@/revise/request.ts';
-import { resolveModelCommand, invokeModel, buildRevisePrompt } from '@/revise/model.ts';
+import { resolveModelCommand, invokeModel, buildModelPrompt } from '@/revise/model.ts';
 import { parseModelOutput } from '@/revise/protocol.ts';
 import { buildEdition } from '@/revise/ledger-build.ts';
 import { emitEdition } from '@/revise/emit.ts';
@@ -87,7 +87,7 @@ export async function runReviseCli(): Promise<number> {
     const modelCommand = resolveModelCommand(parsed.modelCmd);
 
     const sourceText = decodeUtf8(parsed.source.bytes, parsed.source.identity);
-    const prompt = buildRevisePrompt({
+    const prompt = buildModelPrompt('revise', {
       target: parsed.target,
       source: {
         identity: parsed.source.identity,
