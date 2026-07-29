@@ -1,3 +1,32 @@
+## 2026-07-29: <!-- session title -->
+
+**Goal:** <!-- compose: what we set out to do -->
+
+**Accomplished:**
+- <!-- compose -->
+
+**Didn't Work:**
+- <!-- compose -->
+
+**Course Corrections:**
+- <!-- compose -->
+
+**Insights:**
+- <!-- compose -->
+
+**Quantitative (auto-derived from git; verify before publishing):**
+- Commits: 8
+  - analyze(voice-compose-from-spine): record analyze-clean marker (spec 006 consistent, 100% FR/SC coverage, no critical findings)
+  - tasks(voice-compose-from-spine): author specs/006 tasks.md (30 tasks, tier-tagged, RED-first)
+  - plan(voice-compose-from-spine): author specs/006 plan + research + data-model + contracts + quickstart
+  - define(voice-compose-from-spine): author specs/006 spec.md + quality checklist
+  - design(voice-compose-from-spine): operator approval recorded; advance to in-flight (design gate 7/7)
+  - design(voice-compose-from-spine): revise per third-party review
+  - design(voice-compose-from-spine): capture compose mode design (TASK-51 + TASK-50)
+  - roadmap(voice-compose-from-spine): add design item for TASK-51
+- Files changed: 15
+- Backlog touched: TASK-50, TASK-51
+
 ## 2026-07-27: voice-editions execute → govern-blocked; then a working voice lab on the Nouvelle-France ebook
 
 **Goal:** Take the runnable voice-editions spec through the stack-control front door (analyze → execute → govern), then — at the operator's direction — exercise the shipped capability for real: author a catalog of narration voices and produce fidelity-gated voice editions of the Nouvelle-France ebook, readable on a phone.
