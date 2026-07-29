@@ -4,3 +4,9 @@
 {"id":"T004","tierLabel":"balanced","model":"sonnet","commitRange":"852e77e","reviewClean":true,"note":"RED prompt.test.ts (10 cases), GREEN"}
 {"id":"T005","tierLabel":"balanced","model":"sonnet","commitRange":"c665538","reviewClean":true,"note":"ledger mode+grounding schema+loadLedger validation (406 lines)"}
 {"id":"T006","tierLabel":"balanced","model":"sonnet","commitRange":"c665538","reviewClean":true,"note":"RED ledger-mode-grounding.test.ts (14), GREEN; SC-006 backcompat holds"}
+{"id":"T007","tierLabel":"powerful","model":"opus","commitRange":"a1af02d..c1e2595","reviewClean":true,"note":"policy/op-legality.ts; adversarial review clean after test-hardening"}
+{"id":"T008","tierLabel":"powerful","model":"opus","commitRange":"a1af02d..c1e2595","reviewClean":true,"note":"policy/grounding.ts exhaustive+exclusive; occurrence-sensitivity defended"}
+{"id":"T009","tierLabel":"powerful","model":"opus","commitRange":"a1af02d..c1e2595","reviewClean":true,"note":"adversarial tests; +4 hardening cases; senior review clean"}
+{"id":"T010","tierLabel":"balanced","model":"sonnet","commitRange":"2a23d8c","reviewClean":true,"note":"protocol.ts grounding parse (shape-only, fail-loud)"}
+{"id":"T011","tierLabel":"balanced","model":"sonnet","commitRange":"2a23d8c","reviewClean":true,"note":"ledger-build.ts mode stamp + grounding index->UnitRef resolution"}
+{"id":"T012","tierLabel":"balanced","model":"sonnet","commitRange":"2a23d8c","reviewClean":true,"note":"runProducer(mode)+voice-compose bin; --help contracts; e2e stub verified"}
