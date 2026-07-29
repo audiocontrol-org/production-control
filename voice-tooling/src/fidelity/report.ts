@@ -1,3 +1,5 @@
+import type { Mode } from '@/schema/ledger.ts';
+
 /**
  * Coverage report types and helpers (D15, FR-025, SC-004).
  *
@@ -10,6 +12,13 @@
  * *applicable* obligation. An obligation that is inapplicable (no lexicon declared)
  * is correctly `not-run`, not a violation. The invariant is about *applicable* checks
  * being silently skipped, not about every possible check executing.
+ *
+ * Spec 006 (T015, FR-012): a composed edition's report additionally carries explicit
+ * TRUST-BOUNDARY fields, distinct from `checks` — they are REPORTED FACTS about the
+ * scope of what the deterministic gate can prove, never a verdict implying semantic
+ * grounding, invented-fact detection, or spine-source correctness were proven. See
+ * `composeTrustBoundaryFields` below and contracts/fidelity-mode-agreement.md
+ * "Report fields".
  */
 
 /**
@@ -80,7 +89,48 @@ export interface CheckResult {
  */
 export interface CoverageReport {
   verdict?: 'passed'; // ABSENT means "no verdict" (cannot decide / refused).
+  /**
+   * Trust-boundary fields (spec 006, FR-012), present for a composed edition.
+   * ABSENT for revise (and for any report that never got far enough to know
+   * the ledger's mode) — never a fabricated default.
+   */
+  mode?: Mode;
+  /** The producer operation was mechanically source-cited but its own upstream fidelity is out of scope (asset-bank territory). Always `'not-checked'` when present. */
+  spine_source_fidelity?: 'not-checked';
+  /** The deterministic gate proves edition-side accounting only, never semantic support. Always `'not-checkable'` when present. */
+  composition_semantic_grounding?: 'not-checkable';
+  /** Whether a declared open-question marker syntax was mechanically recognized for this edition (R7/FR-013). */
+  open_question_markers?: 'enforced' | 'none-declared';
   checks: Record<string, CheckResult>;
+}
+
+/**
+ * The FR-012 trust-boundary fields for a composed edition's report — REPORTED
+ * FACTS about the scope of the deterministic gate, never a verdict. `spine_
+ * source_fidelity` and `composition_semantic_grounding` are always their
+ * single declared value for compose (the spine's own upstream citation
+ * correctness and the composed prose's semantic support are both out of
+ * scope for v1 — see spec.md "Assumptions"/"Deferred").
+ *
+ * `openQuestionMarkers` is threaded in by the caller rather than computed
+ * here: today no mechanism recognizes an `[OPEN-QUESTION: ...]` marker as
+ * required payload (that recognition is the T027 follow-up, spec 006 Polish
+ * phase, R7), so every caller must honestly pass `'none-declared'` until that
+ * lands — this helper never invents an `'enforced'` claim about a check that
+ * does not exist.
+ */
+export function composeTrustBoundaryFields(
+  openQuestionMarkers: 'enforced' | 'none-declared',
+): Pick<
+  CoverageReport,
+  'mode' | 'spine_source_fidelity' | 'composition_semantic_grounding' | 'open_question_markers'
+> {
+  return {
+    mode: 'compose',
+    spine_source_fidelity: 'not-checked',
+    composition_semantic_grounding: 'not-checkable',
+    open_question_markers: openQuestionMarkers,
+  };
 }
 
 /**

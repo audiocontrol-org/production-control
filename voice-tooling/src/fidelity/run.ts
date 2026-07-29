@@ -27,6 +27,7 @@ import {
 import { checkUnitAccounting } from '@/fidelity/check-unit-accounting.ts';
 import { checkOpObligations } from '@/fidelity/check-op-obligations.ts';
 import { checkCitations, assertQuoteDialectSupported } from '@/fidelity/check-payload.ts';
+import type { Mode } from '@/schema/ledger.ts';
 import {
   passed,
   notRun,
@@ -35,6 +36,7 @@ import {
   notCheckable,
   failed,
   computeVerdict,
+  composeTrustBoundaryFields,
   type CheckResult,
   type CoverageReport,
 } from '@/fidelity/report.ts';
@@ -351,15 +353,26 @@ export function runFidelity(input: FidelityInput): FidelityResult {
     'not provable under D16 — declared out of scope for v1',
   );
 
-  return finalize(checks, failures, true);
+  return finalize(checks, failures, true, ledger.mode);
 }
 
 // ---- outcome assembly -------------------------------------------------------
+
+/**
+ * T027 (spec 006 Polish phase) will extend `@/payload/extract.ts` to
+ * recognize a declared `[OPEN-QUESTION: ...]` marker as required payload; the
+ * report's `open_question_markers` field will then be computed from whether
+ * that recognition actually fired for this edition. Until that lands, no
+ * mechanism declares any such marker to the system, so every composed report
+ * MUST say so honestly rather than claim an enforcement that does not exist.
+ */
+const OPEN_QUESTION_MARKERS_STATE: 'enforced' | 'none-declared' = 'none-declared';
 
 function finalize(
   checks: Record<string, CheckResult>,
   failures: string[],
   decided: true,
+  mode?: Mode,
 ): FidelityResult {
   // Every applicable path above already sets both honest-boundary checks
   // before reaching here EXCEPT the abort paths (source_hash/ledger_structure/
@@ -384,7 +397,15 @@ function finalize(
   // a pass. `failures[]` remains for the human-facing ValidateResponse only.
   const verdict = computeVerdict({ checks });
   const isPassed = verdict === 'passed';
-  const report: CoverageReport = isPassed ? { verdict: 'passed', checks } : { checks };
+  // FR-012 (spec 006): a composed edition's report always carries the
+  // trust-boundary fields, regardless of verdict — they describe the scope
+  // of what was checked, not whether it passed.
+  const trustBoundary = mode === 'compose' ? composeTrustBoundaryFields(OPEN_QUESTION_MARKERS_STATE) : {};
+  const report: CoverageReport = {
+    ...(isPassed ? { verdict: 'passed' as const } : {}),
+    ...trustBoundary,
+    checks,
+  };
   return { report, passed: isPassed, decided, failures };
 }
 
