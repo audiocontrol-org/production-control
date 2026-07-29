@@ -1,5 +1,6 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
+import type { ProducerMode } from '@/revise/prompt/types.ts';
 
 /**
  * T019: assemble the `BuildResponse` (contracts/voice-revise-provider.md
@@ -10,15 +11,29 @@ import * as path from 'node:path';
  * subprocess wire is a plain JSON shape, not a shared TypeScript type), so
  * this returns a plain object matching `BuildResponseSchema`
  * (`src/providers/contract.ts`) by hand.
+ *
+ * spec 006 (T012): the SAME emitter serves both producer verbs -- `tool.name`
+ * and `impure.reason` are keyed by the caller's `mode` so a `voice compose`
+ * build's `BuildResponse` names itself honestly, while `voice revise`'s
+ * behavior stays byte-identical to before this task.
  */
+
+/** `tool.name` per producer mode -- names the verb that actually ran (FR-005). */
+const TOOL_NAME: Record<ProducerMode, string> = {
+  revise: 'voice-revise',
+  compose: 'voice-compose',
+};
 
 /**
  * The provider is never referentially transparent (FR-005): the SAME reason
- * every build declares, since a model call is inherently non-deterministic
- * regardless of which model command produced this particular run.
+ * every build of a given mode declares, since a model call is inherently
+ * non-deterministic regardless of which model command produced this run.
  */
-const IMPURE_REASON =
-  'voice revision is a model-driven narration rewrite; the producer is non-deterministic';
+const IMPURE_REASON: Record<ProducerMode, string> = {
+  revise: 'voice revision is a model-driven narration rewrite; the producer is non-deterministic',
+  compose:
+    'voice composition is a model-driven expansion of a spine into voiced prose; the producer is non-deterministic',
+};
 
 export interface ReviseBuildResponse {
   readonly version: 1;
@@ -42,16 +57,18 @@ export async function emitEdition(
   target: string,
   editionText: string,
   toolVersion: string,
+  mode: ProducerMode,
 ): Promise<ReviseBuildResponse> {
   const outputPath = `${target}.md`;
   const fullPath = path.join(outputDir, outputPath);
+  const toolName = TOOL_NAME[mode];
 
   try {
     await fs.mkdir(outputDir, { recursive: true });
     await fs.writeFile(fullPath, editionText, 'utf8');
   } catch (cause) {
     throw new Error(
-      `voice-revise: could not write the edition to "${fullPath}": ${describeError(cause)}`,
+      `${toolName}: could not write the edition to "${fullPath}": ${describeError(cause)}`,
       { cause },
     );
   }
@@ -59,8 +76,8 @@ export async function emitEdition(
   return {
     version: 1,
     outputs: [{ path: outputPath }],
-    tool: { name: 'voice-revise', version: toolVersion },
-    impure: { reason: IMPURE_REASON },
+    tool: { name: toolName, version: toolVersion },
+    impure: { reason: IMPURE_REASON[mode] },
   };
 }
 

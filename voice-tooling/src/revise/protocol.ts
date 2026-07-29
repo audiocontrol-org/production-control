@@ -1,7 +1,8 @@
 import { isRecord } from '@/util/is-record.ts';
 
 /**
- * TASK-29: the MODEL PROTOCOL for `voice revise`.
+ * TASK-29: the MODEL PROTOCOL for `voice revise` (and, per spec 006 T010,
+ * `voice compose`).
  *
  * A language model cannot compute the sha256 `content_hash` values a coverage
  * ledger references, so the model MUST NOT emit the ledger directly. Instead it
@@ -9,6 +10,18 @@ import { isRecord } from '@/util/is-record.ts';
  * a declaration it CAN make); the PROVIDER (`@/revise/ledger-build.ts`) derives
  * source + edition units mechanically and BUILDS the hash-keyed ledger from the
  * model's declared indices.
+ *
+ * spec 006 adds an INDEX-BASED `grounding` declaration alongside `coverage`,
+ * for `voice compose` only (contracts/voice-compose-cli.md "Model protocol
+ * (compose)"): for every edition unit the model wrote, which beats (if any) it
+ * is grounded in. Exactly like `coverage`, the model declares 0-based INDICES
+ * (it cannot compute the hash-keyed refs a ledger needs); this module validates
+ * only the DECLARED SHAPE (int indices, closed `basis` enum, `beats`
+ * present-non-empty iff `basis === 'grounded'`) -- resolving those indices into
+ * hash-keyed `GroundingRecord[]` is `@/revise/ledger-build.ts`'s job, exactly as
+ * it already resolves `coverage`'s indices. `voice revise` never declares
+ * `grounding`; its absence from the model's JSON is fine and leaves
+ * `ModelReviseOutput.grounding` `undefined`.
  *
  * This module owns ONLY the model-facing wire shape and its robust extraction +
  * validation. It has no knowledge of hashing, units, or ledgers.
@@ -33,12 +46,35 @@ export interface ModelCoverageEntry {
   treatment?: string;
 }
 
+/** The closed grounding-basis set the model may declare (mirrors `@/schema/ledger.ts`'s `GroundingBasis`). */
+const MODEL_GROUNDING_BASES = ['grounded', 'connective', 'framing'] as const;
+export type ModelGroundingBasis = (typeof MODEL_GROUNDING_BASES)[number];
+
+/**
+ * One grounding declaration as the MODEL declares it (compose only): the
+ * 0-based index of the edition unit it describes, its basis, and -- iff
+ * `basis === 'grounded'` -- the non-empty 0-based indices of the beats
+ * (source units) it is grounded in.
+ */
+export interface ModelGroundingEntry {
+  edition_unit: number;
+  basis: ModelGroundingBasis;
+  /** REQUIRED (>=1) iff basis === 'grounded'; ABSENT for connective/framing. */
+  beats?: number[];
+}
+
 /** The full model output: the revised body plus one entry per source unit, in order. */
 export interface ModelReviseOutput {
   /** The full revised markdown BODY (edition units separated by blank lines, D6). */
   edition: string;
   /** EXACTLY ONE entry per source unit, in source document order. */
   coverage: ModelCoverageEntry[];
+  /**
+   * OPTIONAL: compose-only, index-based grounding declaration, one entry per
+   * edition unit the model wrote, in edition order. ABSENT for `voice revise`
+   * (grounding is compose-only, contracts/voice-compose-cli.md).
+   */
+  grounding?: ModelGroundingEntry[];
 }
 
 /**
@@ -50,8 +86,12 @@ export interface ModelReviseOutput {
  * @throws Error naming the defect on: no JSON found, unparseable JSON, a
  *   non-object root, a missing/`edition` non-string, `coverage` not an array,
  *   an entry that is not an object, an op outside the closed set, a `cut`
- *   carrying `edition_units` or missing/empty `reason`, or a non-cut missing/
- *   empty `edition_units` or carrying a `reason`.
+ *   carrying `edition_units` or missing/empty `reason`, a non-cut missing/
+ *   empty `edition_units` or carrying a `reason`, a `grounding` (when present)
+ *   that is not an array, an entry that is not an object, a non-integer/
+ *   negative `edition_unit`, a `basis` outside the closed set, a `grounded`
+ *   entry missing/empty `beats` or a non-integer/negative beat index, or a
+ *   non-`grounded` entry carrying `beats`.
  */
 export function parseModelOutput(stdout: string): ModelReviseOutput {
   const jsonText = extractJson(stdout);
@@ -77,7 +117,11 @@ export function parseModelOutput(stdout: string): ModelReviseOutput {
   }
 
   const coverage = coverageValue.map((entry, index) => parseCoverageEntry(entry, index));
-  return { edition, coverage };
+
+  const groundingValue = parsed['grounding'];
+  const grounding = groundingValue === undefined ? undefined : parseGroundingArray(groundingValue);
+
+  return { edition, coverage, ...(grounding !== undefined ? { grounding } : {}) };
 }
 
 // ---- entry validation -----------------------------------------------------
@@ -142,6 +186,70 @@ function parseEditionUnits(value: unknown, where: string): number[] {
     }
     return item;
   });
+}
+
+// ---- grounding validation (compose only; shape only, see module doc) -----
+
+function parseGroundingArray(value: unknown): ModelGroundingEntry[] {
+  if (!Array.isArray(value)) {
+    fail(`model output "grounding" must be an array when present (got ${JSON.stringify(value)})`);
+  }
+  return value.map((entry, index) => parseGroundingEntry(entry, index));
+}
+
+function parseGroundingEntry(value: unknown, index: number): ModelGroundingEntry {
+  const where = `grounding[${index}]`;
+  if (!isRecord(value)) {
+    fail(`${where} must be an object (got ${JSON.stringify(value)})`);
+  }
+
+  const editionUnitValue = value['edition_unit'];
+  if (
+    typeof editionUnitValue !== 'number' ||
+    !Number.isInteger(editionUnitValue) ||
+    editionUnitValue < 0
+  ) {
+    fail(
+      `${where}.edition_unit must be a non-negative integer (got ${JSON.stringify(editionUnitValue)})`,
+    );
+  }
+
+  const basisValue = value['basis'];
+  if (typeof basisValue !== 'string' || !isModelGroundingBasis(basisValue)) {
+    fail(
+      `${where}.basis must be one of ${MODEL_GROUNDING_BASES.join(', ')} (got ${JSON.stringify(basisValue)})`,
+    );
+  }
+
+  const beatsValue = value['beats'];
+  if (basisValue === 'grounded') {
+    const beats = parseGroundingBeats(beatsValue, where);
+    return { edition_unit: editionUnitValue, basis: basisValue, beats };
+  }
+
+  if (beatsValue !== undefined) {
+    fail(`${where}: basis '${basisValue}' must not carry beats (beats is only valid for grounded)`);
+  }
+  return { edition_unit: editionUnitValue, basis: basisValue };
+}
+
+function parseGroundingBeats(value: unknown, where: string): number[] {
+  if (!Array.isArray(value) || value.length === 0) {
+    fail(
+      `${where}: basis 'grounded' requires a non-empty beats array of 0-based indices ` +
+        `(got ${JSON.stringify(value)})`,
+    );
+  }
+  return value.map((item, i) => {
+    if (typeof item !== 'number' || !Number.isInteger(item) || item < 0) {
+      fail(`${where}.beats[${i}] must be a non-negative integer (got ${JSON.stringify(item)})`);
+    }
+    return item;
+  });
+}
+
+function isModelGroundingBasis(value: string): value is ModelGroundingBasis {
+  return (MODEL_GROUNDING_BASES as readonly string[]).includes(value);
 }
 
 // ---- JSON extraction ------------------------------------------------------

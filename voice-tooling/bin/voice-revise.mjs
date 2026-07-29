@@ -36,6 +36,6 @@ process.chdir(path.dirname(path.dirname(fileURLToPath(import.meta.url))));
 const { register } = await import('tsx/esm/api');
 register();
 
-const { runReviseCli } = await import('../src/revise/cli.ts');
+const { runProducer } = await import('../src/revise/cli.ts');
 
-process.exitCode = await runReviseCli();
+process.exitCode = await runProducer('revise');

@@ -340,7 +340,7 @@ test('invokeModel: fails loud on a non-zero model exit', async () => {
 test('emit: writes the edition and returns an impure BuildResponse naming the target file, with no validation verdict', async () => {
   await withTempDir(async (dir) => {
     const editionText = '---\nledger:\n  version: 1\n---\nSome revised body.\n';
-    const response = await emitEdition(dir, 'edition', editionText, '0.1.0');
+    const response = await emitEdition(dir, 'edition', editionText, '0.1.0', 'revise');
 
     assert.equal(response.version, 1);
     assert.deepEqual(response.outputs, [{ path: 'edition.md' }]);
@@ -355,5 +355,20 @@ test('emit: writes the edition and returns an impure BuildResponse naming the ta
 
     const written = fs.readFileSync(path.join(dir, 'edition.md'), 'utf8');
     assert.equal(written, editionText);
+  });
+});
+
+test('emit (T012): mode "compose" names itself honestly in tool.name and impure.reason, distinct from revise', async () => {
+  await withTempDir(async (dir) => {
+    const editionText = '---\nledger:\n  version: 1\n  mode: compose\n---\nComposed body.\n';
+    const response = await emitEdition(dir, 'edition', editionText, '0.1.0', 'compose');
+
+    assert.equal(response.tool.name, 'voice-compose');
+    assert.ok(response.impure.reason.trim().length > 0, 'impure.reason must be non-empty (FR-032)');
+    assert.notEqual(
+      response.impure.reason,
+      'voice revision is a model-driven narration rewrite; the producer is non-deterministic',
+      'compose must not silently reuse revise\'s impure reason text',
+    );
   });
 });
