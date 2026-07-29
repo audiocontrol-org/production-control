@@ -23,9 +23,10 @@
 // code path.
 
 import type { SourceUnit } from '@/units/derive.ts';
-import type { GroundingRecord } from '@/schema/ledger.ts';
+import type { CoverageEntry, GroundingRecord } from '@/schema/ledger.ts';
 import type { ProducerMode } from '@/revise/prompt/types.ts';
 import { checkGrounding } from '@/policy/grounding.ts';
+import { checkOpLegality } from '@/policy/op-legality.ts';
 
 /** Result of the producer's pre-emit self-check: `ok` gates the write; `refusals` name every violation. */
 export interface PreflightResult {
@@ -37,27 +38,49 @@ export interface PreflightResult {
 /**
  * Run the producer's pre-emit self-check over the just-composed edition.
  *
- * @param mode         the producer verb's fixed mode (compose runs grounding;
- *                     revise is a no-op here -- seam for T023).
+ * For compose this is TWO independent invocations of the shared pure policies
+ * the validator also runs (Principle VI): edition-side grounding
+ * (`@/policy/grounding.ts`) AND whole-unit no-copy (`@/policy/op-legality.ts`,
+ * spec 006 US3 R4). The producer refuses a whole-unit copy BEFORE emit, named,
+ * writing nothing -- the same refusal the validator would issue at step 5,
+ * caught here at the source.
+ *
+ * @param mode         the producer verb's fixed mode (compose runs grounding +
+ *                     no-copy; revise is a no-op here -- seam for T023).
  * @param grounding    the built ledger's resolved grounding records (compose).
+ * @param coverage     the built ledger's coverage entries (for no-copy).
  * @param editionUnits the derived edition units the model wrote.
  * @param sourceUnits  the derived source beats, for resolving grounded `beats`.
  */
 export function runPreflight(
   mode: ProducerMode,
   grounding: readonly GroundingRecord[] | undefined,
+  coverage: readonly CoverageEntry[],
   editionUnits: readonly SourceUnit[],
   sourceUnits: readonly SourceUnit[],
 ): PreflightResult {
   if (mode !== 'compose') {
-    // revise: no grounding preflight (grounding is compose-only). T023 will add
-    // the verbatim-drift self-check here without coupling the two verbs.
+    // revise: no grounding/no-copy preflight (both are compose-only). T023 will
+    // add the verbatim-drift self-check here without coupling the two verbs.
     return { ok: true, refusals: [] };
   }
 
-  const result = checkGrounding(grounding ?? [], editionUnits, sourceUnits);
-  return {
-    ok: result.ok,
-    refusals: result.failures.map((failure) => failure.message),
-  };
+  const refusals: string[] = [];
+
+  const grounded = checkGrounding(grounding ?? [], editionUnits, sourceUnits);
+  refusals.push(...grounded.failures.map((failure) => failure.message));
+
+  // Whole-unit no-copy (R4): keep ONLY op-legality's `whole-unit-copy` failures.
+  // The `compose-forbids-verbatim`/`-cut` kinds cannot arise here -- `buildEdition`
+  // only ever emits `represented`/`merged`/`cut` from the model's coverage and
+  // never a verbatim in compose -- but filtering keeps this check honestly scoped
+  // to no-copy regardless.
+  const legality = checkOpLegality('compose', coverage, sourceUnits, editionUnits);
+  refusals.push(
+    ...legality.failures
+      .filter((failure) => failure.kind === 'whole-unit-copy')
+      .map((failure) => failure.message),
+  );
+
+  return { ok: refusals.length === 0, refusals };
 }

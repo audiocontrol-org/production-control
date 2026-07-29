@@ -157,7 +157,7 @@ export async function runProducer(
     // composed edition, BEFORE any write. On any violation, refuse loudly
     // (the offending unit is named in each refusal) and write NOTHING -- the
     // producer's success grants the paired validator nothing (Principle VI).
-    const preflight = runPreflight(mode, ledger.grounding, editionUnits, sourceUnits);
+    const preflight = runPreflight(mode, ledger.grounding, ledger.coverage, editionUnits, sourceUnits);
     if (!preflight.ok) {
       throw new Error(`pre-emit self-check refused before any write -- ${preflight.refusals.join('; ')}`);
     }

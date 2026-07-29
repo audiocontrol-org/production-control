@@ -27,6 +27,7 @@ import {
 import { checkUnitAccounting } from '@/fidelity/check-unit-accounting.ts';
 import { checkOpObligations } from '@/fidelity/check-op-obligations.ts';
 import { checkEditionGrounding } from '@/fidelity/check-edition-grounding.ts';
+import { checkNoCopy } from '@/fidelity/check-no-copy.ts';
 import { checkCitations, assertQuoteDialectSupported } from '@/fidelity/check-payload.ts';
 import type { Mode } from '@/schema/ledger.ts';
 import {
@@ -358,6 +359,26 @@ export function runFidelity(input: FidelityInput): FidelityResult {
       'one or more edition units are not exhaustively/exclusively grounded; see failures[]',
     );
     failures.push(...groundingResult.failures);
+  }
+
+  // ---- no_copy (contracts/fidelity-mode-agreement.md check ordering step 5,
+  // COMPOSE-ONLY) ----------------------------------------------------------
+  // Sequenced AFTER edition_grounding: no `represented`/`merged` destination
+  // edition unit may be byte-identical to a complete source beat it represents
+  // (R4). `checkNoCopy` reads the ledger's own `mode` and is a no-op
+  // (`applicable: false`) for revise, so this line is unconditional. It is an
+  // INDEPENDENT invocation of the shared pure `@/policy/op-legality.ts` (the
+  // same policy the producer's pre-emit self-check calls -- Principle VI). A
+  // failure contributes a named `no_copy` check and folds its failures into
+  // `failures[]`, withholding the pass -- present-and-`failed` ONLY on a real
+  // compose violation, mirroring the `edition_grounding` catch-all discipline
+  // so it never appears in a passing revise report.
+  const noCopyResult = checkNoCopy(ledger, sourceUnits, editionUnits);
+  if (noCopyResult.applicable && !noCopyResult.ok) {
+    checks['no_copy'] = failed(
+      'one or more edition units are whole-unit copies of a source beat; see failures[]',
+    );
+    failures.push(...noCopyResult.failures);
   }
 
   // ---- 6. uncorroborated_units (D12/FR-022) -------------------------------

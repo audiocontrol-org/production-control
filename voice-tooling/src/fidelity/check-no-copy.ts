@@ -1,0 +1,62 @@
+// T021: the `no_copy` fidelity check (spec 006 US3, R4, data-model.md
+// "Additional compose rule (whole-unit no-copy)", contracts/
+// fidelity-mode-agreement.md check ordering step 5: "no-copy
+// (check-no-copy.ts, compose only): no represented/merged destination is
+// normalized-byte-identical to a complete beat it represents").
+//
+// This module owns NO copy-detection logic of its own -- it derives nothing and
+// re-implements nothing. It is a thin, compose-only wrapper mirroring its
+// sibling `check-edition-grounding.ts`: it reads the ledger's `mode` (default
+// `revise`) and delegates straight to the shared, pure
+// `@/policy/op-legality.ts#checkOpLegality` (the SAME policy the producer's
+// pre-emit self-check uses, per Principle VI -- neither entry point depends on
+// the other), then keeps ONLY its `whole-unit-copy` failures.
+//
+// Scope boundary: `checkOpLegality` in compose ALSO reports illegal-op failures
+// (`compose-forbids-verbatim` / `compose-forbids-cut`) -- those are
+// `check-op-obligations.ts`'s concern (check ordering step 2), NOT this check's,
+// so they are filtered out here. This check reports exclusively whole-unit
+// copies, each naming the offending edition unit + the beat it copies.
+//
+// Compose-only (D21): mode `revise` has no whole-unit no-copy rule (a revise
+// verbatim op is LEGAL and deliberately byte-exact), so this check is a no-op --
+// `applicable: false`, never a failure. Pure and deterministic: no I/O, no
+// re-derivation -- the caller derives source + edition units (via `deriveUnits`)
+// and passes them in, matching every other `fidelity/check-*.ts` module.
+
+import type { SourceUnit } from '@/units/derive.ts';
+import type { CoverageLedger } from '@/schema/ledger.ts';
+import { checkOpLegality } from '@/policy/op-legality.ts';
+
+/** Result of the `no_copy` check (contract step 5, data-model.md). */
+export interface NoCopyResult {
+  ok: boolean;
+  /** False for mode `revise` (default when `mode` is absent): a no-op, never a failure. */
+  applicable: boolean;
+  failures: string[];
+}
+
+/**
+ * Verify no `represented`/`merged` destination edition unit is byte-identical to
+ * a complete source beat it represents -- compose mode only (R4).
+ *
+ * @param ledger       the coverage ledger (its `mode` and `coverage` fields).
+ * @param sourceUnits  the derived source beats, for resolving `source_unit` refs.
+ * @param editionUnits the derived edition units, for resolving `edition_units` refs.
+ */
+export function checkNoCopy(
+  ledger: CoverageLedger,
+  sourceUnits: readonly SourceUnit[],
+  editionUnits: readonly SourceUnit[],
+): NoCopyResult {
+  const mode = ledger.mode ?? 'revise';
+  if (mode !== 'compose') {
+    return { ok: true, applicable: false, failures: [] };
+  }
+
+  const result = checkOpLegality(mode, ledger.coverage, sourceUnits, editionUnits);
+  const failures = result.failures
+    .filter((failure) => failure.kind === 'whole-unit-copy')
+    .map((failure) => failure.message);
+  return { ok: failures.length === 0, applicable: true, failures };
+}

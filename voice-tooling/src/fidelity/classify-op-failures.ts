@@ -48,6 +48,10 @@ const CHECK_FOR_KIND: Record<OpFailureKind, NamedCheck> = {
   verbatim: 'op_obligations',
   destination: 'op_obligations',
   structural: 'op_obligations',
+  // An illegal compose disposition (verbatim/cut in compose, spec 006 US3) maps
+  // to the catch-all: it is not a payload shortfall but a mode-legality fault,
+  // and flipping this named check withholds the verdict.
+  'illegal-op': 'op_obligations',
 };
 
 /**

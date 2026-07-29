@@ -15,7 +15,8 @@
 // `coverage` order for determinism.
 
 import type { SourceUnit } from '@/units/derive.ts';
-import type { CoverageLedger, CoverageEntry, UnitRef } from '@/schema/ledger.ts';
+import type { CoverageLedger, CoverageEntry, Mode, UnitRef } from '@/schema/ledger.ts';
+import { checkOpLegality } from '@/policy/op-legality.ts';
 import { extractPayload } from '@/payload/extract.ts';
 import type { UnitPayload } from '@/payload/extract.ts';
 import { buildRemaining, consumeAgainstRemaining, consumeAcrossDestinations } from '@/payload/match.ts';
@@ -36,7 +37,15 @@ export type OpFailureKind =
   | 'lexicon'
   | 'verbatim'
   | 'destination'
-  | 'structural';
+  | 'structural'
+  /**
+   * An op whose DISPOSITION is illegal in the ledger's declared mode (spec 006
+   * US3): a `verbatim` or `cut` op in compose. Distinct from `verbatim` (a
+   * revise byte-identity fault) -- this is "this op may not appear in this mode
+   * at all", judged by `@/policy/op-legality.ts`. Maps to the `op_obligations`
+   * catch-all downstream, so it withholds the verdict like any structural fault.
+   */
+  | 'illegal-op';
 
 /** A single op-obligation failure: its structured kind plus the human message. */
 export interface OpFailure {
@@ -119,6 +128,23 @@ export function checkOpObligations(
   const payloadChecked = { quotes: 0, citations: 0, numerics: 0, lexiconTerms: 0 };
   let uncorroboratedUnits = 0;
 
+  // T020 (spec 006 US3, contracts/fidelity-mode-agreement.md step 2): mode-aware
+  // illegal-disposition gate. In COMPOSE, a `verbatim` or `cut` op is an ILLEGAL
+  // disposition -- delegate that judgment to the shared, pure
+  // `@/policy/op-legality.ts#checkOpLegality` (the SAME policy the producer's
+  // pre-emit self-check calls, Principle VI) and fold ONLY its
+  // `compose-forbids-verbatim` / `compose-forbids-cut` failures in here. The
+  // other op-legality kinds are deliberately NOT folded: whole-unit-copy is
+  // `check-no-copy.ts`'s concern (step 5), and revise verbatim byte-exactness is
+  // the `checkVerbatim` obligation below. REVISE is UNCHANGED -- op-legality
+  // yields no illegal-op failures for it.
+  const mode: Mode = ledger.mode ?? 'revise';
+  for (const failure of checkOpLegality(mode, ledger.coverage, sourceUnits, editionUnits).failures) {
+    if (failure.kind === 'compose-forbids-verbatim' || failure.kind === 'compose-forbids-cut') {
+      failures.push({ kind: 'illegal-op', message: failure.message });
+    }
+  }
+
   // AUDIT-20260727-03: verbatim's obligation is byte IDENTITY -- it spends the
   // ENTIRE declared destination unit, so that destination's payload must NOT
   // remain available to corroborate any OTHER source unit that shares it. Consume
@@ -126,7 +152,10 @@ export function checkOpObligations(
   // so it is withdrawn from that destination's shared supply before ANY
   // represented/merged entry claims it -- regardless of ledger order.
   ledger.coverage.forEach((entry) => {
-    if (entry.op !== 'verbatim') {
+    // In compose, `verbatim` is an illegal disposition (folded above); it never
+    // legitimately spends a destination's supply, so it takes no part in the
+    // shared-supply consumption pre-pass.
+    if (entry.op !== 'verbatim' || mode === 'compose') {
       return;
     }
     const destRefs = entry.edition_units ?? [];
@@ -156,6 +185,14 @@ export function checkOpObligations(
 
   ledger.coverage.forEach((entry, index) => {
     opCounts[entry.op] += 1;
+
+    // T020: an illegal compose disposition (`verbatim`/`cut`) was already refused
+    // via checkOpLegality above; do not additionally run its per-op mechanical
+    // obligation (which would double-report, or spuriously pass a byte-exact
+    // compose verbatim). Revise never reaches this guard.
+    if (mode === 'compose' && (entry.op === 'verbatim' || entry.op === 'cut')) {
+      return;
+    }
 
     const sourceContent = sourceByKey.get(unitRefKey(entry.source_unit));
     if (sourceContent === undefined) {
