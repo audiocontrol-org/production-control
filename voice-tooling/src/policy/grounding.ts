@@ -133,12 +133,12 @@ function refLabel(ref: UnitRef): string {
   return `${hash}, occurrence ${ref.occurrence}`;
 }
 
-/** Identity key for a derived unit: normalized hash + occurrence. */
+/** Identity key for a derived unit: exact-byte contentHash + occurrence. */
 function sourceUnitKey(unit: SourceUnit): string {
   return `sha256:${unit.contentHash} ${unit.occurrenceIndex}`;
 }
 
-/** Identity key for a ledger `UnitRef`: normalized hash + occurrence. */
+/** Identity key for a ledger `UnitRef`: exact-byte contentHash + occurrence. */
 function unitRefKey(ref: UnitRef): string {
   const hash = ref.hash.startsWith('sha256:') ? ref.hash : `sha256:${ref.hash}`;
   return `${hash} ${ref.occurrence}`;

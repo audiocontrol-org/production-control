@@ -15,6 +15,12 @@
 // - a record naming an edition unit absent from the derived edition -> dangling record.
 // - a `grounded` record whose beat names a nonexistent source unit -> dangling beat.
 // - a fully-accounted edition -> pass.
+// - occurrence-sensitivity: two byte-identical edition units each need their
+//   own per-occurrence record; both records landing on occurrence 0 leaves
+//   occurrence 0 duplicated and occurrence 1 unaccounted (the invented-prose
+//   hole a hash-only accounting would miss).
+// - dangling-beat occurrence-sensitivity: a grounded beat naming a REAL source
+//   hash but a non-existent occurrence is dangling.
 
 import test from 'node:test';
 import * as assert from 'node:assert/strict';
@@ -131,4 +137,88 @@ test('checkGrounding: a grounded record whose beat names a nonexistent source un
   assert.equal(danglingBeat.length, 1);
   assert.match(danglingBeat[0]?.message ?? '', /unknown beat/);
   assert.match(danglingBeat[0]?.message ?? '', new RegExp('c'.repeat(64)));
+});
+
+// HIGH: the invented-prose hole. Grounding accounting is keyed on the derived
+// unit's (contentHash, occurrenceIndex) pair -- NOT the hash alone. Two
+// byte-identical edition paragraphs are DISTINCT units (occurrences 0 and 1),
+// so each needs its own grounding record. A reimplementation that keyed only on
+// contentHash would treat them as one unit: two records for the same hash would
+// "account" for both, silently letting a second, ungrounded paragraph through.
+test('checkGrounding: occurrence-sensitivity -- two byte-identical edition units each need their own record', () => {
+  const src = deriveUnits(SOURCE, 'src');
+  // Same content twice -> same contentHash, occurrences 0 and 1.
+  const dupEdition = ['Same identical paragraph.', '', 'Same identical paragraph.', ''].join('\n');
+  const ed = deriveUnits(dupEdition, 'ed');
+  const [e0, e1] = ed;
+  assert.ok(e0 && e1);
+  assert.equal(e0.contentHash, e1.contentHash, 'fixture: both edition units must be byte-identical');
+  assert.equal(e0.occurrenceIndex, 0);
+  assert.equal(e1.occurrenceIndex, 1);
+
+  // Case A: exactly one record per occurrence -> passes.
+  const perOccurrence: GroundingRecord[] = [
+    { edition_unit: ref(e0), basis: 'connective' },
+    { edition_unit: ref(e1), basis: 'connective' },
+  ];
+  const passing = checkGrounding(perOccurrence, ed, src);
+  assert.equal(
+    passing.ok,
+    true,
+    `unexpected failures: ${passing.failures.map((f) => f.message).join(' | ')}`,
+  );
+  assert.deepEqual(passing.failures, []);
+
+  // Case B: BOTH records resolve to occurrence 0 -> occ 0 duplicated, occ 1 unaccounted.
+  const bothOccZero: GroundingRecord[] = [
+    { edition_unit: ref(e0), basis: 'connective' },
+    { edition_unit: ref(e0), basis: 'connective' }, // wrongly also occurrence 0
+  ];
+  const result = checkGrounding(bothOccZero, ed, src);
+
+  assert.equal(result.ok, false);
+  const duplicate = result.failures.filter((f) => f.kind === 'duplicate');
+  const unaccounted = result.failures.filter((f) => f.kind === 'unaccounted');
+  assert.equal(duplicate.length, 1);
+  assert.equal(unaccounted.length, 1);
+  // The named unit distinguishes the two occurrences of the SAME hash: the
+  // duplicate is occurrence 0, the unaccounted one is occurrence 1.
+  assert.match(duplicate[0]?.message ?? '', /occurrence 0/);
+  assert.match(duplicate[0]?.message ?? '', /has 2 records/);
+  assert.match(unaccounted[0]?.message ?? '', /occurrence 1/);
+  assert.match(unaccounted[0]?.message ?? '', /has no grounding record/);
+  // Both messages carry the same hash -- only the occurrence tells them apart.
+  assert.match(duplicate[0]?.message ?? '', new RegExp(e0.contentHash));
+  assert.match(unaccounted[0]?.message ?? '', new RegExp(e0.contentHash));
+});
+
+// A grounded beat is resolved by (contentHash, occurrence), so a beat naming a
+// REAL source hash at an occurrence that does not exist must still dangle. A
+// hash-only reimplementation would falsely resolve it.
+test('checkGrounding: dangling-beat occurrence-sensitivity -- real source hash, non-existent occurrence', () => {
+  // A source with a single unique beat: the hash exists ONLY at occurrence 0.
+  const src = deriveUnits('Unique source beat line.\n', 'src');
+  const [s0] = src;
+  assert.ok(s0);
+  assert.equal(s0.occurrenceIndex, 0);
+
+  const ed = deriveUnits('One composed edition paragraph.\n', 'ed');
+  const [e0] = ed;
+  assert.ok(e0);
+
+  // beats names the REAL source hash, but occurrence 1, which does not exist.
+  const wrongOccurrenceBeat: UnitRef = { hash: `sha256:${s0.contentHash}`, occurrence: 1 };
+  const records: GroundingRecord[] = [
+    { edition_unit: ref(e0), basis: 'grounded', beats: [wrongOccurrenceBeat] },
+  ];
+
+  const result = checkGrounding(records, ed, src);
+
+  assert.equal(result.ok, false);
+  const danglingBeat = result.failures.filter((f) => f.kind === 'dangling-beat');
+  assert.equal(danglingBeat.length, 1);
+  assert.match(danglingBeat[0]?.message ?? '', /unknown beat/);
+  // The named beat carries the real hash and the non-existent occurrence 1.
+  assert.match(danglingBeat[0]?.message ?? '', new RegExp(s0.contentHash));
+  assert.match(danglingBeat[0]?.message ?? '', /occurrence 1/);
 });

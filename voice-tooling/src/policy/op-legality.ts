@@ -22,12 +22,24 @@ import type { CoverageEntry, Mode, UnitRef } from '@/schema/ledger.ts';
  *   merged       legal                                   legal
  *   cut          legal (requires reason)                 ILLEGAL (v1)
  * Plus (compose only, R4): no `represented`/`merged` destination edition unit
- * may be normalized-byte-identical to a complete source beat it represents.
+ * may be byte-identical to a complete source beat it represents.
  *
- * "Normalized-byte-identical" reuses the SAME identity the rest of the system
- * uses: a derived unit's `contentHash` (sha256 of its exact bytes, computed by
- * units/derive.ts and keyed by units/identity.ts). Two units are identical iff
- * their content hashes are equal -- no new normalization is invented here.
+ * Comparison basis: whole-unit no-copy AND revise verbatim byte-exactness are
+ * decided by the derived unit's EXACT-BYTE `contentHash` (sha256 of the unit's
+ * unnormalized bytes, from units/derive.ts) plus its `occurrenceIndex`. Two
+ * units are "identical" iff their content hashes are equal. There is NO
+ * within-unit byte normalization anywhere: the only normalization is unit
+ * DERIVATION itself (leading-frontmatter strip, separator-run grouping, fence
+ * handling in units/derive.ts), which produces the units -- it is not a second
+ * canonicalizing pass over a unit's bytes. This is what R4's phrase "normalized
+ * bytes" refers to (the derivation), not a per-unit canonicalization.
+ *
+ * WARNING: do NOT "fix" this to compare units/identity.ts `unitId`. `unitId`
+ * binds the SOURCE identity (`encodeURIComponent(sourceIdentity):hash:occ`), so
+ * a source beat and its edition destination -- derived under different source
+ * identities -- would NEVER share a `unitId`, and the whole-unit-copy /
+ * verbatim-drift checks would silently never match (false-clean). Cross-
+ * document comparison here is correctly keyed on `contentHash` + occurrence.
  */
 
 export type OpLegalityFailureKind =
@@ -176,12 +188,12 @@ function unitLabel(unit: SourceUnit): string {
   return `sha256:${unit.contentHash}, occurrence ${unit.occurrenceIndex}`;
 }
 
-/** Identity key for a derived unit: normalized hash + occurrence. */
+/** Identity key for a derived unit: exact-byte contentHash + occurrence. */
 function sourceUnitKey(unit: SourceUnit): string {
   return `sha256:${unit.contentHash} ${unit.occurrenceIndex}`;
 }
 
-/** Identity key for a ledger `UnitRef`: normalized hash + occurrence. */
+/** Identity key for a ledger `UnitRef`: exact-byte contentHash + occurrence. */
 function unitRefKey(ref: UnitRef): string {
   const hash = ref.hash.startsWith('sha256:') ? ref.hash : `sha256:${ref.hash}`;
   return `${hash} ${ref.occurrence}`;

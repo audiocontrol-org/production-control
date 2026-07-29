@@ -16,6 +16,10 @@
 //   illegal (TASK-50 predicate), naming the unit.
 // - revise: a `verbatim` op whose destination is byte-exact to its source is legal.
 // - a fully-legal compose set (represented + merged, no copies) passes.
+// - compose: an unresolved edition_units ref is skipped, not reported as a
+//   whole-unit copy (existence is a separate check's concern).
+// - revise: represented/merged destinations that drift from source are legal
+//   (only `verbatim` is drift-checked in revise).
 
 import test from 'node:test';
 import * as assert from 'node:assert/strict';
@@ -155,5 +159,71 @@ test('checkOpLegality: a fully-legal compose set (represented + merged, no copie
   const result = checkOpLegality('compose', coverage, src, ed);
 
   assert.equal(result.ok, true, `unexpected failures: ${result.failures.map((f) => f.message).join(' | ')}`);
+  assert.deepEqual(result.failures, []);
+});
+
+// MEDIUM: skip-on-unresolved-ref is INTENDED behavior, pinned here.
+//
+// WHY IT IS SAFE: op-legality is scoped to the legality of RESOLVED refs. An
+// edition_units ref that resolves to no derived edition unit is an
+// EXISTENCE/accounting failure -- independently refused by the validator's
+// op-obligations / classify-op-failures over the same ledger. If op-legality
+// ALSO flagged it, the unresolved ref would be double-reported; instead it
+// defers, so existence stays one check's concern. This test pins that so a
+// reimplementation cannot "helpfully" begin reporting whole-unit-copy on refs
+// it never resolved.
+//
+// The construction is adversarial: the destination bytes ARE a whole-unit copy
+// of the beat (identical content -> identical contentHash), but the ref cites
+// occurrence 1, which does not exist in the edition (only occurrence 0 does). A
+// hash-only check would falsely flag a copy; the correct check resolves the ref
+// by (contentHash, occurrence) first, finds nothing, and skips.
+test('checkOpLegality: an unresolved edition_units ref is skipped, not reported as a whole-unit copy', () => {
+  const shared = 'Shared identical line here.\n';
+  const src = deriveUnits(shared, 'src');
+  const ed = deriveUnits(shared, 'ed');
+  const [s0] = src;
+  const [e0] = ed;
+  assert.ok(s0 && e0);
+  assert.equal(e0.contentHash, s0.contentHash, 'fixture: edition bytes equal the beat bytes');
+  assert.equal(e0.occurrenceIndex, 0, 'fixture: the only edition occurrence is 0');
+
+  // Same hash as the real edition unit, but occurrence 1 -> resolves to nothing.
+  const unresolvedDest: UnitRef = { hash: `sha256:${e0.contentHash}`, occurrence: 1 };
+  const coverage: CoverageEntry[] = [
+    { source_unit: ref(s0), op: 'represented', edition_units: [unresolvedDest] },
+  ];
+
+  const result = checkOpLegality('compose', coverage, src, ed);
+
+  const copies = result.failures.filter((f) => f.kind === 'whole-unit-copy');
+  assert.equal(copies.length, 0, 'unresolved dest ref must not be reported as a whole-unit copy');
+  assert.equal(result.ok, true, `unexpected failures: ${result.failures.map((f) => f.message).join(' | ')}`);
+});
+
+// Only `verbatim` is byte-exactness-checked in revise. `represented`/`merged`
+// deliberately allow the destination bytes to differ from the source (that is
+// what a rewrite/merge IS), so a drifting destination is LEGAL under those ops.
+test('checkOpLegality: revise represented/merged destinations that drift from source are legal (only verbatim is drift-checked)', () => {
+  const revSrc = ['Original alpha line.', '', 'Original beta line.', ''].join('\n');
+  const revEd = ['Rewritten alpha prose entirely.', '', 'Rewritten beta prose entirely.', ''].join('\n');
+  const src = deriveUnits(revSrc, 'src');
+  const ed = deriveUnits(revEd, 'ed');
+  const [s0, s1] = src;
+  const [e0, e1] = ed;
+  assert.ok(s0 && s1 && e0 && e1);
+  assert.notEqual(e0.contentHash, s0.contentHash, 'fixture: represented destination must drift');
+  assert.notEqual(e1.contentHash, s1.contentHash, 'fixture: merged destination must drift');
+
+  const coverage: CoverageEntry[] = [
+    { source_unit: ref(s0), op: 'represented', edition_units: [ref(e0)] },
+    { source_unit: ref(s1), op: 'merged', edition_units: [ref(e1)] },
+  ];
+
+  const result = checkOpLegality('revise', coverage, src, ed);
+
+  assert.equal(result.ok, true, `unexpected failures: ${result.failures.map((f) => f.message).join(' | ')}`);
+  const drift = result.failures.filter((f) => f.kind === 'revise-verbatim-drift');
+  assert.equal(drift.length, 0);
   assert.deepEqual(result.failures, []);
 });
