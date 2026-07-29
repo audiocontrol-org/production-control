@@ -372,7 +372,10 @@ function isOp(value: string): value is Op {
   return value === 'verbatim' || value === 'represented' || value === 'merged' || value === 'cut';
 }
 
-function isMode(value: string): value is Mode {
+/** Exported (spec 006 T025) so callers validating a `Mode`-typed wire field
+ *  elsewhere (e.g. `fidelity/cli.ts`'s `ValidateRequest.requested_mode`) share
+ *  this same closed-set check rather than re-declaring the enum. */
+export function isMode(value: string): value is Mode {
   return value === 'compose' || value === 'revise';
 }
 

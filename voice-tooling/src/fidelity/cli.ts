@@ -12,6 +12,8 @@ import { parse as parseYamlText } from 'yaml';
 import { isRecord } from '@/util/is-record.ts';
 import { runFidelity } from '@/fidelity/run.ts';
 import type { FidelityInput } from '@/fidelity/run.ts';
+import { isMode } from '@/schema/ledger.ts';
+import type { Mode } from '@/schema/ledger.ts';
 
 /** A single resolved input, per `src/providers/contract.ts`'s `BuildInputSchema`. */
 interface WireBuildInput {
@@ -19,12 +21,20 @@ interface WireBuildInput {
   hash: string;
 }
 
-/** The `ValidateRequest` wire shape (contract "Input"). */
+/**
+ * The `ValidateRequest` wire shape (contract "Input"; `requested_mode`
+ * addition per contracts/fidelity-mode-agreement.md). `requested_mode` is
+ * OPTIONAL: a governed build supplies it (from the provider recipe);
+ * standalone `voice-fidelity` use omits it. This module only parses and
+ * validates the field here (T025) -- sequencing it into `run.ts`'s
+ * `check-mode-agreement` call is a separate task (T026).
+ */
 interface ValidateRequestWire {
   version: number;
   target: string;
   artifact: WireBuildInput;
   inputs: Record<string, WireBuildInput>;
+  requested_mode?: Mode;
 }
 
 /**
@@ -48,6 +58,16 @@ function isWireBuildInput(value: unknown): value is WireBuildInput {
   );
 }
 
+/**
+ * `requested_mode` is OPTIONAL, but when present it MUST be one of the
+ * closed `Mode` enum values -- fail-loud on a present-but-invalid value
+ * rather than silently ignoring it (a typo'd mode must never be read as
+ * "not supplied").
+ */
+function isValidRequestedMode(value: unknown): value is Mode | undefined {
+  return value === undefined || (typeof value === 'string' && isMode(value));
+}
+
 function isValidateRequestWire(value: unknown): value is ValidateRequestWire {
   return (
     isRecord(value) &&
@@ -56,7 +76,8 @@ function isValidateRequestWire(value: unknown): value is ValidateRequestWire {
     value['target'].trim().length > 0 &&
     isWireBuildInput(value['artifact']) &&
     isRecord(value['inputs']) &&
-    Object.values(value['inputs']).every(isWireBuildInput)
+    Object.values(value['inputs']).every(isWireBuildInput) &&
+    isValidRequestedMode(value['requested_mode'])
   );
 }
 
@@ -99,6 +120,9 @@ function describeRequestShapeError(value: unknown): string {
     if (!isWireBuildInput(wireInput)) {
       return `ValidateRequest.inputs.${key} must be an object with non-empty string "path" and "hash" fields`;
     }
+  }
+  if (!isValidRequestedMode(value['requested_mode'])) {
+    return `ValidateRequest.requested_mode must be one of compose, revise when present (got ${JSON.stringify(value['requested_mode'])})`;
   }
   // Unreachable given the checks above mirror isValidateRequestWire exactly;
   // named rather than asserted so a future drift between the two still

@@ -138,3 +138,59 @@ for (const { label, stdin } of [
     );
   });
 }
+
+// spec 006 T025 (contracts/fidelity-mode-agreement.md "ValidateRequest wire
+// addition"): `requested_mode` is OPTIONAL, but a present-but-invalid value
+// must be refused by name, never silently ignored or read as "not supplied".
+test('voice-fidelity CLI (T025): a present-but-invalid requested_mode is refused by name', () => {
+  const requestBadRequestedMode = {
+    version: 1,
+    target: 'edition',
+    artifact: { path: '/tmp/does-not-matter.md', hash: 'sha256:' + 'a'.repeat(64) },
+    inputs: {},
+    requested_mode: 'draft',
+  };
+
+  const { code, stdout, stderr } = runFidelityBin(JSON.stringify(requestBadRequestedMode));
+
+  assert.notEqual(code, 0, 'a present-but-invalid requested_mode must never exit 0');
+  assert.equal(stdout.trim(), '', 'no ValidateResponse is ever written for a shape-invalid request');
+  assert.match(
+    stderr,
+    /voice-fidelity: ValidateRequest\.requested_mode must be one of compose, revise/,
+    `expected a named refusal citing "requested_mode"; got stderr: ${stderr}`,
+  );
+  assert.doesNotMatch(stderr, /TypeError|Cannot read propert/);
+});
+
+// A valid requested_mode ("compose"/"revise") must NOT be refused for its own
+// sake at the shape-validation layer -- it should pass shape validation and
+// reach the same downstream "inputs.source is required" refusal that any
+// other shape-valid-but-incomplete request reaches (T025 only adds the wire
+// field + its own validation; sequencing it into the mode-agreement check
+// itself is T026, so this request still fails, but for the pre-existing
+// missing-source reason, not for its requested_mode).
+for (const requestedMode of ['compose', 'revise']) {
+  test(`voice-fidelity CLI (T025): a valid requested_mode ("${requestedMode}") passes shape validation`, () => {
+    const requestWithValidMode = {
+      version: 1,
+      target: 'edition',
+      artifact: { path: '/tmp/does-not-matter.md', hash: 'sha256:' + 'a'.repeat(64) },
+      inputs: {},
+      requested_mode: requestedMode,
+    };
+
+    const { stderr } = runFidelityBin(JSON.stringify(requestWithValidMode));
+
+    assert.doesNotMatch(
+      stderr,
+      /ValidateRequest\.requested_mode/,
+      `a valid requested_mode ("${requestedMode}") must not be refused at shape validation; got stderr: ${stderr}`,
+    );
+    assert.match(
+      stderr,
+      /voice-fidelity: ValidateRequest\.inputs\.source is required/,
+      `expected the request to reach the pre-existing missing-source refusal; got stderr: ${stderr}`,
+    );
+  });
+}
