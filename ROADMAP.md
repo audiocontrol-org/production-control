@@ -80,6 +80,7 @@ Real voice-revise producer protocol (model declares index mapping, provider buil
 
 ## design:feature/voice-compose-from-spine
 - status: in-flight
+- spec: specs/006-voice-compose-from-spine
 - design: docs/superpowers/specs/2026-07-28-voice-compose-from-spine-design.md
 - design-approved: yes
 - depends-on: design:feature/voice-producer-protocol
