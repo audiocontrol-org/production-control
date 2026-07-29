@@ -4,6 +4,33 @@ Reusable craft tools that produce and verify voice-varied editions of a source-l
 
 ## The two entry points
 
+### `voice compose` (impure provider)
+
+**Role**: generates a full narrative chapter by expanding a source-cited spine of beats into voiced prose through a language model, with edition-side grounding accounting.
+
+**Invocation**: a subprocess reading one `BuildRequest` on stdin, writing one `BuildResponse` on stdout.
+
+```bash
+echo '{"version":1,"target":"...","inputs":{...},"output_dir":"..."}' | voice-tooling/bin/voice-compose.mjs
+```
+
+**What it does**:
+1. Reads the spine (source beats) and voice document
+2. Invokes the configured model (via `VOICE_REVISE_MODEL` env var or explicit `provider_args`) to expand each beat into flowing narrative prose in the voice
+3. Assembles the edition from model output and emits a per-unit **coverage ledger** (the mapping of every source beat to its disposition) plus per-edition-unit **grounding records** (the origin basis of each composed unit)
+4. Writes the edition (body + ledger frontmatter) to a dot-zoned `.ai/` path (impure output zone)
+
+**What it declares**:
+- `impure: { reason }` — the provider is never referentially transparent; every run is non-deterministic due to the model call
+- `mode: compose` in the ledger — stamps the operation mode so the validator enforces compose-specific rules
+- **No validation verdict** — acceptance is decided solely by the paired `voice fidelity` validator, not by this provider
+
+**How it differs from `voice revise`**:
+- **Compose expands**; revise rewrites. Compose forbids both `verbatim` (byte-exact reproduction) and `cut` (omission) operations; every beat is `represented` or `merged` into new prose.
+- **No whole-unit copy**: no destination edition unit may be byte-identical to a complete source beat it represents.
+- **Edition-side grounding**: every edition unit declares exactly one origin basis (`grounded` in specific beats, `connective`, or `framing`), providing exhaustive accounting of the composed output and preventing silent invention.
+- **Revise operates on a draft** (continuous prose with optional verbatim spans); **compose operates on a spine** (structured beats to be expanded).
+
 ### `voice revise` (impure provider)
 
 **Role**: generates voice variations from a source draft by invoking a language model against the source text and declared voice directives.
@@ -69,6 +96,10 @@ Every time `voice fidelity` reaches a decision (either passed or failed), it emi
 ```json
 {
   "verdict": "passed",
+  "mode": "compose",
+  "mode_comparison": "matched",
+  "spine_source_fidelity": "not-checked",
+  "composition_semantic_grounding": "not-checkable",
   "checks": {
     "source_hash":             { "state": "passed" },
     "ledger_structure":        { "state": "passed" },
@@ -78,11 +109,20 @@ Every time `voice fidelity` reaches a decision (either passed or failed), it emi
     "numeric_literals":        { "state": "passed", "checked": 8 },
     "lexicon":                 { "state": "not-run", "reason": "no lexicon declared" },
     "uncorroborated_units":    { "state": "reported", "count": 6 },
+    "op_obligations":          { "state": "passed" },
+    "edition_grounding":       { "state": "passed", "edition_units": 42 },
+    "no_copy":                 { "state": "passed" },
     "semantic_claim_fidelity": { "state": "not-checkable", "reason": "not provable under D4 — declared out of scope for v1" },
     "voice_conformance":       { "state": "not-checkable", "reason": "not provable under D16 — declared out of scope for v1" }
   }
 }
 ```
+
+For composed editions, the report additionally includes:
+- **`mode`**: `compose` or `revise` — the operation mode the ledger was produced under.
+- **`mode_comparison`**: `matched`, `none-supplied`, or (on mismatch) a failure state — whether the requested mode agreed with the ledger mode.
+- **`spine_source_fidelity`**: `not-checked` — indicator that spine correctness is out of scope.
+- **`composition_semantic_grounding`**: `not-checkable` — indicator that semantic fidelity is not provable in v1.
 
 ### Check states
 
@@ -94,7 +134,7 @@ Each check reports one of five states:
 - **`reported`** — a count surfaced without a pass/fail verdict (currently: uncorroborated units)
 - **`not-checkable`** — the obligation is outside scope for v1 (semantic equivalence, voice conformance)
 
-### The ten checks
+### The ten checks (source-side + compose-specific)
 
 1. **`source_hash`** — ledger's source hash matches the supplied source
 2. **`ledger_structure`** — frontmatter parses as a schema-valid coverage ledger
@@ -104,8 +144,11 @@ Each check reports one of five states:
 6. **`numeric_literals`** — numeric literals survive where required
 7. **`lexicon`** — when a lexicon is declared, its terms survive where required (`not-run` if no lexicon)
 8. **`uncorroborated_units`** — a quality count of source units yielding no extractable literal payload (reported only, never a failure threshold)
-9. **`semantic_claim_fidelity`** — NOT proven in v1 (not-checkable)
-10. **`voice_conformance`** — NOT proven in v1 (not-checkable)
+9. **`op_obligations`** — mode-aware: in compose, forbids `verbatim` and `cut` ops; in revise, both are legal. (compose only: also requires grounding to exist — see edition-grounding check)
+10. **`edition_grounding`** — compose only: every derived edition unit has exactly one grounding record; no record names a nonexistent unit (revise: not-run, as reverse accounting is deferred to TASK-51)
+11. **`no_copy`** — compose only: no destination edition unit is byte-identical to a complete source beat it represents (revise: not-run)
+12. **`semantic_claim_fidelity`** — NOT proven in v1 (not-checkable)
+13. **`voice_conformance`** — NOT proven in v1 (not-checkable)
 
 ### Verdict semantics
 
@@ -133,6 +176,67 @@ This validator **does not** and **cannot** prove:
 
 Both `semantic_claim_fidelity` and `voice_conformance` are reported as `not-checkable` in v1 by design, not by omission. This is a first-class limitation, stated plainly here and in every coverage report. These checks are always present in the ten-check report (never silently omitted), making the boundary explicit to readers of coverage reports and alerting operators to the scope.
 
+## Compose-mode trust boundary (FR-012)
+
+When validating a composed edition, the fidelity report classifies guarantees into three tiers:
+
+### MECHANICAL (deterministically checked)
+
+These guarantees are verified byte-by-byte and structurally:
+- **Op-legality**: no `verbatim` or `cut` operations; every beat is `represented` or `merged`.
+- **No whole-unit copy**: no destination edition unit is byte-identical to a complete source beat it represents.
+- **Grounding exhaustive and exclusive**: every derived edition unit has exactly one grounding record; no grounding record names a nonexistent edition unit.
+- **Payload byte-exactness**: every citation marker, numeral, and declared `[OPEN-QUESTION]` marker in a beat survives byte-exact into the beat's represented destination(s).
+- **Mode agreement** (for governed builds): the validator requires `requested_mode == ledger.mode` and refuses on mismatch before op-legality.
+
+### PRODUCER-INSTRUCTION (asked of the model, not mechanically verifiable)
+
+These guarantees are stated in the producer's prompt to the language model and are NOT checked by the deterministic validator:
+- **Invent nothing**: added claims must be attributed, traceable assertions — never fabricated facts or sources.
+
+### ADVISORY / NOT CHECKED (reported in the fidelity report, not deterministically proven)
+
+These are known boundaries where the validator provides no guarantee:
+- **`spine_source_fidelity: not-checked`** — whether the spine itself cites correctly is outside scope (asset-bank territory).
+- **`composition_semantic_grounding: not-checkable`** — whether composed prose is semantically faithful to its beats cannot be proven deterministically. A composed edition where all payload survives byte-exact but prose invents causal claims will pass the mechanical gate.
+
+The fidelity report makes this boundary explicit in every report, ensuring readers know exactly what is and is not guaranteed.
+
+## Coverage-ledger schema (mode + grounding additions)
+
+The compose mode extends the coverage ledger with two new fields:
+
+### Ledger-level `mode` field
+
+```yaml
+version: 1
+mode: compose           # NEW — enum: compose | revise
+                        # Absent in pre-006 editions defaults to revise (backward-compatible)
+source: { identity: <str>, hash: <sha256> }
+voice:  { identity: <str>, hash: <sha256> }
+coverage: [ ... ]       # unchanged shape; legality is now mode-aware
+grounding: [ ... ]      # NEW — present for compose, absent for revise
+```
+
+The `mode` field stamps the operation the ledger was produced under, enabling the validator to enforce mode-specific rules (e.g., forbidding `verbatim` in compose, requiring grounding records in compose).
+
+### Grounding records (compose only)
+
+```yaml
+grounding:
+  - edition_unit: { hash: <sha256>, occurrence: <int> }
+    basis: grounded         # enum: grounded | connective | framing
+    beats:                  # present+non-empty iff basis==grounded; absent otherwise
+      - { hash: <sha256>, occurrence: <int> }
+```
+
+Each grounding record declares the origin basis of one edition unit:
+- **`grounded`**: the edition unit is grounded in one or more specific beats (listed in `beats`).
+- **`connective`**: the edition unit is bridge prose connecting beats, with no single beat as primary origin.
+- **`framing`**: the edition unit is frame prose (introduction, conclusion) not grounded in a specific beat.
+
+Grounding records enable exhaustive and exclusive accounting of the composed output, preventing silent invention of undeclared edition units.
+
 ## Unit-derivation coverage for deferred markdown constructs
 
 The D6 unit-derivation algorithm (see `src/units/derive.ts`) is construct-agnostic: it operates only on separator lines (blank/whitespace-only) and fenced code-block delimiters. Markdown constructs outside the current corpus (setext headings, MDX-style statements, HTML blocks, and list items separated by blank lines) are documented via golden fixtures in `test/golden-markdown.test.ts`. These fixtures pin the exact unit-split behavior for each construct under D6 rules:
@@ -146,4 +250,4 @@ All constructs are subject to the same foundational D6 rules: exact byte preserv
 
 ## Independent use
 
-This package is independently useful outside production-control. Both entry points (`voice revise` and `voice fidelity`) can be invoked as subprocesses by any orchestrator speaking their respective request/response contracts. The package imports no production-control source code; all data structures are plain JSON shapes matching the wire contracts in `specs/004-voice-editions/contracts/`.
+This package is independently useful outside production-control. All three entry points (`voice compose`, `voice revise`, and `voice fidelity`) can be invoked as subprocesses by any orchestrator speaking their respective request/response contracts. Both producers (`compose` and `revise`) read one `BuildRequest` JSON on stdin and write one `BuildResponse` on stdout; the validator reads one `ValidateRequest` on stdin and writes one `ValidateResponse` on stdout plus a structured coverage report on stderr. The package imports no production-control source code; all data structures are plain JSON shapes matching the wire contracts in `specs/006-voice-compose-from-spine/contracts/` and `specs/004-voice-editions/contracts/`.
