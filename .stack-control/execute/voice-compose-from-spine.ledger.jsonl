@@ -19,3 +19,4 @@
 {"id":"T019","tierLabel":"balanced","model":"sonnet","commitRange":"41b4f87","reviewClean":true,"note":"US3 RED tests op-obligations-compose + no-copy; 3 intended failures confirmed"}
 {"id":"T020","tierLabel":"powerful","model":"opus","commitRange":"b5ec9a5","reviewClean":true,"note":"US3 mode-aware op-obligations (illegal-op kind); revise unchanged; op-obligations.ts 476"}
 {"id":"T021","tierLabel":"powerful","model":"opus","commitRange":"b5ec9a5","reviewClean":true,"note":"US3 check-no-copy.ts wired validator(run.ts 480)+preflight; both refuse whole-unit copy"}
+{"id":"T022","tierLabel":"balanced","model":"sonnet","commitRange":"69db2ed","reviewClean":true,"note":"US4 RED revise-verbatim-preflight int; drift emitted today (RED); SC-006 regression pins pass"}

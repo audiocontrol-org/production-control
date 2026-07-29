@@ -17,10 +17,10 @@
 // this module does no I/O. On any violation it returns a named refusal result;
 // the caller REFUSES loudly (throws) BEFORE any write (Principle V).
 //
-// Mode scoping: grounding is compose-only. For `revise` this is a no-op today --
-// the seam is left here for T023's revise verbatim-drift pre-emit self-check,
-// which will add its own check to this module WITHOUT the two verbs sharing a
-// code path.
+// Mode scoping: grounding + no-copy are compose-only. For `revise` (T023,
+// US4/TASK-50) the pre-emit self-check is verbatim byte-exactness -- its own
+// branch here, invoking the same shared op-legality predicate the validator
+// runs, WITHOUT the two verbs sharing a code path.
 
 import type { SourceUnit } from '@/units/derive.ts';
 import type { CoverageEntry, GroundingRecord } from '@/schema/ledger.ts';
@@ -46,7 +46,8 @@ export interface PreflightResult {
  * caught here at the source.
  *
  * @param mode         the producer verb's fixed mode (compose runs grounding +
- *                     no-copy; revise is a no-op here -- seam for T023).
+ *                     no-copy; revise runs the verbatim byte-exactness self-
+ *                     check via the shared op-legality predicate, T023).
  * @param grounding    the built ledger's resolved grounding records (compose).
  * @param coverage     the built ledger's coverage entries (for no-copy).
  * @param editionUnits the derived edition units the model wrote.
@@ -60,9 +61,19 @@ export function runPreflight(
   sourceUnits: readonly SourceUnit[],
 ): PreflightResult {
   if (mode !== 'compose') {
-    // revise: no grounding/no-copy preflight (both are compose-only). T023 will
-    // add the verbatim-drift self-check here without coupling the two verbs.
-    return { ok: true, refusals: [] };
+    // revise (T023, US4/TASK-50): the ONLY pre-emit self-check for revise is
+    // verbatim byte-exactness -- an INDEPENDENT invocation of the shared pure
+    // `@/policy/op-legality.ts#checkOpLegality('revise', ...)` predicate the
+    // fidelity validator also runs (Principle VI). A `verbatim` op whose
+    // destination drifted from its source unit is refused HERE, named with its
+    // `sha256:` content hash, BEFORE any write (Principle V). `represented`/
+    // `merged` revise ops stay legal -- op-legality only reports drift for
+    // `verbatim`. Grounding + no-copy remain compose-only (below), untouched.
+    const legality = checkOpLegality('revise', coverage, sourceUnits, editionUnits);
+    const refusals = legality.failures
+      .filter((failure) => failure.kind === 'revise-verbatim-drift')
+      .map((failure) => failure.message);
+    return { ok: refusals.length === 0, refusals };
   }
 
   const refusals: string[] = [];
