@@ -47,6 +47,9 @@ import {
   countUncorroboratedUnits,
   stripFrontmatterBody,
   parseSourceCitationAllowlist,
+  sourceDeclaresOpenQuestionMarker,
+  markAborted,
+  describeError,
 } from '@/fidelity/run-support.ts';
 import {
   findUnresolvedDestinationChecks,
@@ -412,20 +415,21 @@ export function runFidelity(input: FidelityInput): FidelityResult {
     'not provable under D16 — declared out of scope for v1',
   );
 
-  return finalize(checks, failures, true, ledger.mode, modeComparison);
+  // R7/FR-013 (T027): the report's `open_question_markers` trust-boundary
+  // field is a REPORTED FACT about whether the mechanical byte-survival
+  // guarantee is ACTIVE for this spine -- `'enforced'` only when the spine
+  // itself declares at least one `[OPEN-QUESTION: ...]` marker (in which case
+  // `checkOpObligations` above already required its bytes to survive, the
+  // same guarantee citations/numerals carry); `'none-declared'` otherwise, so
+  // this never claims an enforcement that had nothing to check.
+  const openQuestionMarkers = sourceDeclaresOpenQuestionMarker(sourceUnits)
+    ? 'enforced'
+    : 'none-declared';
+
+  return finalize(checks, failures, true, ledger.mode, modeComparison, openQuestionMarkers);
 }
 
 // ---- outcome assembly -------------------------------------------------------
-
-/**
- * T027 (spec 006 Polish phase) will extend `@/payload/extract.ts` to
- * recognize a declared `[OPEN-QUESTION: ...]` marker as required payload; the
- * report's `open_question_markers` field will then be computed from whether
- * that recognition actually fired for this edition. Until that lands, no
- * mechanism declares any such marker to the system, so every composed report
- * MUST say so honestly rather than claim an enforcement that does not exist.
- */
-const OPEN_QUESTION_MARKERS_STATE: 'enforced' | 'none-declared' = 'none-declared';
 
 function finalize(
   checks: Record<string, CheckResult>,
@@ -433,6 +437,7 @@ function finalize(
   decided: true,
   mode?: Mode,
   modeComparison?: 'matched' | 'none-supplied',
+  openQuestionMarkers: 'enforced' | 'none-declared' = 'none-declared',
 ): FidelityResult {
   // Every applicable path above already sets both honest-boundary checks
   // before reaching here EXCEPT the abort paths (source_hash/ledger_structure/
@@ -460,7 +465,7 @@ function finalize(
   // FR-012 (spec 006): a composed edition's report always carries the
   // trust-boundary fields, regardless of verdict — they describe the scope
   // of what was checked, not whether it passed.
-  const trustBoundary = mode === 'compose' ? composeTrustBoundaryFields(OPEN_QUESTION_MARKERS_STATE) : {};
+  const trustBoundary = mode === 'compose' ? composeTrustBoundaryFields(openQuestionMarkers) : {};
   // `mode_comparison` (spec 006 US5, FR-012) records WHICH mode-agreement pass
   // outcome held — applies to ANY mode, so (unlike the compose-only trust-
   // boundary fields) it is threaded whenever mode-agreement passed, incl. a
@@ -482,18 +487,4 @@ function cannotDecide(diagnostic: string): FidelityResult {
     decided: false,
     failures: [diagnostic],
   };
-}
-
-function markAborted(
-  checks: Record<string, CheckResult>,
-  names: readonly string[],
-  abortedBy: string,
-): void {
-  for (const name of names) {
-    checks[name] = aborted(`aborted: ${abortedBy} failed`);
-  }
-}
-
-function describeError(cause: unknown): string {
-  return cause instanceof Error ? cause.message : String(cause);
 }

@@ -19,8 +19,9 @@ import type { CoverageLedger, CoverageEntry, Mode, UnitRef } from '@/schema/ledg
 import { checkOpLegality } from '@/policy/op-legality.ts';
 import { extractPayload } from '@/payload/extract.ts';
 import type { UnitPayload } from '@/payload/extract.ts';
-import { buildRemaining, consumeAgainstRemaining, consumeAcrossDestinations } from '@/payload/match.ts';
+import { consumeAgainstRemaining, consumeAcrossDestinations } from '@/payload/match.ts';
 import type { RemainingSupply } from '@/payload/match.ts';
+import { buildDestinationSupplies, entryDestinationSupplies } from '@/fidelity/destination-supply.ts';
 
 /**
  * The KIND of obligation a failure belongs to (AUDIT-20260726-23). Downstream
@@ -45,7 +46,14 @@ export type OpFailureKind =
    * at all", judged by `@/policy/op-legality.ts`. Maps to the `op_obligations`
    * catch-all downstream, so it withholds the verdict like any structural fault.
    */
-  | 'illegal-op';
+  | 'illegal-op'
+  /**
+   * A declared `[OPEN-QUESTION: ...]` marker (R7/FR-013, T027) whose exact
+   * bytes did not survive into the entry's declared destination(s) -- the same
+   * shortfall shape as a dropped citation or numeral, just a distinct payload
+   * kind. Maps to the `op_obligations` catch-all downstream.
+   */
+  | 'open-question-marker';
 
 /** A single op-obligation failure: its structured kind plus the human message. */
 export interface OpFailure {
@@ -58,7 +66,13 @@ export interface OpObligationResult {
   ok: boolean;
   failures: OpFailure[];
   opCounts: { verbatim: number; represented: number; merged: number; cut: number };
-  payloadChecked: { quotes: number; citations: number; numerics: number; lexiconTerms: number };
+  payloadChecked: {
+    quotes: number;
+    citations: number;
+    numerics: number;
+    lexiconTerms: number;
+    openQuestionMarkers: number;
+  };
   /**
    * Count of non-cut entries whose SOURCE unit yields NO extractable payload
    * (empty across all kinds) -- the D12/FR-022 report-only signal. These entries
@@ -69,8 +83,14 @@ export interface OpObligationResult {
   lexiconApplicable: boolean;
 }
 
-/** The four payload kinds, in the order shortfalls are reported. */
-const PAYLOAD_KINDS = ['quotes', 'citations', 'numerics', 'lexiconTerms'] as const;
+/** The five payload kinds, in the order shortfalls are reported. */
+const PAYLOAD_KINDS = [
+  'quotes',
+  'citations',
+  'numerics',
+  'lexiconTerms',
+  'openQuestionMarkers',
+] as const;
 type PayloadKind = (typeof PAYLOAD_KINDS)[number];
 
 /** Human-legible singular label per payload kind, for failure messages. */
@@ -79,6 +99,7 @@ const KIND_LABEL: Record<PayloadKind, string> = {
   citations: 'citation',
   numerics: 'numeric',
   lexiconTerms: 'lexicon term',
+  openQuestionMarkers: 'open-question marker',
 };
 
 /** Structured failure kind per payload kind (AUDIT-20260726-23). */
@@ -87,6 +108,7 @@ const FAILURE_KIND_BY_PAYLOAD: Record<PayloadKind, OpFailureKind> = {
   citations: 'citation',
   numerics: 'numeric',
   lexiconTerms: 'lexicon',
+  openQuestionMarkers: 'open-question-marker',
 };
 
 /**
@@ -125,7 +147,13 @@ export function checkOpObligations(
 
   const failures: OpFailure[] = [];
   const opCounts = { verbatim: 0, represented: 0, merged: 0, cut: 0 };
-  const payloadChecked = { quotes: 0, citations: 0, numerics: 0, lexiconTerms: 0 };
+  const payloadChecked = {
+    quotes: 0,
+    citations: 0,
+    numerics: 0,
+    lexiconTerms: 0,
+    openQuestionMarkers: 0,
+  };
   let uncorroboratedUnits = 0;
 
   // T020 (spec 006 US3, contracts/fidelity-mode-agreement.md step 2): mode-aware
@@ -361,71 +389,6 @@ function checkMergedSharedDestination(
 }
 
 
-// ---- per-destination-unit supply (AUDIT-20260728-04/-14, AUDIT-20260726-17) --
-
-/**
- * Build ONE mutable `RemainingSupply` per DISTINCT destination unit referenced
- * by any non-cut entry, keyed by `unitRefKey` and seeded with THAT unit's
- * extracted payload exactly once. A destination named by several entries (or
- * named twice by one entry) still yields a single shared supply for that unit --
- * there is no union-find pooling across entries. Unresolved destinations are
- * omitted (they supply nothing; their per-entry not-found failure stands).
- */
-function buildDestinationSupplies(
-  coverage: readonly CoverageEntry[],
-  editionByKey: Map<string, string>,
-  lexicon: readonly string[] | undefined,
-): Map<string, RemainingSupply> {
-  const byKey = new Map<string, RemainingSupply>();
-  for (const entry of coverage) {
-    if (entry.op === 'cut') {
-      continue;
-    }
-    for (const destRef of entry.edition_units ?? []) {
-      const key = unitRefKey(destRef);
-      if (byKey.has(key)) {
-        continue;
-      }
-      const content = editionByKey.get(key);
-      if (content === undefined) {
-        continue; // unresolved destination -- supplies nothing
-      }
-      byKey.set(key, buildRemaining([extractPayload(content, lexicon)]));
-    }
-  }
-  return byKey;
-}
-
-/**
- * Resolve THIS entry's OWN declared destination units to their shared remaining
- * supplies, DEDUPED by unit (a destination named twice is one unit -- fixes
- * AUDIT-20260728-14). Callers reach this only when every declared destination
- * resolves, so a missing supply would be a builder invariant break -- fail loud.
- */
-function entryDestinationSupplies(
-  entry: CoverageEntry,
-  remainingByDest: Map<string, RemainingSupply>,
-): RemainingSupply[] {
-  const seen = new Set<string>();
-  const supplies: RemainingSupply[] = [];
-  for (const destRef of entry.edition_units ?? []) {
-    const key = unitRefKey(destRef);
-    if (seen.has(key)) {
-      continue;
-    }
-    seen.add(key);
-    const supply = remainingByDest.get(key);
-    if (supply === undefined) {
-      throw new Error(
-        `op obligation: no remaining supply built for declared destination ${refStr(destRef)}`,
-      );
-    }
-    supplies.push(supply);
-  }
-  return supplies;
-}
-
-
 // ---- helpers --------------------------------------------------------------
 
 /** Map from `sha256:<hex>#<occurrence>` to a unit's `content`. */
@@ -456,7 +419,8 @@ function isEmptyPayload(payload: UnitPayload): boolean {
     payload.quotes.length === 0 &&
     payload.citations.length === 0 &&
     payload.numerics.length === 0 &&
-    payload.lexiconTerms.length === 0
+    payload.lexiconTerms.length === 0 &&
+    payload.openQuestionMarkers.length === 0
   );
 }
 

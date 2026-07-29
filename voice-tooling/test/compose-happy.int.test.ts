@@ -178,9 +178,9 @@ test('voice compose (US1 happy path): dot-zoned edition, byte-exact payload surv
     assert.equal(result.report.composition_semantic_grounding, 'not-checkable');
     assert.equal(
       result.report.open_question_markers,
-      'none-declared',
-      'no beat-level open-question marker syntax is mechanically recognized yet (T027 follow-up); ' +
-        'the report must say so honestly rather than claim an enforcement that does not exist',
+      'enforced',
+      'the fixture spine declares an [OPEN-QUESTION: ...] marker (T027) and the stub edition ' +
+        "preserves its bytes byte-exact, so the report must say the guarantee is actually active",
     );
   } finally {
     fs.rmSync(tmpBase, { recursive: true, force: true });

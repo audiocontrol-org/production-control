@@ -116,6 +116,7 @@ test('checkOpObligations: a faithful set is ok with correct counts', () => {
     citations: 4,
     numerics: 2,
     lexiconTerms: 0,
+    openQuestionMarkers: 0,
   });
   assert.equal(result.uncorroboratedUnits, 0);
   assert.equal(result.lexiconApplicable, false);
@@ -193,6 +194,7 @@ test('checkOpObligations: a represented whose source yields no payload passes bu
     citations: 0,
     numerics: 0,
     lexiconTerms: 0,
+    openQuestionMarkers: 0,
   });
   assert.deepEqual(result.opCounts, { verbatim: 0, represented: 1, merged: 0, cut: 0 });
 });

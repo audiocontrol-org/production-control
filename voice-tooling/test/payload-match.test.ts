@@ -19,6 +19,7 @@ function payload(fields: Partial<UnitPayload>): UnitPayload {
     citations: fields.citations ?? [],
     numerics: fields.numerics ?? [],
     lexiconTerms: fields.lexiconTerms ?? [],
+    openQuestionMarkers: fields.openQuestionMarkers ?? [],
   };
 }
 
@@ -68,6 +69,7 @@ test('unionPayload concatenates each field across dests, order+multiplicity', ()
     citations: ['[^a]'],
     numerics: ['1', '1', '2'],
     lexiconTerms: [],
+    openQuestionMarkers: [],
   });
 });
 
@@ -88,6 +90,7 @@ test('payloadSurvives: source discharged by the destination union -> ok', () => 
     citations: [],
     numerics: [],
     lexiconTerms: [],
+    openQuestionMarkers: [],
   });
 });
 
@@ -109,6 +112,7 @@ test('payloadSurvives: per-kind shortfall reported, ok is false', () => {
     citations: [],
     numerics: ['7'],
     lexiconTerms: ['Bridge'],
+    openQuestionMarkers: [],
   });
 });
 

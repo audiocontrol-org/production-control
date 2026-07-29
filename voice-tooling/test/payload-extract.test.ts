@@ -114,7 +114,41 @@ test('no extractable payload: every field is empty', () => {
     citations: [],
     numerics: [],
     lexiconTerms: [],
+    openQuestionMarkers: [],
   });
+});
+
+test('open-question markers (R7/FR-013): extracted verbatim, multiplicity preserved', () => {
+  const payload = extractPayload(
+    'Deeper investigation needed. [OPEN-QUESTION: What caused the anomaly in sample 2?] ' +
+      'Also [OPEN-QUESTION: Why did it recur?]',
+  );
+  assert.deepEqual(payload.openQuestionMarkers, [
+    '[OPEN-QUESTION: What caused the anomaly in sample 2?]',
+    '[OPEN-QUESTION: Why did it recur?]',
+  ]);
+});
+
+test('open-question markers: absent -> []', () => {
+  assert.deepEqual(extractPayload('Ordinary prose, no marker here.').openQuestionMarkers, []);
+});
+
+test('open-question markers: the embedded digit is masked out of numerics (mirrors the citation-digit exclusion)', () => {
+  const payload = extractPayload('[OPEN-QUESTION: What caused the anomaly in sample 2?]');
+  assert.deepEqual(payload.numerics, []);
+  assert.deepEqual(payload.openQuestionMarkers, [
+    '[OPEN-QUESTION: What caused the anomaly in sample 2?]',
+  ]);
+});
+
+test('open-question markers: a free-standing numeral beside a marker is still extracted, the marker digit is not', () => {
+  const payload = extractPayload('Built in 1978. [OPEN-QUESTION: What about sample 2?]');
+  assert.deepEqual(payload.numerics, ['1978']);
+});
+
+test('open-question markers: the bracketed form does not also register as a citation', () => {
+  const payload = extractPayload('[OPEN-QUESTION: What caused the anomaly in sample 2?]');
+  assert.deepEqual(payload.citations, []);
 });
 
 test('extraction is pure: same input yields deeply-equal payloads', () => {

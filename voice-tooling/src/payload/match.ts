@@ -9,11 +9,17 @@
 
 import type { UnitPayload } from '@/payload/extract.ts';
 
-/** The four payload kinds, matched independently. */
-type PayloadKind = 'quotes' | 'citations' | 'numerics' | 'lexiconTerms';
+/** The five payload kinds, matched independently. */
+type PayloadKind = 'quotes' | 'citations' | 'numerics' | 'lexiconTerms' | 'openQuestionMarkers';
 
-/** The four payload kinds in fixed order, for iterating a whole payload. */
-const PAYLOAD_KINDS: readonly PayloadKind[] = ['quotes', 'citations', 'numerics', 'lexiconTerms'];
+/** The five payload kinds in fixed order, for iterating a whole payload. */
+const PAYLOAD_KINDS: readonly PayloadKind[] = [
+  'quotes',
+  'citations',
+  'numerics',
+  'lexiconTerms',
+  'openQuestionMarkers',
+];
 
 /**
  * MULTISET containment: does `dest` contain every element of `source` with at
@@ -63,12 +69,14 @@ export function unionPayload(payloads: readonly UnitPayload[]): UnitPayload {
     citations: [],
     numerics: [],
     lexiconTerms: [],
+    openQuestionMarkers: [],
   };
   for (const payload of payloads) {
     union.quotes.push(...payload.quotes);
     union.citations.push(...payload.citations);
     union.numerics.push(...payload.numerics);
     union.lexiconTerms.push(...payload.lexiconTerms);
+    union.openQuestionMarkers.push(...payload.openQuestionMarkers);
   }
   return union;
 }
@@ -96,6 +104,7 @@ export function buildRemaining(destPayloads: readonly UnitPayload[]): RemainingS
     citations: new Map(),
     numerics: new Map(),
     lexiconTerms: new Map(),
+    openQuestionMarkers: new Map(),
   };
   for (const payload of destPayloads) {
     for (const kind of PAYLOAD_KINDS) {
@@ -123,6 +132,7 @@ export function consumeAgainstRemaining(
     citations: [],
     numerics: [],
     lexiconTerms: [],
+    openQuestionMarkers: [],
   };
   for (const kind of PAYLOAD_KINDS) {
     for (const item of sourcePayload[kind]) {
@@ -162,6 +172,7 @@ export function consumeAcrossDestinations(
     citations: [],
     numerics: [],
     lexiconTerms: [],
+    openQuestionMarkers: [],
   };
   for (const kind of PAYLOAD_KINDS) {
     for (const item of sourcePayload[kind]) {

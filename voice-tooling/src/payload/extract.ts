@@ -25,6 +25,14 @@ export interface UnitPayload {
   numerics: string[];
   /** Declared-lexicon term occurrences (empty unless a non-empty lexicon is given). */
   lexiconTerms: string[];
+  /**
+   * Declared open-question markers, e.g. `[OPEN-QUESTION: What caused the
+   * anomaly in sample 2?]` (R7/FR-013, T027). Required payload: when present,
+   * the marker's exact bytes must survive from the spine beat into its
+   * declared edition destination, the same multiset guarantee citations and
+   * numerals already carry.
+   */
+  openQuestionMarkers: string[];
 }
 
 /** Maximal numeric-literal tokens: digit runs joined by `.`/`,` (byte-exact). */
@@ -41,6 +49,17 @@ const NUMERIC_RE = /\d+(?:[.,]\d+)*/g;
  * `[TODO]`).
  */
 const CITATION_RE = /\[\^[^\]\s]+\]|\[[A-Z][A-Z0-9]*-[A-Z0-9-]+\]/g;
+
+/**
+ * Open-question markers (R7/FR-013, T027): the literal bracketed
+ * `[OPEN-QUESTION: ...]` form -- `[OPEN-QUESTION:` then any run of non-`]`
+ * characters (the question text) then the closing `]`. Deliberately narrow
+ * (the exact declared syntax named in FR-013/`@/revise/prompt/compose.ts`'s
+ * own producer instruction) rather than a general open-ended marker grammar --
+ * a spine that does not use this syntax simply has no markers to recognize,
+ * per FR-013's "absent such a syntax, ... not a deterministic failure".
+ */
+const OPEN_QUESTION_RE = /\[OPEN-QUESTION:[^\]]*\]/g;
 
 /**
  * A blockquote physical line: up to three leading spaces, `>`, one optional
@@ -67,6 +86,7 @@ export function extractPayload(
     citations: extractMatches(content, CITATION_RE),
     numerics: extractNumerics(content),
     lexiconTerms: extractLexiconTerms(content, lexicon),
+    openQuestionMarkers: extractMatches(content, OPEN_QUESTION_RE),
   };
 }
 
@@ -84,12 +104,17 @@ export function extractPayload(
  * pattern), so extending `CITATION_RE` with the `[PB-P056]`-style source-marker
  * branch masks those spans too automatically -- `[PB-P056]` yields a citation
  * only, never a stray `056` numeral.
+ *
+ * T027 extends the same masking to `OPEN_QUESTION_RE` spans: a question like
+ * `[OPEN-QUESTION: What caused the anomaly in sample 2?]` embeds a digit
+ * (`2`) that must be counted as part of the marker's own required bytes, not
+ * double-booked as a free-standing prose numeral -- exactly the citation-digit
+ * problem this function already solves, for the same reason.
  */
 function extractNumerics(content: string): string[] {
-  const withoutCitationMarkers = content.replace(
-    new RegExp(CITATION_RE.source, CITATION_RE.flags),
-    '',
-  );
+  const withoutCitationMarkers = content
+    .replace(new RegExp(CITATION_RE.source, CITATION_RE.flags), '')
+    .replace(new RegExp(OPEN_QUESTION_RE.source, OPEN_QUESTION_RE.flags), '');
   return extractMatches(withoutCitationMarkers, NUMERIC_RE);
 }
 

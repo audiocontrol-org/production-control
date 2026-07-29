@@ -52,6 +52,10 @@ const CHECK_FOR_KIND: Record<OpFailureKind, NamedCheck> = {
   // to the catch-all: it is not a payload shortfall but a mode-legality fault,
   // and flipping this named check withholds the verdict.
   'illegal-op': 'op_obligations',
+  // A dropped open-question marker (R7/FR-013, T027) has no dedicated named
+  // check in the ten-check vocabulary -- like verbatim/destination/structural,
+  // it maps to the `op_obligations` catch-all so the verdict is still withheld.
+  'open-question-marker': 'op_obligations',
 };
 
 /**

@@ -23,7 +23,7 @@ export function composeStub(): ComposeResponse {
   return {
     edition: `The research team conducted soil composition analysis at 3 distinct locations using standardized protocols[^study].
 
-Localized observations indicated unexpected variations warranting deeper investigation. What caused the anomaly in sample 2?
+Localized observations indicated unexpected variations warranting deeper investigation. [OPEN-QUESTION: What caused the anomaly in sample 2?]
 
 Measured results aligned with established 1995 baseline findings, demonstrating consistency across decades.`,
     coverage: [

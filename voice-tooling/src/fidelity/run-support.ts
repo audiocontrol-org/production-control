@@ -13,6 +13,31 @@ import {
   parseCitationAllowlist,
 } from '@/fidelity/check-ledger-structure.ts';
 import { extractPayload } from '@/payload/extract.ts';
+import { aborted, type CheckResult } from '@/fidelity/report.ts';
+
+// ---- generic run() helpers (moved from run.ts at T027 to keep it within the
+// project's file-size guideline; see CLAUDE.md) -----------------------------
+
+/**
+ * Mark every check in `names` as `aborted` because an EARLIER check (`abortedBy`)
+ * failed and the deterministic sequence never reached them (contract check
+ * ordering) -- see `@/fidelity/report.ts`'s `aborted` state doc for why this is
+ * a first-class discriminated state rather than a `not-run` with a flag.
+ */
+export function markAborted(
+  checks: Record<string, CheckResult>,
+  names: readonly string[],
+  abortedBy: string,
+): void {
+  for (const name of names) {
+    checks[name] = aborted(`aborted: ${abortedBy} failed`);
+  }
+}
+
+/** Render a caught value's message, whether or not it is an `Error`. */
+export function describeError(cause: unknown): string {
+  return cause instanceof Error ? cause.message : String(cause);
+}
 
 /**
  * Best-effort read of `source.hash` directly from the ledger's raw YAML,
@@ -86,12 +111,29 @@ export function countUncorroboratedUnits(
       payload.quotes.length === 0 &&
       payload.citations.length === 0 &&
       payload.numerics.length === 0 &&
-      payload.lexiconTerms.length === 0;
+      payload.lexiconTerms.length === 0 &&
+      payload.openQuestionMarkers.length === 0;
     if (isEmpty) {
       count += 1;
     }
   }
   return count;
+}
+
+// ---- open-question marker declaration (R7/FR-013, T027) -------------------
+
+/**
+ * Whether the SOURCE declares at least one `[OPEN-QUESTION: ...]` marker
+ * (R7/FR-013) -- scanned across every derived source unit's own content,
+ * independent of which units a ledger entry happens to cover. Drives the
+ * report's `open_question_markers` trust-boundary field: `'enforced'` only
+ * when this returns `true` (the mechanical marker-survival guarantee -- via
+ * `@/payload/extract.ts`'s `openQuestionMarkers` payload field -- is actually
+ * ACTIVE for this spine), never a claim that some marker syntax OTHER than
+ * the declared one was checked.
+ */
+export function sourceDeclaresOpenQuestionMarker(sourceUnits: readonly SourceUnit[]): boolean {
+  return sourceUnits.some((unit) => extractPayload(unit.content).openQuestionMarkers.length > 0);
 }
 
 // ---- frontmatter stripping / allow-list parsing (mirrors check-ledger-structure.ts) --

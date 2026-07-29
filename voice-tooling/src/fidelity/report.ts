@@ -122,12 +122,12 @@ export interface CoverageReport {
  * correctness and the composed prose's semantic support are both out of
  * scope for v1 — see spec.md "Assumptions"/"Deferred").
  *
- * `openQuestionMarkers` is threaded in by the caller rather than computed
- * here: today no mechanism recognizes an `[OPEN-QUESTION: ...]` marker as
- * required payload (that recognition is the T027 follow-up, spec 006 Polish
- * phase, R7), so every caller must honestly pass `'none-declared'` until that
- * lands — this helper never invents an `'enforced'` claim about a check that
- * does not exist.
+ * `openQuestionMarkers` is threaded in by the caller (T027, R7) rather than
+ * computed here: `@/payload/extract.ts` recognizes a declared
+ * `[OPEN-QUESTION: ...]` marker as required payload and `@/fidelity/run.ts`
+ * decides `'enforced'` vs `'none-declared'` from whether the SPINE actually
+ * declares one — this helper only assembles the already-decided value into
+ * the report, so it never invents an `'enforced'` claim on its own.
  */
 export function composeTrustBoundaryFields(
   openQuestionMarkers: 'enforced' | 'none-declared',
