@@ -24,3 +24,7 @@
 {"id":"T024","tierLabel":"balanced","model":"sonnet","commitRange":"e4c7472","reviewClean":true,"note":"US5 RED check-mode-agreement.test (6 cases); mismatch before op-legality"}
 {"id":"T025","tierLabel":"balanced","model":"sonnet","commitRange":"e4c7472","reviewClean":true,"note":"US5 check-mode-agreement.ts + ValidateRequest.requested_mode fail-loud"}
 {"id":"T026","tierLabel":"powerful","model":"opus","commitRange":"638bdc4","reviewClean":true,"note":"US5 mode-agreement sequenced first; run.ts extracted to run-mode.ts (499 lines); mismatch aborts downstream"}
+{"id":"T027","tierLabel":"balanced","model":"sonnet","commitRange":"918959d","reviewClean":true,"note":"Polish open-question marker required-payload (FR-013); dynamic enforced|none-declared; caught+fixed stub-fixture marker bug"}
+{"id":"T028","tierLabel":"balanced","model":"sonnet","commitRange":"918959d","reviewClean":true,"note":"Polish SC-007 overclaim regression; passes against current code (trust boundary holds)"}
+{"id":"T029","tierLabel":"fast","model":"haiku","commitRange":"402e1c6","reviewClean":true,"note":"Polish docs: README + --help trust-boundary (mechanical/producer-instruction/advisory)"}
+{"id":"T030","tierLabel":"balanced","model":"sonnet","commitRange":"0fc71ba","reviewClean":true,"note":"FINAL GATE PASS: 369 tests, typecheck clean, no file>500, SC-006 ok, eslint honestly n/a; GATE-006.md recorded"}
