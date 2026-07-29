@@ -16,3 +16,6 @@
 {"id":"T016","tierLabel":"balanced","model":"sonnet","commitRange":"0e2bbd2","reviewClean":true,"note":"US2 RED check-edition-grounding.test (6 cases incl occurrence-sensitivity)"}
 {"id":"T017","tierLabel":"balanced","model":"sonnet","commitRange":"0e2bbd2","reviewClean":true,"note":"US2 check-edition-grounding.ts wraps policy/grounding; applicable flag compose-only"}
 {"id":"T018","tierLabel":"powerful","model":"opus","commitRange":"6c14aa5","reviewClean":true,"note":"US2 wire edition-grounding: validator run.ts(459) + producer preflight.ts; both refusals confirmed"}
+{"id":"T019","tierLabel":"balanced","model":"sonnet","commitRange":"41b4f87","reviewClean":true,"note":"US3 RED tests op-obligations-compose + no-copy; 3 intended failures confirmed"}
+{"id":"T020","tierLabel":"powerful","model":"opus","commitRange":"b5ec9a5","reviewClean":true,"note":"US3 mode-aware op-obligations (illegal-op kind); revise unchanged; op-obligations.ts 476"}
+{"id":"T021","tierLabel":"powerful","model":"opus","commitRange":"b5ec9a5","reviewClean":true,"note":"US3 check-no-copy.ts wired validator(run.ts 480)+preflight; both refuse whole-unit copy"}
