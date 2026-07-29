@@ -10,3 +10,6 @@
 {"id":"T010","tierLabel":"balanced","model":"sonnet","commitRange":"2a23d8c","reviewClean":true,"note":"protocol.ts grounding parse (shape-only, fail-loud)"}
 {"id":"T011","tierLabel":"balanced","model":"sonnet","commitRange":"2a23d8c","reviewClean":true,"note":"ledger-build.ts mode stamp + grounding index->UnitRef resolution"}
 {"id":"T012","tierLabel":"balanced","model":"sonnet","commitRange":"2a23d8c","reviewClean":true,"note":"runProducer(mode)+voice-compose bin; --help contracts; e2e stub verified"}
+{"id":"T013","tierLabel":"balanced","model":"sonnet","commitRange":"f3e3f57","reviewClean":true,"note":"US1 RED int test compose-happy; SC-001 byte-exact payload asserted generically"}
+{"id":"T014","tierLabel":"balanced","model":"sonnet","commitRange":"f3e3f57","reviewClean":true,"note":"US1 compose e2e wired; dot-zone routing via impure.reason signal (root package boundary)"}
+{"id":"T015","tierLabel":"balanced","model":"sonnet","commitRange":"f3e3f57","reviewClean":true,"note":"US1 report trust-boundary fields FR-012; open_question honestly none-declared pending T027"}
