@@ -12,12 +12,22 @@ import { parse as parseYamlText } from 'yaml';
  * anything that needs the source draft or edition (unit accounting against the
  * derived source, `source.hash` matching a supplied source, unknown-unit
  * detection) — those are fidelity-validator concerns (T011/T012).
+ *
+ * `mode` + `grounding` (spec 006, additive per D21) extend the same loader:
+ * see specs/006-voice-compose-from-spine/contracts/coverage-ledger-additions.md
+ * and data-model.md § "Mode" / "GroundingRecord" / "CoverageLedger (EXTENDED)".
+ * Absent `mode` defaults to `revise` on read (backward compatibility with
+ * pre-006 editions). Edition-side grounding accounting (exhaustive/exclusive,
+ * beats resolving to real derived units) is a fidelity-validator concern
+ * (check-edition-grounding.ts), not this loader's.
  */
 
-const KNOWN_LEDGER_KEYS = ['version', 'source', 'voice', 'coverage'];
+const KNOWN_LEDGER_KEYS = ['version', 'source', 'voice', 'mode', 'coverage', 'grounding'];
 const KNOWN_ENTRY_KEYS = ['source_unit', 'op', 'treatment', 'edition_units', 'reason'];
 
 export type Op = 'verbatim' | 'represented' | 'merged' | 'cut';
+export type Mode = 'compose' | 'revise';
+export type GroundingBasis = 'grounded' | 'connective' | 'framing';
 
 export interface UnitRef {
   hash: string;
@@ -37,11 +47,27 @@ export interface CoverageEntry {
   [extra: string]: unknown;
 }
 
+export interface GroundingRecord {
+  edition_unit: UnitRef;
+  basis: GroundingBasis;
+  /** REQUIRED (>=1) iff basis === 'grounded'; absent for connective/framing. */
+  beats?: UnitRef[];
+}
+
 export interface CoverageLedger {
   version: 1;
   source: { identity: string; hash: string };
   voice: { identity: string; hash: string };
+  /**
+   * Optional on the type so pre-006 construction sites that build a
+   * `CoverageLedger` literal directly (not via `loadLedger`) are unaffected;
+   * `loadLedger` itself always populates this, defaulting to 'revise' when
+   * absent from the ledger bytes.
+   */
+  mode?: Mode;
   coverage: CoverageEntry[];
+  /** REQUIRED+non-empty when mode === 'compose'; MUST be absent when mode === 'revise' (v1). */
+  grounding?: GroundingRecord[];
   /** Additive extensibility (D21): unknown ledger-level keys pass through untouched. */
   [extra: string]: unknown;
 }
@@ -80,12 +106,81 @@ export function loadLedger(yamlText: string): CoverageLedger {
   checkNoDuplicateDisposition(coverage);
   checkMergedSharedDestination(coverage);
 
+  const mode = parseMode(root['mode']);
+  const grounding = parseGrounding(root['grounding'], mode);
+
   return {
     ...omitKnownKeys(root, KNOWN_LEDGER_KEYS),
     version: 1,
     source,
     voice,
+    mode,
     coverage,
+    ...(grounding !== undefined ? { grounding } : {}),
+  };
+}
+
+// ---- mode + grounding parsing ---------------------------------------------
+
+function parseMode(value: unknown): Mode {
+  if (value === undefined) {
+    return 'revise';
+  }
+  if (typeof value !== 'string' || !isMode(value)) {
+    fail(`mode must be one of compose, revise (got ${JSON.stringify(value)})`);
+  }
+  return value;
+}
+
+function parseGrounding(value: unknown, mode: Mode): GroundingRecord[] | undefined {
+  if (mode === 'revise') {
+    if (value !== undefined) {
+      fail(
+        "mode 'revise' must not carry grounding (grounding is only valid for compose; v1 revise reverse-accounting is a later task)",
+      );
+    }
+    return undefined;
+  }
+  if (!Array.isArray(value) || value.length === 0) {
+    fail("mode 'compose' requires a non-empty grounding list");
+  }
+  return value.map((entry, index) => parseGroundingRecord(entry, index));
+}
+
+function parseGroundingRecord(value: unknown, index: number): GroundingRecord {
+  const path = `grounding[${index}]`;
+  const record = requireRecord(value, path);
+
+  const editionUnitValue = requireField(record, 'edition_unit', `${path}.edition_unit`);
+  const editionUnit = parseUnitRef(editionUnitValue, `${path}.edition_unit`);
+
+  const basisValue = record['basis'];
+  if (typeof basisValue !== 'string') {
+    fail(`${path}.basis must be a string (got ${JSON.stringify(basisValue)})`);
+  }
+  if (!isGroundingBasis(basisValue)) {
+    fail(
+      `${path}.basis must be one of grounded, connective, framing (got ${JSON.stringify(basisValue)})`,
+    );
+  }
+  const basis = basisValue;
+
+  const beatsValue = record['beats'];
+  let beats: UnitRef[] | undefined;
+  if (basis === 'grounded') {
+    const list = parseUnitRefList(beatsValue ?? [], `${path}.beats`);
+    if (list.length === 0) {
+      fail(`${path}.beats must be non-empty when basis is 'grounded'`);
+    }
+    beats = list;
+  } else if (beatsValue !== undefined) {
+    fail(`${path}.beats must be absent when basis is '${basis}' (beats is only valid for grounded)`);
+  }
+
+  return {
+    edition_unit: editionUnit,
+    basis,
+    ...(beats !== undefined ? { beats } : {}),
   };
 }
 
@@ -275,6 +370,14 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isOp(value: string): value is Op {
   return value === 'verbatim' || value === 'represented' || value === 'merged' || value === 'cut';
+}
+
+function isMode(value: string): value is Mode {
+  return value === 'compose' || value === 'revise';
+}
+
+function isGroundingBasis(value: string): value is GroundingBasis {
+  return value === 'grounded' || value === 'connective' || value === 'framing';
 }
 
 function isNonEmptyTrimmed(value: unknown): value is string {
