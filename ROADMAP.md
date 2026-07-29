@@ -80,6 +80,7 @@ Real voice-revise producer protocol (model declares index mapping, provider buil
 
 ## design:feature/voice-compose-from-spine
 - status: planned
+- design: docs/superpowers/specs/2026-07-28-voice-compose-from-spine-design.md
 - depends-on: design:feature/voice-producer-protocol
-- ref: TASK-51
+- spawns: TASK-51
 Formalize compose mode: expand a source-cited spine (structured beats) into a full narrative chapter, reusing the whole producer-protocol + fidelity machinery unchanged because the spine is itself a source-cited document. Make mode a first-class request/target field (not the prototype's VOICE_REVISE_MODE env var); have buildEdition defensively reject any unit declared verbatim in compose mode (expansion is never copying, which also eliminates the verbatim-drift failure class); spec the spine-fidelity discipline (no invention, every asserted fact carried, claims-as-assertions, open-questions preserved) with tests; fold in TASK-50 (voice-revise verbatim-drift). Prototyped env-gated on the spike branch and empirically fidelity-passed on Ep1 (10 numerals + 3 citations preserved, no verbatim-drift). Design must settle what is generic (mode field, compose fidelity contract, defensive verbatim rejection) vs per-project (the spine documents themselves).
