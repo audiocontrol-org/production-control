@@ -13,3 +13,6 @@
 {"id":"T013","tierLabel":"balanced","model":"sonnet","commitRange":"f3e3f57","reviewClean":true,"note":"US1 RED int test compose-happy; SC-001 byte-exact payload asserted generically"}
 {"id":"T014","tierLabel":"balanced","model":"sonnet","commitRange":"f3e3f57","reviewClean":true,"note":"US1 compose e2e wired; dot-zone routing via impure.reason signal (root package boundary)"}
 {"id":"T015","tierLabel":"balanced","model":"sonnet","commitRange":"f3e3f57","reviewClean":true,"note":"US1 report trust-boundary fields FR-012; open_question honestly none-declared pending T027"}
+{"id":"T016","tierLabel":"balanced","model":"sonnet","commitRange":"0e2bbd2","reviewClean":true,"note":"US2 RED check-edition-grounding.test (6 cases incl occurrence-sensitivity)"}
+{"id":"T017","tierLabel":"balanced","model":"sonnet","commitRange":"0e2bbd2","reviewClean":true,"note":"US2 check-edition-grounding.ts wraps policy/grounding; applicable flag compose-only"}
+{"id":"T018","tierLabel":"powerful","model":"opus","commitRange":"6c14aa5","reviewClean":true,"note":"US2 wire edition-grounding: validator run.ts(459) + producer preflight.ts; both refusals confirmed"}
