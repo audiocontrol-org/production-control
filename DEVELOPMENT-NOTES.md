@@ -1,18 +1,27 @@
-## 2026-07-29: <!-- session title -->
+## 2026-07-29: formalize voice-compose-from-spine through the full front door (design→define), on a fresh branch
 
-**Goal:** <!-- compose: what we set out to do -->
+**Goal:** Pick up last session's flagged next increment — formalize the env-gated compose-from-spine prototype (TASK-51) — and take it through the governed front door (design → define), on a clean branch that heeds the prior branch-topology lesson.
 
 **Accomplished:**
-- <!-- compose -->
+- Reworked branch topology per the operator: reused the branch name `feature/voice`, fast-forwarded it to `main` (clean base with all shipped 004/005), off which the increment is authored. Traced that this worktree's original branch WAS `feature/voice`, later ridden onto the spike; the spike stays intact at 266a505.
+- Ran `/stack-control:design` end-to-end: authored the design record, submitted it to a substantive **third-party review**, and **revised it** — the review's central catch (the reused fidelity ledger is source-directed, verified in `check-unit-accounting.ts`, so undeclared invented prose passes) drove real design changes: edition-side grounding accounting, the `requested==ledger` mode invariant (artifact can't self-select its rules), forbidding `cut` in compose v1, a whole-unit no-copy rule, and a mechanical/producer-instruction/advisory guarantee split. Operator approved; design gate 7/7.
+- Ran `/stack-control:define`: authored `specs/006-voice-compose-from-spine` — spec (16 FR, 7 SC, 5 prioritized user stories) → clarify (no critical ambiguities) → plan + research (8 decisions) + data-model + 3 contracts + quickstart (**Constitution Check PASS**, with the load-bearing Principle I justification on the 004/005 footing) → **30 tier-tagged, RED-first tasks** → analyze (clean, 100% FR/SC coverage, 0 critical). Spec is runnable; node at `implementing`, analyze-clean recorded.
+- Captured TASK-51 (revise edition-side accounting) as the spawned follow-up; scoped reverse accounting compose-only so the 54 shipped revise editions stay valid.
 
 **Didn't Work:**
-- <!-- compose -->
+- Branching off main (which lacked the spike's TASK-51) meant `backlog capture` reused id 51 for a *different* item — a cross-branch id collision I had to reconcile (the roadmap/design now treat the formalization as the roadmap item, TASK-51 as the spawned follow-up). Captured as tooling friction.
+- `check-prerequisites.sh` rejects the `feature/voice` branch name (expected, TF-09) — the artifacts resolve via `feature.json`/the SPECKIT marker instead; the one-branch model supersedes speckit's per-feature branch hook, which I skipped (matching the 003/004/005 precedent).
 
 **Course Corrections:**
-- <!-- compose -->
+- Did NOT reflexively agree with the third-party review: verified its central claim against the actual validator code before conceding, and pushed back where warranted (Decision 1 wasn't wrong — it needed the provider-recipe addition, not a reversal; the exact wire grammar is legitimately define-phase, not design).
+- On the operator's steer ("I'll tell you whether I want compose vs revise"), dropped the manifest/wire `mode` field entirely in favor of two CLI verbs + a governed provider-recipe operation — simpler and no root-schema change.
+- Skipped the optional `/speckit-checklist` step to reach the runnable artifact (the spec already carries a requirements-quality checklist); flagged this transparently.
 
 **Insights:**
-- <!-- compose -->
+- **A revision ledger and a composition ledger answer different questions.** Revise asks "what happened to every source unit?"; compose must *also* ask "where did every generated unit come from?" Source-directed accounting is silently insufficient for a mode that deliberately writes new prose — the reverse-accounting gap is the whole difference, and it's only visible once you name it.
+- **Adversarial design review earns its keep on a thorough design.** A design that already passed self-review still had a load-bearing hole (edition-side accounting) and a self-certification hole (ledger-declared mode). External red-teaming caught both; verifying-then-conceding beat both rubber-stamping and reflexive defense.
+- **The honest trust boundary is the recurring discipline here** (as with 004/005): the gate proves accounting + evidence, never semantic truth. The revision's biggest correction was *wording* — reclassifying "invent nothing / detects invented facts" from claimed-mechanical to producer-instruction/not-checkable, and making the report state its own limits.
+- **Git-backed sequential backlog ids are not branch-aware** — divergent branches assign the same next id. A real gotcha for any spec-driven flow that branches; worth branch-aware allocation or a capture-time collision warning.
 
 **Quantitative (auto-derived from git; verify before publishing):**
 - Commits: 8
