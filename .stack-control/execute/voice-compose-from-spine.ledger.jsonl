@@ -1,0 +1,6 @@
+{"id":"T001","tierLabel":"fast","model":"haiku","commitRange":"db818ad","reviewClean":true,"note":"module dirs + gitkeeps"}
+{"id":"T002","tierLabel":"fast","model":"haiku","commitRange":"db818ad","reviewClean":true,"note":"spine/voice/stub fixtures"}
+{"id":"T003","tierLabel":"balanced","model":"sonnet","commitRange":"852e77e","reviewClean":true,"note":"mode-keyed prompt module; model.ts delegates (140 lines)"}
+{"id":"T004","tierLabel":"balanced","model":"sonnet","commitRange":"852e77e","reviewClean":true,"note":"RED prompt.test.ts (10 cases), GREEN"}
+{"id":"T005","tierLabel":"balanced","model":"sonnet","commitRange":"c665538","reviewClean":true,"note":"ledger mode+grounding schema+loadLedger validation (406 lines)"}
+{"id":"T006","tierLabel":"balanced","model":"sonnet","commitRange":"c665538","reviewClean":true,"note":"RED ledger-mode-grounding.test.ts (14), GREEN; SC-006 backcompat holds"}
