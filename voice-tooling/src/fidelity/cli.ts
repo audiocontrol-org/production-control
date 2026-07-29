@@ -234,6 +234,10 @@ export async function runFidelityCli(): Promise<number> {
     // No quote-bank input exists on this v1 wire contract (D14) — always false.
     quoteBankDeclared: false,
     ...(lexicon !== undefined ? { lexicon } : {}),
+    // T026: thread the (optional) independently-supplied `requested_mode` into
+    // the pipeline's FIRST check (mode-agreement). Absent → standalone
+    // validation (`mode_comparison: none-supplied`).
+    ...(request.requested_mode !== undefined ? { requestedMode: request.requested_mode } : {}),
   };
 
   const result = runFidelity(fidelityInput);

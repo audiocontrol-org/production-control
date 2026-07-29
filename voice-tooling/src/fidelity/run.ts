@@ -26,8 +26,7 @@ import {
 } from '@/fidelity/check-ledger-structure.ts';
 import { checkUnitAccounting } from '@/fidelity/check-unit-accounting.ts';
 import { checkOpObligations } from '@/fidelity/check-op-obligations.ts';
-import { checkEditionGrounding } from '@/fidelity/check-edition-grounding.ts';
-import { checkNoCopy } from '@/fidelity/check-no-copy.ts';
+import { checkModeAgreement } from '@/fidelity/check-mode-agreement.ts';
 import { checkCitations, assertQuoteDialectSupported } from '@/fidelity/check-payload.ts';
 import type { Mode } from '@/schema/ledger.ts';
 import {
@@ -54,6 +53,7 @@ import {
   classifyOpFailures,
   type NamedCheck,
 } from '@/fidelity/classify-op-failures.ts';
+import { readDeclaredMode, applyComposeEditionChecks } from '@/fidelity/run-mode.ts';
 
 /** Input to a single deterministic fidelity run (contract "Input"). */
 export interface FidelityInput {
@@ -62,6 +62,14 @@ export interface FidelityInput {
   edition: string | Uint8Array;
   lexicon?: readonly string[];
   quoteBankDeclared?: boolean;
+  /**
+   * The governed build's independently-supplied `requested_mode`
+   * (`ValidateRequest.requested_mode`, T025), or `undefined` for standalone
+   * validation. Compared against the ledger's own `mode` FIRST (spec 006 US5,
+   * contracts/fidelity-mode-agreement.md check ordering step 1) — a mismatch
+   * withholds the pass before any op-legality runs.
+   */
+  requestedMode?: Mode;
 }
 
 /**
@@ -75,6 +83,23 @@ export interface FidelityResult {
   decided: boolean;
   failures: string[];
 }
+
+/**
+ * Checks that ABORT after `mode_agreement` fails. Mode-agreement is sequenced
+ * FIRST (contract step 1), so a mismatch aborts EVERY downstream required check
+ * — source_hash included — proving the mismatch was decided before any
+ * op-legality/grounding could mask or precede it.
+ */
+const AFTER_MODE_AGREEMENT = [
+  'source_hash',
+  'ledger_structure',
+  'unit_accounting',
+  'verbatim_quotes',
+  'citations',
+  'numeric_literals',
+  'lexicon',
+  'uncorroborated_units',
+] as const;
 
 /** Checks that ABORT (become `not-run`) after `source_hash` fails. */
 const AFTER_SOURCE_HASH = [
@@ -127,6 +152,27 @@ export function runFidelity(input: FidelityInput): FidelityResult {
     );
   }
 
+  // ---- 1. mode_agreement (checked FIRST, before source_hash / op-legality) --
+  // Decidable purely from the independently-supplied `requested_mode` and the
+  // ledger's own `mode` (contracts/fidelity-mode-agreement.md check ordering
+  // step 1). A mismatch is a hard, named refusal that aborts EVERY downstream
+  // required check (source_hash included) and short-circuits here — so the
+  // mismatch is reported BEFORE any op-legality could mask or precede it. A
+  // match or an absent `requested_mode` both pass; `mode_comparison` records
+  // WHICH pass outcome held (matched | none-supplied), threaded into the report
+  // by `finalize` so a standalone validation is never mistaken for one that
+  // independently confirmed the mode (FR-012 trust-boundary discipline).
+  const ledgerMode = readDeclaredMode(ledgerYaml);
+  const modeResult = checkModeAgreement(input.requestedMode, ledgerMode);
+  if (!modeResult.ok) {
+    const failure = modeResult.failures[0] ?? 'mode mismatch';
+    checks['mode_agreement'] = failed(failure);
+    failures.push(...modeResult.failures);
+    markAborted(checks, AFTER_MODE_AGREEMENT, 'mode_agreement');
+    return finalize(checks, failures, true);
+  }
+  const modeComparison = modeResult.mode_comparison;
+
   let sourceUnits: SourceUnit[];
   try {
     sourceUnits = deriveUnits(input.source, input.sourceIdentity);
@@ -134,7 +180,7 @@ export function runFidelity(input: FidelityInput): FidelityResult {
     return cannotDecide(`could not derive source units: ${describeError(cause)}`);
   }
 
-  // ---- 1. source_hash (checked FIRST, before any unit obligation) -------
+  // ---- 2. source_hash (checked before any unit obligation) --------------
   const declaredSourceHash = readDeclaredSourceHash(ledgerYaml);
   if (declaredSourceHash === undefined) {
     // The ledger's own `source.hash` field is unreadable -- a structural
@@ -336,50 +382,16 @@ export function runFidelity(input: FidelityInput): FidelityResult {
     );
   }
 
-  // ---- edition_grounding (contracts/fidelity-mode-agreement.md check
-  // ordering step 4, COMPOSE-ONLY) -----------------------------------------
-  // Runs AFTER every source-side check (source_hash -> ledger_structure ->
-  // citation-allowlist -> unit_accounting -> op-obligations -> payload/
-  // citations). The ledger's grounding records must EXHAUSTIVELY and
-  // EXCLUSIVELY account for the derived edition units, and every grounded
-  // `beats` reference must resolve to a real derived source unit.
-  //
-  // `checkEditionGrounding` reads the ledger's own `mode` and is a no-op
-  // (`applicable: false`) for revise, so this line is unconditional. It is an
-  // INDEPENDENT invocation of the shared pure `@/policy/grounding.ts` (the same
-  // policy the producer's pre-emit self-check calls -- neither entry point
-  // depends on the other, Principle VI). A failure contributes a named
-  // `edition_grounding` check and folds its failures into `failures[]`,
-  // withholding the pass -- present-and-`failed` ONLY on a real compose failure,
-  // mirroring the `op_obligations` catch-all discipline so it never appears in a
-  // passing revise report.
-  const groundingResult = checkEditionGrounding(ledger, editionUnits, sourceUnits);
-  if (groundingResult.applicable && !groundingResult.ok) {
-    checks['edition_grounding'] = failed(
-      'one or more edition units are not exhaustively/exclusively grounded; see failures[]',
-    );
-    failures.push(...groundingResult.failures);
-  }
-
-  // ---- no_copy (contracts/fidelity-mode-agreement.md check ordering step 5,
+  // ---- edition_grounding + no_copy (contract check ordering steps 4 & 5,
   // COMPOSE-ONLY) ----------------------------------------------------------
-  // Sequenced AFTER edition_grounding: no `represented`/`merged` destination
-  // edition unit may be byte-identical to a complete source beat it represents
-  // (R4). `checkNoCopy` reads the ledger's own `mode` and is a no-op
-  // (`applicable: false`) for revise, so this line is unconditional. It is an
-  // INDEPENDENT invocation of the shared pure `@/policy/op-legality.ts` (the
-  // same policy the producer's pre-emit self-check calls -- Principle VI). A
-  // failure contributes a named `no_copy` check and folds its failures into
-  // `failures[]`, withholding the pass -- present-and-`failed` ONLY on a real
-  // compose violation, mirroring the `edition_grounding` catch-all discipline
-  // so it never appears in a passing revise report.
-  const noCopyResult = checkNoCopy(ledger, sourceUnits, editionUnits);
-  if (noCopyResult.applicable && !noCopyResult.ok) {
-    checks['no_copy'] = failed(
-      'one or more edition units are whole-unit copies of a source beat; see failures[]',
-    );
-    failures.push(...noCopyResult.failures);
-  }
+  // Sequenced AFTER every source-side check (source_hash -> ledger_structure ->
+  // citation-allowlist -> unit_accounting -> op-obligations -> payload/
+  // citations). Both read the ledger's own `mode` and no-op for revise, so the
+  // call is unconditional; each is an INDEPENDENT invocation of the shared pure
+  // policy (Principle VI) and contributes a named `failed` check ONLY on a real
+  // compose violation, so neither appears in a passing revise report. Extracted
+  // to `@/fidelity/run-mode.ts` to keep this file within the size guideline.
+  applyComposeEditionChecks(checks, failures, ledger, editionUnits, sourceUnits);
 
   // ---- 6. uncorroborated_units (D12/FR-022) -------------------------------
   // Recomputed here rather than reused from `opResult.uncorroboratedUnits`:
@@ -400,7 +412,7 @@ export function runFidelity(input: FidelityInput): FidelityResult {
     'not provable under D16 — declared out of scope for v1',
   );
 
-  return finalize(checks, failures, true, ledger.mode);
+  return finalize(checks, failures, true, ledger.mode, modeComparison);
 }
 
 // ---- outcome assembly -------------------------------------------------------
@@ -420,6 +432,7 @@ function finalize(
   failures: string[],
   decided: true,
   mode?: Mode,
+  modeComparison?: 'matched' | 'none-supplied',
 ): FidelityResult {
   // Every applicable path above already sets both honest-boundary checks
   // before reaching here EXCEPT the abort paths (source_hash/ledger_structure/
@@ -448,9 +461,15 @@ function finalize(
   // trust-boundary fields, regardless of verdict — they describe the scope
   // of what was checked, not whether it passed.
   const trustBoundary = mode === 'compose' ? composeTrustBoundaryFields(OPEN_QUESTION_MARKERS_STATE) : {};
+  // `mode_comparison` (spec 006 US5, FR-012) records WHICH mode-agreement pass
+  // outcome held — applies to ANY mode, so (unlike the compose-only trust-
+  // boundary fields) it is threaded whenever mode-agreement passed, incl. a
+  // standalone revise validation (`none-supplied`). Absent on a mismatch and on
+  // abort paths that never reached a full ledger.
   const report: CoverageReport = {
     ...(isPassed ? { verdict: 'passed' as const } : {}),
     ...trustBoundary,
+    ...(modeComparison !== undefined ? { mode_comparison: modeComparison } : {}),
     checks,
   };
   return { report, passed: isPassed, decided, failures };

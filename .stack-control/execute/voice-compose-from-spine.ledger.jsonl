@@ -21,3 +21,5 @@
 {"id":"T021","tierLabel":"powerful","model":"opus","commitRange":"b5ec9a5","reviewClean":true,"note":"US3 check-no-copy.ts wired validator(run.ts 480)+preflight; both refuse whole-unit copy"}
 {"id":"T022","tierLabel":"balanced","model":"sonnet","commitRange":"69db2ed","reviewClean":true,"note":"US4 RED revise-verbatim-preflight int; drift emitted today (RED); SC-006 regression pins pass"}
 {"id":"T023","tierLabel":"powerful","model":"opus","commitRange":"1e27b42","reviewClean":true,"note":"US4 revise verbatim-drift preflight; reuses op-legality; SC-006 intact; preflight.ts 97"}
+{"id":"T024","tierLabel":"balanced","model":"sonnet","commitRange":"e4c7472","reviewClean":true,"note":"US5 RED check-mode-agreement.test (6 cases); mismatch before op-legality"}
+{"id":"T025","tierLabel":"balanced","model":"sonnet","commitRange":"e4c7472","reviewClean":true,"note":"US5 check-mode-agreement.ts + ValidateRequest.requested_mode fail-loud"}

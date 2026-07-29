@@ -95,6 +95,16 @@ export interface CoverageReport {
    * the ledger's mode) — never a fabricated default.
    */
   mode?: Mode;
+  /**
+   * Which mode-agreement pass outcome held (spec 006 US5, FR-012): `'matched'`
+   * when an independently-supplied `requested_mode` equalled the ledger's
+   * `mode`; `'none-supplied'` when no `requested_mode` was supplied (standalone
+   * validation) — so a reader knows no independent mode comparison occurred,
+   * never a silent "ok". ABSENT on a mode mismatch (the named failure says why)
+   * and on any report that never reached a decided verdict. Unlike the compose-
+   * only trust-boundary fields below, this applies to any mode.
+   */
+  mode_comparison?: 'matched' | 'none-supplied';
   /** The producer operation was mechanically source-cited but its own upstream fidelity is out of scope (asset-bank territory). Always `'not-checked'` when present. */
   spine_source_fidelity?: 'not-checked';
   /** The deterministic gate proves edition-side accounting only, never semantic support. Always `'not-checkable'` when present. */
