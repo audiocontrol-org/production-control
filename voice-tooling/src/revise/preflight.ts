@@ -78,7 +78,7 @@ export function runPreflight(
 
   const refusals: string[] = [];
 
-  const grounded = checkGrounding(grounding ?? [], editionUnits, sourceUnits);
+  const grounded = checkGrounding(grounding ?? [], editionUnits, sourceUnits, coverage);
   refusals.push(...grounded.failures.map((failure) => failure.message));
 
   // Whole-unit no-copy (R4): keep ONLY op-legality's `whole-unit-copy` failures.

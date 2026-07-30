@@ -124,11 +124,18 @@ test('checkNoCopy: occurrence sensitivity -- a byte-identical destination at edi
     '',
   ].join('\n');
   const ed = deriveUnits(edition, 'ed');
+  const [e0] = ed;
   const e2 = ed[2];
-  assert.ok(e2);
+  assert.ok(e0 && e2);
+  assert.equal(e0.contentHash, s0.contentHash, 'fixture: the FIRST edition unit is also the repeated beat (occ 0)');
   assert.equal(e2.contentHash, s0.contentHash, 'fixture: the third edition unit must be the repeated beat');
   assert.equal(e2.occurrenceIndex, 1, 'fixture: the declared destination must be the SECOND occurrence');
 
+  // Only the occurrence-1 copy is DECLARED in coverage. Under the D4 exhaustive
+  // sweep both occurrences byte-equal the beat, so BOTH are refused -- the
+  // occurrence-0 copy is exactly the AUDIT-18 shape (a real byte-copy the
+  // pairwise arm, keyed on declarations, would miss). Occurrence identity keeps
+  // the two distinct: one whole-unit-copy failure per occurrence.
   const ledger = ledgerOf('compose', [
     { source_unit: ref(s0), op: 'represented', edition_units: [ref(e2)] },
   ]);
@@ -140,8 +147,18 @@ test('checkNoCopy: occurrence sensitivity -- a byte-identical destination at edi
     false,
     `expected the occurrence-1 copy to be caught; got: ${result.failures.join(' | ')}`,
   );
-  assert.equal(result.failures.length, 1);
-  assert.match(result.failures[0] ?? '', /whole-unit copy/);
+  assert.equal(result.failures.length, 2, 'both the declared occ-1 copy and the undeclared occ-0 copy are refused');
+  assert.ok(
+    result.failures.some((f) => /occurrence 1/.test(f)),
+    'the declared occurrence-1 copy must be named',
+  );
+  assert.ok(
+    result.failures.some((f) => /occurrence 0/.test(f)),
+    'the undeclared occurrence-0 copy must also be named (D4 exhaustive sweep)',
+  );
+  for (const failure of result.failures) {
+    assert.match(failure, /whole-unit copy/);
+  }
 });
 
 test('checkNoCopy: a revise ledger is not-applicable, regardless of an incidental byte-identical unit', () => {

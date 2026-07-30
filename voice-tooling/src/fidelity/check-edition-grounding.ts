@@ -52,7 +52,7 @@ export function checkEditionGrounding(
     return { ok: true, applicable: false, failures: [] };
   }
 
-  const result = checkGrounding(ledger.grounding ?? [], editionUnits, sourceUnits);
+  const result = checkGrounding(ledger.grounding ?? [], editionUnits, sourceUnits, ledger.coverage);
   return {
     ok: result.ok,
     applicable: true,

@@ -82,6 +82,10 @@ export function checkOpLegality(
   const editionByKey = indexUnits(editionUnits);
   const failures: OpLegalityFailure[] = [];
 
+  // Edition-unit identity keys already reported as a whole-unit copy, so the
+  // exhaustive sweep below never double-reports a unit the pairwise check named.
+  const reportedCopyKeys = new Set<string>();
+
   coverage.forEach((entry, index) => {
     if (mode === 'compose') {
       if (entry.op === 'verbatim') {
@@ -95,7 +99,7 @@ export function checkOpLegality(
           message: `compose-mode forbids cut: coverage entry ${index}`,
         });
       } else {
-        collectWholeUnitCopies(entry, sourceByKey, editionByKey, failures);
+        collectWholeUnitCopies(entry, sourceByKey, editionByKey, failures, reportedCopyKeys);
       }
       return;
     }
@@ -106,21 +110,29 @@ export function checkOpLegality(
     }
   });
 
+  if (mode === 'compose') {
+    sweepWholeUnitCopies(sourceUnits, editionUnits, failures, reportedCopyKeys);
+  }
+
   return { ok: failures.length === 0, failures };
 }
 
 /**
- * R4 whole-unit no-copy: for a `represented`/`merged` compose entry, no
- * destination edition unit may be byte-identical (same `contentHash`) to the
- * complete source beat it represents. Refs that do not resolve to a real
- * derived unit are an accounting concern (checked elsewhere), not a copy, so
- * they are skipped here.
+ * R4 whole-unit no-copy, PAIRWISE arm: for a `represented`/`merged` compose
+ * entry, no destination edition unit it names may be byte-identical (same
+ * `contentHash`) to the complete source beat it represents. Kept for its
+ * clearer message (it names the specific coverage-declared beat/dest pair);
+ * the exhaustive sweep below is the LOAD-BEARING arm. Refs that do not resolve
+ * to a real derived unit are an accounting concern (checked elsewhere), not a
+ * copy, so they are skipped here. Every dest reported here is recorded in
+ * `reportedCopyKeys` so the sweep does not re-report it.
  */
 function collectWholeUnitCopies(
   entry: CoverageEntry,
   sourceByKey: ReadonlyMap<string, SourceUnit>,
   editionByKey: ReadonlyMap<string, SourceUnit>,
   failures: OpLegalityFailure[],
+  reportedCopyKeys: Set<string>,
 ): void {
   const beat = sourceByKey.get(unitRefKey(entry.source_unit));
   if (beat === undefined) {
@@ -132,6 +144,7 @@ function collectWholeUnitCopies(
       continue;
     }
     if (dest.contentHash === beat.contentHash) {
+      reportedCopyKeys.add(sourceUnitKey(dest));
       failures.push({
         kind: 'whole-unit-copy',
         message: `whole-unit copy: edition unit (${unitLabel(dest)}) is byte-identical to beat (${unitLabel(
@@ -139,6 +152,58 @@ function collectWholeUnitCopies(
         )})`,
       });
     }
+  }
+}
+
+/**
+ * R4 whole-unit no-copy, EXHAUSTIVE SWEEP (AUDIT-18) -- the LOAD-BEARING arm.
+ *
+ * INVARIANT: every DERIVED edition unit that byte-equals ANY complete derived
+ * source beat is a whole-unit copy, regardless of how -- or whether -- coverage
+ * declares it. The pairwise arm keys off `coverage.edition_units`, so a
+ * byte-identical copy escapes it by being declared under a different beat, or
+ * accounted for only on the grounding side (a unit no coverage entry names).
+ * This sweep closes that hole by comparing the derived edition set against the
+ * derived source set directly, trusting no declaration.
+ *
+ * BOUNDARY (R4): whole-unit byte-identity IS the deterministic copy line. A
+ * genuine re-voicing is never byte-identical to its beat, so a short edition
+ * unit that coincidentally byte-equals a short beat is -- by the rule's
+ * definition -- a copy, not a false positive; there is no re-voicing to
+ * preserve when the bytes are identical.
+ *
+ * Units already named by the pairwise arm (in `reportedCopyKeys`) are skipped
+ * so a coverage-declared copy is reported exactly once, with the clearer
+ * pairwise message. Sweep failures are appended in edition document order.
+ */
+function sweepWholeUnitCopies(
+  sourceUnits: readonly SourceUnit[],
+  editionUnits: readonly SourceUnit[],
+  failures: OpLegalityFailure[],
+  reportedCopyKeys: Set<string>,
+): void {
+  const beatByHash = new Map<string, SourceUnit>();
+  for (const beat of sourceUnits) {
+    if (!beatByHash.has(beat.contentHash)) {
+      beatByHash.set(beat.contentHash, beat);
+    }
+  }
+  for (const unit of editionUnits) {
+    const key = sourceUnitKey(unit);
+    if (reportedCopyKeys.has(key)) {
+      continue;
+    }
+    const beat = beatByHash.get(unit.contentHash);
+    if (beat === undefined) {
+      continue;
+    }
+    reportedCopyKeys.add(key);
+    failures.push({
+      kind: 'whole-unit-copy',
+      message: `whole-unit copy: edition unit (${unitLabel(unit)}) is byte-identical to beat (${unitLabel(
+        beat,
+      )})`,
+    });
   }
 }
 

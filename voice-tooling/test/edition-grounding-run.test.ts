@@ -34,7 +34,9 @@ test('runFidelity (T018 US2): a compose edition with an unaccounted edition unit
   // but grounding declared for ONLY edition units 0 and 2 -- edition unit 1
   // ("Two prose line.") is left UNACCOUNTED. `buildEdition` maps the declared
   // grounding indices faithfully (it does not itself enforce exhaustiveness), so
-  // the built ledger carries two grounding records for three edition units.
+  // the built ledger carries two grounding records for three edition units. The
+  // two present records are grounded-on-their-beat (D8-consistent with coverage),
+  // so the ONLY defect is the unaccounted unit 1.
   const model: ModelReviseOutput = {
     edition: editionBody,
     coverage: [
@@ -43,8 +45,8 @@ test('runFidelity (T018 US2): a compose edition with an unaccounted edition unit
       { op: 'represented', edition_units: [2] },
     ],
     grounding: [
-      { edition_unit: 0, basis: 'framing' },
-      { edition_unit: 2, basis: 'framing' },
+      { edition_unit: 0, basis: 'grounded', beats: [0] },
+      { edition_unit: 2, basis: 'grounded', beats: [2] },
     ],
   };
 
@@ -86,6 +88,10 @@ test('runFidelity (T018 US2): a compose edition with an unaccounted edition unit
 
 test('runFidelity (T018 US2): a fully-grounded compose edition still PASSES (the wiring does not reject a well-formed compose)', () => {
   const editionBody = 'One prose line.\n\nTwo prose line.\n\nThree prose line.\n';
+  // Each edition unit is a coverage destination (represented) and therefore
+  // DEMONSTRABLY carries its beat, so grounding must label it grounded-on-that-
+  // beat (D8/AUDIT-21): an all-`framing` grounding for coverage-carried units is
+  // a contradiction the validator now refuses, not a well-formed compose.
   const model: ModelReviseOutput = {
     edition: editionBody,
     coverage: [
@@ -94,9 +100,9 @@ test('runFidelity (T018 US2): a fully-grounded compose edition still PASSES (the
       { op: 'represented', edition_units: [2] },
     ],
     grounding: [
-      { edition_unit: 0, basis: 'framing' },
-      { edition_unit: 1, basis: 'framing' },
-      { edition_unit: 2, basis: 'framing' },
+      { edition_unit: 0, basis: 'grounded', beats: [0] },
+      { edition_unit: 1, basis: 'grounded', beats: [1] },
+      { edition_unit: 2, basis: 'grounded', beats: [2] },
     ],
   };
 

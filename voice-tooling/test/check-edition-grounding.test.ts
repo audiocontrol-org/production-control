@@ -23,20 +23,24 @@ import test from 'node:test';
 import * as assert from 'node:assert/strict';
 import { deriveUnits } from '@/units/derive.ts';
 import { checkEditionGrounding } from '@/fidelity/check-edition-grounding.ts';
-import type { CoverageLedger, GroundingRecord } from '@/schema/ledger.ts';
+import type { CoverageEntry, CoverageLedger, GroundingRecord } from '@/schema/ledger.ts';
 
 const SOURCE_IDENTITY = 'test-source';
 const SOURCE_TEXT = 'Alpha line.\n\nBeta line.\n\nGamma line.\n';
 const EDITION_IDENTITY = 'test-source#edition';
 const EDITION_TEXT = 'One.\n\nTwo.\n\nThree.\n';
 
-function baseComposeLedger(grounding: GroundingRecord[]): CoverageLedger {
+// Default coverage is empty: the framing/unaccounted/dangling fixtures below use
+// only framing records for units NO coverage entry names, so D8 basis<->coverage
+// reconciliation is inert. The one fixture with a GROUNDED record supplies a
+// matching coverage view (D8 anchors `grounded` bases to coverage).
+function baseComposeLedger(grounding: GroundingRecord[], coverage: CoverageEntry[] = []): CoverageLedger {
   return {
     version: 1,
     source: { identity: SOURCE_IDENTITY, hash: 'sha256:' + 'a'.repeat(64) },
     voice: { identity: 'test-voice', hash: 'sha256:' + 'b'.repeat(64) },
     mode: 'compose',
-    coverage: [],
+    coverage,
     grounding,
   };
 }
@@ -107,7 +111,18 @@ test('checkEditionGrounding: exactly one record per edition unit, with grounded 
     },
   ];
 
-  const result = checkEditionGrounding(baseComposeLedger(grounding), editionUnits, sourceUnits);
+  // D8: coverage anchors the grounded record -- beat 0 lands in edition unit 0,
+  // which grounding labels grounded-on-beat-0. Units 1 and 2 are pure
+  // connective/framing tissue, named by no coverage entry.
+  const coverage: CoverageEntry[] = [
+    {
+      source_unit: { hash: `sha256:${beatOne.contentHash}`, occurrence: beatOne.occurrenceIndex },
+      op: 'represented',
+      edition_units: [{ hash: `sha256:${first.contentHash}`, occurrence: first.occurrenceIndex }],
+    },
+  ];
+
+  const result = checkEditionGrounding(baseComposeLedger(grounding, coverage), editionUnits, sourceUnits);
 
   assert.equal(result.applicable, true);
   assert.equal(result.ok, true, `expected pass; got failures: ${result.failures.join(', ')}`);

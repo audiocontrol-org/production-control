@@ -21,16 +21,34 @@
 //   hole a hash-only accounting would miss).
 // - dangling-beat occurrence-sensitivity: a grounded beat naming a REAL source
 //   hash but a non-existent occurrence is dangling.
+// - D5 (AUDIT-04/17): a `grounded` record with empty/absent `beats` is invented
+//   prose self-labeled grounded -> grounded-without-beats.
+// - D8 (AUDIT-21): coverage<->grounding reconciliation -- a unit coverage proves
+//   carries a beat cannot claim framing/connective, and a grounded record cannot
+//   invent a beat->unit link coverage never declared -> basis-contradicts-coverage.
+//
+// checkGrounding now takes `coverage` as its 4th arg (D8): it is only ever
+// called in compose context, so the reconciliation always runs. Fixtures that
+// are not about reconciliation supply a coverage view that AGREES with their
+// grounding (via `cov`, or `[]` for pure connective/framing units).
 
 import test from 'node:test';
 import * as assert from 'node:assert/strict';
 import { deriveUnits } from '@/units/derive.ts';
 import type { SourceUnit } from '@/units/derive.ts';
 import { checkGrounding } from '@/policy/grounding.ts';
-import type { GroundingRecord, UnitRef } from '@/schema/ledger.ts';
+import type { CoverageEntry, GroundingRecord, UnitRef } from '@/schema/ledger.ts';
 
 function ref(unit: SourceUnit): UnitRef {
   return { hash: `sha256:${unit.contentHash}`, occurrence: unit.occurrenceIndex };
+}
+
+// A `represented` coverage entry mapping a source beat to an edition unit. Used
+// to supply the D8 basis<->coverage reconciliation with a coverage view that
+// AGREES with the grounding under test, so these accounting fixtures stay
+// isolated to the property each one exercises (unaccounted/duplicate/dangling).
+function cov(sourceBeat: UnitRef, destUnit: UnitRef): CoverageEntry {
+  return { source_unit: sourceBeat, op: 'represented', edition_units: [destUnit] };
 }
 
 const SOURCE = ['Beta cites [^b] and counts 1978.', '', 'Gamma one with 42.', ''].join('\n');
@@ -48,7 +66,7 @@ test('checkGrounding: a fully-accounted edition passes', () => {
     { edition_unit: ref(e1), basis: 'connective' },
   ];
 
-  const result = checkGrounding(records, ed, src);
+  const result = checkGrounding(records, ed, src, [cov(ref(s0), ref(e0))]);
 
   assert.equal(result.ok, true, `unexpected failures: ${result.failures.map((f) => f.message).join(' | ')}`);
   assert.deepEqual(result.failures, []);
@@ -64,7 +82,7 @@ test('checkGrounding: an edition unit with no record is unaccounted, naming the 
   // Only e0 is grounded; e1 has no record.
   const records: GroundingRecord[] = [{ edition_unit: ref(e0), basis: 'grounded', beats: [ref(s0)] }];
 
-  const result = checkGrounding(records, ed, src);
+  const result = checkGrounding(records, ed, src, [cov(ref(s0), ref(e0))]);
 
   assert.equal(result.ok, false);
   const unaccounted = result.failures.filter((f) => f.kind === 'unaccounted');
@@ -86,7 +104,7 @@ test('checkGrounding: an edition unit with two records is a duplicate, naming th
     { edition_unit: ref(e1), basis: 'connective' },
   ];
 
-  const result = checkGrounding(records, ed, src);
+  const result = checkGrounding(records, ed, src, [cov(ref(s0), ref(e0))]);
 
   assert.equal(result.ok, false);
   const duplicate = result.failures.filter((f) => f.kind === 'duplicate');
@@ -109,7 +127,7 @@ test('checkGrounding: a record naming an edition unit absent from the edition is
     { edition_unit: bogus, basis: 'framing' }, // names no real edition unit
   ];
 
-  const result = checkGrounding(records, ed, src);
+  const result = checkGrounding(records, ed, src, [cov(ref(s0), ref(e0))]);
 
   assert.equal(result.ok, false);
   const dangling = result.failures.filter((f) => f.kind === 'dangling-record');
@@ -130,7 +148,9 @@ test('checkGrounding: a grounded record whose beat names a nonexistent source un
     { edition_unit: ref(e1), basis: 'connective' },
   ];
 
-  const result = checkGrounding(records, ed, src);
+  // Coverage names the same (bogus) beat->unit link the grounded record claims,
+  // so D8 reconciliation is silent and the dangling-beat property stays isolated.
+  const result = checkGrounding(records, ed, src, [cov(bogusBeat, ref(e0))]);
 
   assert.equal(result.ok, false);
   const danglingBeat = result.failures.filter((f) => f.kind === 'dangling-beat');
@@ -161,7 +181,10 @@ test('checkGrounding: occurrence-sensitivity -- two byte-identical edition units
     { edition_unit: ref(e0), basis: 'connective' },
     { edition_unit: ref(e1), basis: 'connective' },
   ];
-  const passing = checkGrounding(perOccurrence, ed, src);
+  // Both units are pure connective tissue (named by no coverage entry), so
+  // coverage is empty and D8 reconciliation is inert -- this isolates the
+  // occurrence-sensitive EXHAUSTIVE/EXCLUSIVE accounting.
+  const passing = checkGrounding(perOccurrence, ed, src, []);
   assert.equal(
     passing.ok,
     true,
@@ -174,7 +197,7 @@ test('checkGrounding: occurrence-sensitivity -- two byte-identical edition units
     { edition_unit: ref(e0), basis: 'connective' },
     { edition_unit: ref(e0), basis: 'connective' }, // wrongly also occurrence 0
   ];
-  const result = checkGrounding(bothOccZero, ed, src);
+  const result = checkGrounding(bothOccZero, ed, src, []);
 
   assert.equal(result.ok, false);
   const duplicate = result.failures.filter((f) => f.kind === 'duplicate');
@@ -212,7 +235,9 @@ test('checkGrounding: dangling-beat occurrence-sensitivity -- real source hash, 
     { edition_unit: ref(e0), basis: 'grounded', beats: [wrongOccurrenceBeat] },
   ];
 
-  const result = checkGrounding(records, ed, src);
+  // Coverage names the same (wrong-occurrence) beat->unit link, so D8
+  // reconciliation is silent and the dangling-beat property stays isolated.
+  const result = checkGrounding(records, ed, src, [cov(wrongOccurrenceBeat, ref(e0))]);
 
   assert.equal(result.ok, false);
   const danglingBeat = result.failures.filter((f) => f.kind === 'dangling-beat');
@@ -221,4 +246,133 @@ test('checkGrounding: dangling-beat occurrence-sensitivity -- real source hash, 
   // The named beat carries the real hash and the non-existent occurrence 1.
   assert.match(danglingBeat[0]?.message ?? '', new RegExp(s0.contentHash));
   assert.match(danglingBeat[0]?.message ?? '', /occurrence 1/);
+});
+
+// D5 (AUDIT-04/17): the invented-prose hole reached by the SHORTEST path. A
+// `grounded` record asserts its edition unit CAME FROM named source beats; a
+// grounded record naming zero beats therefore asserts prose that came from
+// nothing. It satisfies EXHAUSTIVE (one record for the unit), EXCLUSIVE (no
+// duplicate/dangling), and has no beat to dangle, so a hole-free accounting
+// would return ok:true. checkGrounding is the ONE source of truth the producer
+// preflight AND the validator rest on, so it must self-defend here even though
+// the wire schema/parser also guard the field. One fixture per empty shape.
+test('checkGrounding: D5 -- a grounded record with beats: [] is grounded-without-beats, naming the unit', () => {
+  const src = deriveUnits(SOURCE, 'src');
+  const ed = deriveUnits('One composed edition paragraph.\n', 'ed');
+  const [e0] = ed;
+  assert.ok(e0);
+
+  const records: GroundingRecord[] = [{ edition_unit: ref(e0), basis: 'grounded', beats: [] }];
+
+  // Empty coverage: the unit is not proven to carry any beat by coverage, so D8
+  // adds nothing -- the empty-beats grounded label is the only defect.
+  const result = checkGrounding(records, ed, src, []);
+
+  assert.equal(result.ok, false);
+  const empty = result.failures.filter((f) => f.kind === 'grounded-without-beats');
+  assert.equal(empty.length, 1);
+  assert.match(empty[0]?.message ?? '', /names no beats/);
+  assert.match(empty[0]?.message ?? '', new RegExp(e0.contentHash));
+  // It must NOT be silently accepted, and must NOT be mislabeled as a dangling beat.
+  assert.equal(result.failures.filter((f) => f.kind === 'dangling-beat').length, 0);
+});
+
+test('checkGrounding: D5 -- a grounded record with beats ABSENT is grounded-without-beats', () => {
+  const src = deriveUnits(SOURCE, 'src');
+  const ed = deriveUnits('One composed edition paragraph.\n', 'ed');
+  const [e0] = ed;
+  assert.ok(e0);
+
+  // `beats` omitted entirely (the type permits it -- beats is optional).
+  const records: GroundingRecord[] = [{ edition_unit: ref(e0), basis: 'grounded' }];
+
+  const result = checkGrounding(records, ed, src, []);
+
+  assert.equal(result.ok, false);
+  const empty = result.failures.filter((f) => f.kind === 'grounded-without-beats');
+  assert.equal(empty.length, 1);
+  assert.match(empty[0]?.message ?? '', new RegExp(e0.contentHash));
+});
+
+// D8 (AUDIT-21): coverage and grounding are two views of the SAME beat<->edition
+// mapping. Before this fix `basis` was an unfalsifiable self-label: a unit
+// coverage PROVES carries beat n could claim `framing` ("not itself a beat") and
+// escape the grounded obligation entirely. FORWARD reconciliation refuses that.
+test('checkGrounding: D8 forward -- a unit coverage proves carries a beat cannot be labeled framing', () => {
+  const src = deriveUnits(SOURCE, 'src');
+  const ed = deriveUnits(EDITION, 'ed');
+  const [s0, s1] = src;
+  const [e0, e1] = ed;
+  assert.ok(s0 && s1 && e0 && e1);
+
+  // Coverage: beat 0 -> unit 0 (represented), beat 1 -> unit 1 (represented).
+  const coverage: CoverageEntry[] = [cov(ref(s0), ref(e0)), cov(ref(s1), ref(e1))];
+  // Grounding: unit 1 is honestly grounded on beat 1, but unit 0 -- which
+  // coverage proves carries beat 0 -- self-labels `framing`.
+  const records: GroundingRecord[] = [
+    { edition_unit: ref(e0), basis: 'framing' },
+    { edition_unit: ref(e1), basis: 'grounded', beats: [ref(s1)] },
+  ];
+
+  const result = checkGrounding(records, ed, src, coverage);
+
+  assert.equal(result.ok, false);
+  const contradiction = result.failures.filter((f) => f.kind === 'basis-contradicts-coverage');
+  assert.equal(contradiction.length, 1);
+  assert.match(contradiction[0]?.message ?? '', /coverage proves/);
+  assert.match(contradiction[0]?.message ?? '', new RegExp(e0.contentHash));
+  assert.match(contradiction[0]?.message ?? '', new RegExp(s0.contentHash));
+});
+
+// D8 REVERSE: a `grounded` record's beats must be a SUBSET of the beats whose
+// coverage names that unit -- grounding cannot invent a beat->unit link coverage
+// never declared.
+test('checkGrounding: D8 reverse -- a grounded beat not named by coverage for that unit is refused', () => {
+  const src = deriveUnits(SOURCE, 'src');
+  const ed = deriveUnits('One composed edition paragraph.\n', 'ed');
+  const [s0, s1] = src;
+  const [e0] = ed;
+  assert.ok(s0 && s1 && e0);
+
+  // Coverage says unit 0 carries ONLY beat 0.
+  const coverage: CoverageEntry[] = [cov(ref(s0), ref(e0))];
+  // Grounding claims unit 0 is grounded on beats 0 AND 1 -- beat 1 is a real
+  // source beat, but coverage never maps it to unit 0.
+  const records: GroundingRecord[] = [
+    { edition_unit: ref(e0), basis: 'grounded', beats: [ref(s0), ref(s1)] },
+  ];
+
+  const result = checkGrounding(records, ed, src, coverage);
+
+  assert.equal(result.ok, false);
+  const contradiction = result.failures.filter((f) => f.kind === 'basis-contradicts-coverage');
+  assert.equal(contradiction.length, 1);
+  assert.match(contradiction[0]?.message ?? '', /no coverage entry maps that beat/);
+  assert.match(contradiction[0]?.message ?? '', new RegExp(s1.contentHash));
+  // Beat 1 is a REAL source unit, so this is a reconciliation failure, not a
+  // dangling beat.
+  assert.equal(result.failures.filter((f) => f.kind === 'dangling-beat').length, 0);
+});
+
+// D8 all-consistent: coverage and grounding agree, with a pure connective unit
+// (named by no coverage entry) legitimately present -> passes.
+test('checkGrounding: D8 -- a coverage-consistent edition with a pure connective unit passes', () => {
+  const src = deriveUnits(SOURCE, 'src');
+  const ed = deriveUnits(EDITION, 'ed');
+  const [s0] = src;
+  const [e0, e1] = ed;
+  assert.ok(s0 && e0 && e1);
+
+  // Coverage maps beat 0 -> unit 0; unit 1 is pure connective tissue, named by
+  // no coverage entry, so it may legitimately be `connective`.
+  const coverage: CoverageEntry[] = [cov(ref(s0), ref(e0))];
+  const records: GroundingRecord[] = [
+    { edition_unit: ref(e0), basis: 'grounded', beats: [ref(s0)] },
+    { edition_unit: ref(e1), basis: 'connective' },
+  ];
+
+  const result = checkGrounding(records, ed, src, coverage);
+
+  assert.equal(result.ok, true, `unexpected failures: ${result.failures.map((f) => f.message).join(' | ')}`);
+  assert.deepEqual(result.failures, []);
 });
