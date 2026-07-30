@@ -1,0 +1,478 @@
+{
+  "version": 1,
+  "mode": "impl",
+  "item": "design:feature/voice-compose-from-spine",
+  "governedShaBase": "cb8edab",
+  "headSha": "c67fd58690a9484fe5757d9a5e1439aa667f8000",
+  "chunkIds": [
+    "141b682db278218d",
+    "1da1769d8fb2d8f6",
+    "1f52f43e896ff11e",
+    "281bffdc1b9885fb",
+    "35e5d31a989b586d",
+    "39187e0e455d3dda",
+    "68ecddf33e825365",
+    "7fc60c7b8184586c",
+    "a3b58c9121fcab6a",
+    "a7c1dbc2677ac5d0",
+    "c1594556ed0aba8a",
+    "ce375fa3614a422e",
+    "fe1578ea5f6f6398"
+  ],
+  "rounds": 1,
+  "liftedFindings": [
+    {
+      "id": "141b682db278218d::AUDIT-BARRAGE-claude-01",
+      "title": "Mode-ordering test proves ordering in the one direction where it cannot fail — `op_obligations` is absent on a revise ledger regardless",
+      "severity": "high"
+    },
+    {
+      "id": "141b682db278218d::AUDIT-BARRAGE-claude-02",
+      "title": "An edition-invented `[OPEN-QUESTION: …]` marker passes silently — the survival check is one-directional and nothing fixtures fabrication",
+      "severity": "high"
+    },
+    {
+      "id": "1da1769d8fb2d8f6::AUDIT-BARRAGE-claude-01",
+      "title": "Whole-unit copy (R4) is never exercised under `merged`, only `represented` — the docstring claims both",
+      "severity": "high"
+    },
+    {
+      "id": "1da1769d8fb2d8f6::AUDIT-BARRAGE-claude-02",
+      "title": "A `grounded` record with an empty/absent `beats` array is never tested — the file's own \"invented-prose hole\" stays open",
+      "severity": "high"
+    },
+    {
+      "id": "1f52f43e896ff11e::AUDIT-BARRAGE-claude-01+AUDIT-BARRAGE-codex-01",
+      "title": "Stale RED-phase commentary survives into HEAD, asserting the shipped revise preflight does not exist and that a passing test is \"expected to FAIL\"",
+      "severity": "high"
+    },
+    {
+      "id": "35e5d31a989b586d::AUDIT-BARRAGE-claude-01",
+      "title": "Fails-open default `ledger.mode ?? 'revise'` silently disables the entire US3 compose-legality gate",
+      "severity": "high"
+    },
+    {
+      "id": "35e5d31a989b586d::AUDIT-BARRAGE-claude-02",
+      "title": "`requested_mode` presence channel is unguarded: a dropped or misspelled key degrades mode-agreement to a silent no-op",
+      "severity": "high"
+    },
+    {
+      "id": "35e5d31a989b586d::AUDIT-BARRAGE-claude-03+AUDIT-BARRAGE-claude-05+AUDIT-BARRAGE-claude-09+AUDIT-BARRAGE-codex-01",
+      "title": "Open-question-marker enforcement is mode-agnostic while the requirement and its report field are compose-scoped",
+      "severity": "high"
+    },
+    {
+      "id": "39187e0e455d3dda::AUDIT-BARRAGE-claude-01",
+      "title": "Absent `mode:` silently loads as `revise`, and the default is indistinguishable from a declared `revise` — every compose-only check then no-ops while the report attests \"matched\"",
+      "severity": "high"
+    },
+    {
+      "id": "68ecddf33e825365::AUDIT-BARRAGE-claude-01",
+      "title": "`mode: 'compose'` only refuses *absent* grounding — the partial-grounding channel has no fixture",
+      "severity": "high"
+    },
+    {
+      "id": "7fc60c7b8184586c::AUDIT-BARRAGE-claude-01",
+      "title": "Compose pre-emit self-check silently drops `compose-forbids-cut` / `compose-forbids-verbatim` failures, so an illegal-op compose edition gets WRITTEN instead of refused",
+      "severity": "high"
+    },
+    {
+      "id": "7fc60c7b8184586c::AUDIT-BARRAGE-codex-01",
+      "title": "Compose producer can emit ledgers with illegal `verbatim`/`cut` ops",
+      "severity": "high"
+    },
+    {
+      "id": "a7c1dbc2677ac5d0::AUDIT-BARRAGE-claude-02",
+      "title": "A passing compose run emits no `edition_grounding` / `no_copy` check entries at all, so \"enforced and passed\" is indistinguishable from \"never ran\"",
+      "severity": "high"
+    },
+    {
+      "id": "a7c1dbc2677ac5d0::AUDIT-BARRAGE-claude-04",
+      "title": "`OPEN_QUESTION_RE` truncates at the first inner `]`, so a marker containing a citation loses both the tail of the marker and any numeral after that bracket from all required-payload enforcement",
+      "severity": "high"
+    },
+    {
+      "id": "a7c1dbc2677ac5d0::AUDIT-BARRAGE-codex-01",
+      "title": "Passing reports omit the new mode-agreement check",
+      "severity": "high"
+    },
+    {
+      "id": "c1594556ed0aba8a::AUDIT-BARRAGE-claude-01",
+      "title": "Compose-only checks emit no pass-side evidence: a clean compose report is indistinguishable from one where grounding/no-copy never ran",
+      "severity": "high"
+    },
+    {
+      "id": "ce375fa3614a422e::AUDIT-BARRAGE-claude-01",
+      "title": "`grounded` record with zero beats passes grounding untouched — invented prose can be labeled grounded",
+      "severity": "high"
+    },
+    {
+      "id": "ce375fa3614a422e::AUDIT-BARRAGE-claude-02",
+      "title": "R4 whole-unit no-copy is keyed on declared coverage destinations, so a byte-identical copy escapes by being declared elsewhere",
+      "severity": "high"
+    },
+    {
+      "id": "ce375fa3614a422e::AUDIT-BARRAGE-codex-01",
+      "title": "Compose preflight drops illegal `cut`/`verbatim` failures before emit",
+      "severity": "high"
+    },
+    {
+      "id": "fe1578ea5f6f6398::AUDIT-BARRAGE-claude-01",
+      "title": "`grounding: []` is accepted, conflating \"compose declared nothing\" with revise's legitimate \"absent\"",
+      "severity": "high"
+    },
+    {
+      "id": "fe1578ea5f6f6398::AUDIT-BARRAGE-claude-02",
+      "title": "`coverage` and `grounding` assert two independent beat↔edition mappings that nothing reconciles",
+      "severity": "high"
+    },
+    {
+      "id": "fe1578ea5f6f6398::AUDIT-BARRAGE-codex-01",
+      "title": "Prompt schema asks for `beats` on records the parser rejects",
+      "severity": "high"
+    }
+  ],
+  "closedInLoopFindings": [],
+  "seamResult": {
+    "boundaryPairs": [
+      {
+        "a": "141b682db278218d",
+        "b": "1da1769d8fb2d8f6"
+      },
+      {
+        "a": "141b682db278218d",
+        "b": "1f52f43e896ff11e"
+      },
+      {
+        "a": "141b682db278218d",
+        "b": "281bffdc1b9885fb"
+      },
+      {
+        "a": "141b682db278218d",
+        "b": "35e5d31a989b586d"
+      },
+      {
+        "a": "141b682db278218d",
+        "b": "39187e0e455d3dda"
+      },
+      {
+        "a": "141b682db278218d",
+        "b": "68ecddf33e825365"
+      },
+      {
+        "a": "141b682db278218d",
+        "b": "7fc60c7b8184586c"
+      },
+      {
+        "a": "141b682db278218d",
+        "b": "a3b58c9121fcab6a"
+      },
+      {
+        "a": "141b682db278218d",
+        "b": "a7c1dbc2677ac5d0"
+      },
+      {
+        "a": "141b682db278218d",
+        "b": "c1594556ed0aba8a"
+      },
+      {
+        "a": "141b682db278218d",
+        "b": "ce375fa3614a422e"
+      },
+      {
+        "a": "141b682db278218d",
+        "b": "fe1578ea5f6f6398"
+      },
+      {
+        "a": "1da1769d8fb2d8f6",
+        "b": "1f52f43e896ff11e"
+      },
+      {
+        "a": "1da1769d8fb2d8f6",
+        "b": "281bffdc1b9885fb"
+      },
+      {
+        "a": "1da1769d8fb2d8f6",
+        "b": "35e5d31a989b586d"
+      },
+      {
+        "a": "1da1769d8fb2d8f6",
+        "b": "39187e0e455d3dda"
+      },
+      {
+        "a": "1da1769d8fb2d8f6",
+        "b": "68ecddf33e825365"
+      },
+      {
+        "a": "1da1769d8fb2d8f6",
+        "b": "7fc60c7b8184586c"
+      },
+      {
+        "a": "1da1769d8fb2d8f6",
+        "b": "a3b58c9121fcab6a"
+      },
+      {
+        "a": "1da1769d8fb2d8f6",
+        "b": "a7c1dbc2677ac5d0"
+      },
+      {
+        "a": "1da1769d8fb2d8f6",
+        "b": "c1594556ed0aba8a"
+      },
+      {
+        "a": "1da1769d8fb2d8f6",
+        "b": "ce375fa3614a422e"
+      },
+      {
+        "a": "1da1769d8fb2d8f6",
+        "b": "fe1578ea5f6f6398"
+      },
+      {
+        "a": "1f52f43e896ff11e",
+        "b": "281bffdc1b9885fb"
+      },
+      {
+        "a": "1f52f43e896ff11e",
+        "b": "35e5d31a989b586d"
+      },
+      {
+        "a": "1f52f43e896ff11e",
+        "b": "39187e0e455d3dda"
+      },
+      {
+        "a": "1f52f43e896ff11e",
+        "b": "68ecddf33e825365"
+      },
+      {
+        "a": "1f52f43e896ff11e",
+        "b": "7fc60c7b8184586c"
+      },
+      {
+        "a": "1f52f43e896ff11e",
+        "b": "a3b58c9121fcab6a"
+      },
+      {
+        "a": "1f52f43e896ff11e",
+        "b": "a7c1dbc2677ac5d0"
+      },
+      {
+        "a": "1f52f43e896ff11e",
+        "b": "c1594556ed0aba8a"
+      },
+      {
+        "a": "1f52f43e896ff11e",
+        "b": "ce375fa3614a422e"
+      },
+      {
+        "a": "1f52f43e896ff11e",
+        "b": "fe1578ea5f6f6398"
+      },
+      {
+        "a": "281bffdc1b9885fb",
+        "b": "35e5d31a989b586d"
+      },
+      {
+        "a": "281bffdc1b9885fb",
+        "b": "39187e0e455d3dda"
+      },
+      {
+        "a": "281bffdc1b9885fb",
+        "b": "68ecddf33e825365"
+      },
+      {
+        "a": "281bffdc1b9885fb",
+        "b": "7fc60c7b8184586c"
+      },
+      {
+        "a": "281bffdc1b9885fb",
+        "b": "a3b58c9121fcab6a"
+      },
+      {
+        "a": "281bffdc1b9885fb",
+        "b": "a7c1dbc2677ac5d0"
+      },
+      {
+        "a": "281bffdc1b9885fb",
+        "b": "c1594556ed0aba8a"
+      },
+      {
+        "a": "281bffdc1b9885fb",
+        "b": "ce375fa3614a422e"
+      },
+      {
+        "a": "281bffdc1b9885fb",
+        "b": "fe1578ea5f6f6398"
+      },
+      {
+        "a": "35e5d31a989b586d",
+        "b": "39187e0e455d3dda"
+      },
+      {
+        "a": "35e5d31a989b586d",
+        "b": "68ecddf33e825365"
+      },
+      {
+        "a": "35e5d31a989b586d",
+        "b": "7fc60c7b8184586c"
+      },
+      {
+        "a": "35e5d31a989b586d",
+        "b": "a3b58c9121fcab6a"
+      },
+      {
+        "a": "35e5d31a989b586d",
+        "b": "a7c1dbc2677ac5d0"
+      },
+      {
+        "a": "35e5d31a989b586d",
+        "b": "c1594556ed0aba8a"
+      },
+      {
+        "a": "35e5d31a989b586d",
+        "b": "ce375fa3614a422e"
+      },
+      {
+        "a": "35e5d31a989b586d",
+        "b": "fe1578ea5f6f6398"
+      },
+      {
+        "a": "39187e0e455d3dda",
+        "b": "68ecddf33e825365"
+      },
+      {
+        "a": "39187e0e455d3dda",
+        "b": "7fc60c7b8184586c"
+      },
+      {
+        "a": "39187e0e455d3dda",
+        "b": "a3b58c9121fcab6a"
+      },
+      {
+        "a": "39187e0e455d3dda",
+        "b": "a7c1dbc2677ac5d0"
+      },
+      {
+        "a": "39187e0e455d3dda",
+        "b": "c1594556ed0aba8a"
+      },
+      {
+        "a": "39187e0e455d3dda",
+        "b": "ce375fa3614a422e"
+      },
+      {
+        "a": "39187e0e455d3dda",
+        "b": "fe1578ea5f6f6398"
+      },
+      {
+        "a": "68ecddf33e825365",
+        "b": "7fc60c7b8184586c"
+      },
+      {
+        "a": "68ecddf33e825365",
+        "b": "a3b58c9121fcab6a"
+      },
+      {
+        "a": "68ecddf33e825365",
+        "b": "a7c1dbc2677ac5d0"
+      },
+      {
+        "a": "68ecddf33e825365",
+        "b": "c1594556ed0aba8a"
+      },
+      {
+        "a": "68ecddf33e825365",
+        "b": "ce375fa3614a422e"
+      },
+      {
+        "a": "68ecddf33e825365",
+        "b": "fe1578ea5f6f6398"
+      },
+      {
+        "a": "7fc60c7b8184586c",
+        "b": "a3b58c9121fcab6a"
+      },
+      {
+        "a": "7fc60c7b8184586c",
+        "b": "a7c1dbc2677ac5d0"
+      },
+      {
+        "a": "7fc60c7b8184586c",
+        "b": "c1594556ed0aba8a"
+      },
+      {
+        "a": "7fc60c7b8184586c",
+        "b": "ce375fa3614a422e"
+      },
+      {
+        "a": "7fc60c7b8184586c",
+        "b": "fe1578ea5f6f6398"
+      },
+      {
+        "a": "a3b58c9121fcab6a",
+        "b": "a7c1dbc2677ac5d0"
+      },
+      {
+        "a": "a3b58c9121fcab6a",
+        "b": "c1594556ed0aba8a"
+      },
+      {
+        "a": "a3b58c9121fcab6a",
+        "b": "ce375fa3614a422e"
+      },
+      {
+        "a": "a3b58c9121fcab6a",
+        "b": "fe1578ea5f6f6398"
+      },
+      {
+        "a": "a7c1dbc2677ac5d0",
+        "b": "c1594556ed0aba8a"
+      },
+      {
+        "a": "a7c1dbc2677ac5d0",
+        "b": "ce375fa3614a422e"
+      },
+      {
+        "a": "a7c1dbc2677ac5d0",
+        "b": "fe1578ea5f6f6398"
+      },
+      {
+        "a": "c1594556ed0aba8a",
+        "b": "ce375fa3614a422e"
+      },
+      {
+        "a": "c1594556ed0aba8a",
+        "b": "fe1578ea5f6f6398"
+      },
+      {
+        "a": "ce375fa3614a422e",
+        "b": "fe1578ea5f6f6398"
+      }
+    ],
+    "findings": [
+      {
+        "kind": "removed-export",
+        "symbol": "ModelInput",
+        "consumedAcross": true,
+        "severity": "HIGH"
+      },
+      {
+        "kind": "removed-export",
+        "symbol": "buildRevisePrompt",
+        "consumedAcross": true,
+        "severity": "HIGH"
+      },
+      {
+        "kind": "removed-export",
+        "symbol": "runReviseCli",
+        "consumedAcross": true,
+        "severity": "HIGH"
+      }
+    ],
+    "suppressedCompatible": 1
+  },
+  "splitClusterRefs": [
+    "576fd330031d1d3d"
+  ],
+  "outcome": "override-eligible",
+  "anchorRoot": "/Users/orion/work/production-control-work/production-control-voice"
+}

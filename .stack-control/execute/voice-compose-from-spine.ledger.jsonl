@@ -28,3 +28,4 @@
 {"id":"T028","tierLabel":"balanced","model":"sonnet","commitRange":"918959d","reviewClean":true,"note":"Polish SC-007 overclaim regression; passes against current code (trust boundary holds)"}
 {"id":"T029","tierLabel":"fast","model":"haiku","commitRange":"402e1c6","reviewClean":true,"note":"Polish docs: README + --help trust-boundary (mechanical/producer-instruction/advisory)"}
 {"id":"T030","tierLabel":"balanced","model":"sonnet","commitRange":"0fc71ba","reviewClean":true,"note":"FINAL GATE PASS: 369 tests, typecheck clean, no file>500, SC-006 ok, eslint honestly n/a; GATE-006.md recorded"}
+{"round":2,"group":"FG-A","model":"opus","commitRange":"48d42ca","findings":["AUDIT-18","AUDIT-04","AUDIT-17","AUDIT-21","AUDIT-03"],"note":"policy core: exhaustive no-copy sweep, grounded-without-beats, coverage-grounding reconciliation; checkGrounding+coverage arg; self-red-team corrected hole-encoding tests; 378 green"}

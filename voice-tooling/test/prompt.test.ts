@@ -38,6 +38,23 @@ test('buildPrompt(compose): demands a grounding declaration', () => {
   assert.match(prompt, /"beats"/, 'names the 0-based beat indices field');
 });
 
+test('buildPrompt(compose): states grounding as a UNION -- grounded records carry beats, connective/framing do NOT (D10, AUDIT-22)', () => {
+  const prompt = buildPrompt('compose', input);
+  // The output shape must NOT show `beats` on every entry: the parser rejects
+  // `beats` for connective/framing, so a model following the shape literally
+  // would be refused. Grounded → beats; connective/framing → no beats.
+  assert.match(
+    prompt,
+    /"basis":\s*"grounded",\s*"beats"/,
+    'a grounded record in the output shape must carry "beats"',
+  );
+  assert.match(
+    prompt,
+    /"basis":\s*"connective\|framing"\s*}/,
+    'a connective/framing record in the output shape must NOT carry "beats"',
+  );
+});
+
 test('buildPrompt(compose): FORBIDS verbatim reproduction', () => {
   const prompt = buildPrompt('compose', input);
   assert.match(prompt, /never\s+"?verbatim"?/i, 'must forbid the verbatim op');

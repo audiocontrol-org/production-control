@@ -27,6 +27,7 @@ import type { CoverageEntry, GroundingRecord } from '@/schema/ledger.ts';
 import type { ProducerMode } from '@/revise/prompt/types.ts';
 import { checkGrounding } from '@/policy/grounding.ts';
 import { checkOpLegality } from '@/policy/op-legality.ts';
+import type { OpLegalityFailure } from '@/policy/op-legality.ts';
 
 /** Result of the producer's pre-emit self-check: `ok` gates the write; `refusals` name every violation. */
 export interface PreflightResult {
@@ -81,17 +82,43 @@ export function runPreflight(
   const grounded = checkGrounding(grounding ?? [], editionUnits, sourceUnits, coverage);
   refusals.push(...grounded.failures.map((failure) => failure.message));
 
-  // Whole-unit no-copy (R4): keep ONLY op-legality's `whole-unit-copy` failures.
-  // The `compose-forbids-verbatim`/`-cut` kinds cannot arise here -- `buildEdition`
-  // only ever emits `represented`/`merged`/`cut` from the model's coverage and
-  // never a verbatim in compose -- but filtering keeps this check honestly scoped
-  // to no-copy regardless.
+  // Op-legality (D1, AUDIT-11/12/19): EVERY failure `checkOpLegality('compose',
+  // ...)` reports is a pre-emit refusal -- illegal-op (`compose-forbids-verbatim`,
+  // `compose-forbids-cut`) AND whole-unit-copy (R4). `buildEdition` DOES emit
+  // `cut` from the model's coverage, and the model chooses its own op labels, so
+  // a compose model returning `{"op":"cut"}` or `{"op":"verbatim"}` reaches here
+  // and MUST be refused, not written. The failures are already mode-scoped by the
+  // `'compose'` argument, so none is dropped: they are all pushed via an
+  // EXHAUSTIVE switch over `OpLegalityFailureKind`, so a future unhandled kind is
+  // a COMPILE error here (`assertNever`), never a silent drop.
   const legality = checkOpLegality('compose', coverage, sourceUnits, editionUnits);
-  refusals.push(
-    ...legality.failures
-      .filter((failure) => failure.kind === 'whole-unit-copy')
-      .map((failure) => failure.message),
-  );
+  for (const failure of legality.failures) {
+    refusals.push(composeOpLegalityRefusal(failure));
+  }
 
   return { ok: refusals.length === 0, refusals };
+}
+
+/**
+ * Every compose op-legality failure gates the write. This switch is EXHAUSTIVE
+ * over `OpLegalityFailureKind` (D1): each kind maps to its refusal message, and
+ * the `assertNever` default makes a future unhandled kind a compile error rather
+ * than a silently dropped illegal op. `revise-verbatim-drift` is a revise-only
+ * kind `checkOpLegality('compose', ...)` never emits; it is handled here anyway
+ * so that if a future change ever makes it reachable in compose it still refuses.
+ */
+function composeOpLegalityRefusal(failure: OpLegalityFailure): string {
+  switch (failure.kind) {
+    case 'compose-forbids-verbatim':
+    case 'compose-forbids-cut':
+    case 'whole-unit-copy':
+    case 'revise-verbatim-drift':
+      return failure.message;
+    default:
+      return assertNever(failure.kind);
+  }
+}
+
+function assertNever(value: never): never {
+  throw new Error(`voice-revise: unhandled op-legality failure kind: ${String(value)}`);
 }
