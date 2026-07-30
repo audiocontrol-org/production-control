@@ -52,14 +52,29 @@ const CITATION_RE = /\[\^[^\]\s]+\]|\[[A-Z][A-Z0-9]*-[A-Z0-9-]+\]/g;
 
 /**
  * Open-question markers (R7/FR-013, T027): the literal bracketed
- * `[OPEN-QUESTION: ...]` form -- `[OPEN-QUESTION:` then any run of non-`]`
- * characters (the question text) then the closing `]`. Deliberately narrow
- * (the exact declared syntax named in FR-013/`@/revise/prompt/compose.ts`'s
- * own producer instruction) rather than a general open-ended marker grammar --
- * a spine that does not use this syntax simply has no markers to recognize,
- * per FR-013's "absent such a syntax, ... not a deterministic failure".
+ * `[OPEN-QUESTION: ...]` form -- `[OPEN-QUESTION:` then the question text, which
+ * may itself contain ONE level of nested brackets (a `[^ref-4]` citation, a
+ * `[ABC-1]` source marker, or a bare `foo[0]`), then the closing `]`.
+ *
+ * BRACKET-AWARE (D3, AUDIT-20260730-14): the question body is
+ * `(?:[^\[\]]|\[[^\[\]]*\])*` -- a run of non-bracket characters OR a single
+ * balanced nested `[...]` pair -- so the marker's closing `]` is the FIRST
+ * top-level `]`, never a nested one. The pre-fix `[^\]]*` truncated at the first
+ * inner `]`, and because `extractPayload` matched RAW content while the numeric
+ * masker matched citation-STRIPPED content, the two disagreed on the marker's
+ * extent and a numeral after the inner `]` fell required by NEITHER multiset.
+ *
+ * Deliberately narrow (the exact declared syntax named in FR-013/
+ * `@/revise/prompt/compose.ts`'s producer instruction), and ONE level of
+ * nesting only: a marker whose brackets do not balance at one level -- an
+ * unterminated `[OPEN-QUESTION:` with no top-level `]`, or a stray inner `[`
+ * that consumes the marker's only `]` -- is simply NOT recognized (its bytes are
+ * ordinary prose, numerals enforced normally), per FR-013's "absent such a
+ * syntax, ... not a deterministic failure". Two adjacent markers never merge:
+ * a top-level `]` (matched by neither alternative) forces the current marker to
+ * close before the next `[OPEN-QUESTION:` begins.
  */
-const OPEN_QUESTION_RE = /\[OPEN-QUESTION:[^\]]*\]/g;
+const OPEN_QUESTION_RE = /\[OPEN-QUESTION:(?:[^\[\]]|\[[^\[\]]*\])*\]/g;
 
 /**
  * A blockquote physical line: up to three leading spaces, `>`, one optional
@@ -81,41 +96,52 @@ export function extractPayload(
   content: string,
   lexicon?: readonly string[],
 ): UnitPayload {
+  // INVARIANT (D3, AUDIT-20260730-14): the byte span an open-question marker
+  // payload REQUIRES is exactly the span the numeric extractor MASKS. Both the
+  // marker extraction and the numeric mask below are computed from the SAME
+  // `citationMasked` text with the SAME bracket-aware `OPEN_QUESTION_RE`, so
+  // they can never disagree about where a marker ends -- closing the pre-fix
+  // hole where a numeral after a marker's inner `]` was required by neither the
+  // marker multiset nor the numeric multiset.
+  //
+  // Citations are masked FIRST (see `maskCitations`): a citation nested inside a
+  // marker (`[^ref-4]`, `[ABC-1]`) is booked ONCE, in the citation multiset
+  // (extracted from RAW `content` below), and never double-booked into the
+  // marker's own bytes -- the same single-source-of-truth discipline the
+  // citation-vs-numeral masking already established (AUDIT-20260726-08/-11). A
+  // NON-citation inner bracket (`foo[0]`) is not masked and stays inside the
+  // marker span, kept intact by the bracket-aware pattern.
+  const citationMasked = maskCitations(content);
+  const openQuestionMarkers = extractMatches(citationMasked, OPEN_QUESTION_RE);
+  const markerMasked = citationMasked.replace(
+    new RegExp(OPEN_QUESTION_RE.source, OPEN_QUESTION_RE.flags),
+    '',
+  );
   return {
     quotes: extractQuotes(content),
     citations: extractMatches(content, CITATION_RE),
-    numerics: extractNumerics(content),
+    numerics: extractMatches(markerMasked, NUMERIC_RE),
     lexiconTerms: extractLexiconTerms(content, lexicon),
-    openQuestionMarkers: extractMatches(content, OPEN_QUESTION_RE),
+    openQuestionMarkers,
   };
 }
 
 /**
- * Extract maximal numeric-literal tokens, EXCLUDING any digits that belong to a
- * citation marker's own label (AUDIT-20260726-08/-11). `NUMERIC_RE` and
- * `CITATION_RE` scan the same bytes, so a digit-labeled footnote marker like
- * `[^1]` would otherwise be counted as BOTH a citation AND a numeric — a
- * double-booking that contaminates multiset survival in both directions (a
- * dropped prose numeral could be "corroborated" by a surviving citation marker,
- * and a legitimate footnote renumber could read as a numeric shortfall). Masking
- * the citation-marker spans before applying `NUMERIC_RE` makes extraction itself
- * correct at the single source of truth, so a bare `[^1]` yields a citation only.
+ * Remove every citation-marker span so the remaining text is the substrate BOTH
+ * the open-question marker extractor and the numeric extractor operate on
+ * (AUDIT-20260726-08/-11 + D3). Masking citations first means:
+ *   - a digit-labeled footnote (`[^1]`) is never double-booked as a numeric (a
+ *     dropped prose numeral could otherwise be "corroborated" by a surviving
+ *     citation), and
+ *   - a citation nested inside an open-question marker (`[^ref-4]`, `[ABC-1]`)
+ *     is booked ONCE in the citation multiset, never a second time inside the
+ *     marker's bytes.
  * The mask is built from `CITATION_RE.source`/`.flags` (not a re-declared
- * pattern), so extending `CITATION_RE` with the `[PB-P056]`-style source-marker
- * branch masks those spans too automatically -- `[PB-P056]` yields a citation
- * only, never a stray `056` numeral.
- *
- * T027 extends the same masking to `OPEN_QUESTION_RE` spans: a question like
- * `[OPEN-QUESTION: What caused the anomaly in sample 2?]` embeds a digit
- * (`2`) that must be counted as part of the marker's own required bytes, not
- * double-booked as a free-standing prose numeral -- exactly the citation-digit
- * problem this function already solves, for the same reason.
+ * pattern), so extending `CITATION_RE` (e.g. the `[PB-P056]` source-marker
+ * branch) masks those spans here automatically.
  */
-function extractNumerics(content: string): string[] {
-  const withoutCitationMarkers = content
-    .replace(new RegExp(CITATION_RE.source, CITATION_RE.flags), '')
-    .replace(new RegExp(OPEN_QUESTION_RE.source, OPEN_QUESTION_RE.flags), '');
-  return extractMatches(withoutCitationMarkers, NUMERIC_RE);
+function maskCitations(content: string): string {
+  return content.replace(new RegExp(CITATION_RE.source, CITATION_RE.flags), '');
 }
 
 /** Collect every match of a global regex verbatim, preserving order+multiplicity. */

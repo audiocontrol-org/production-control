@@ -120,7 +120,21 @@ export interface CoverageReport {
   spine_source_fidelity?: 'not-checked';
   /** The deterministic gate proves edition-side accounting only, never semantic support. Always `'not-checkable'` when present. */
   composition_semantic_grounding?: 'not-checkable';
-  /** Whether a declared open-question marker syntax was mechanically recognized for this edition (R7/FR-013). */
+  /**
+   * Whether the SPINE declares at least one `[OPEN-QUESTION: ...]` marker whose
+   * byte-survival into the edition is therefore ENFORCED (R7/FR-013):
+   * `'enforced'` iff the spine declares one (its bytes are then required payload,
+   * `@/fidelity/check-op-obligations.ts`); `'none-declared'` iff the spine
+   * declares none.
+   *
+   * EXACT MEANING (AUDIT-02): this field describes the SPINE only. `'none-declared'`
+   * means "the spine declared no marker", NOT "the edition contains no marker" --
+   * an edition that FABRICATES a marker absent from the spine is refused
+   * SEPARATELY by the `open_question_fabrication` check (`@/fidelity/run-mode.ts`),
+   * which withholds the verdict. So a passing report with `'none-declared'` can be
+   * read as "no marker guarantee was in play AND the edition invented none" --
+   * never as an edition free to author unresolved-question claims unchecked.
+   */
   open_question_markers?: 'enforced' | 'none-declared';
   checks: Record<string, CheckResult>;
 }

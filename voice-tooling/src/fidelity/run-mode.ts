@@ -22,6 +22,7 @@ import type { CoverageLedger, Mode } from '@/schema/ledger.ts';
 import { isMode } from '@/schema/ledger.ts';
 import { checkEditionGrounding } from '@/fidelity/check-edition-grounding.ts';
 import { checkNoCopy } from '@/fidelity/check-no-copy.ts';
+import { checkOpenQuestionFabrication } from '@/fidelity/check-open-question-fabrication.ts';
 import { failed, passed, notRun, type CheckResult } from '@/fidelity/report.ts';
 
 /**
@@ -119,5 +120,24 @@ export function applyComposeEditionChecks(
       'one or more edition units are whole-unit copies of a source beat; see failures[]',
     );
     failures.push(...noCopyResult.failures);
+  }
+
+  // AUDIT-02: the DESTINATION-side open-question marker check -- an edition may
+  // not INVENT an `[OPEN-QUESTION: ...]` marker the spine never declared (a
+  // fabricated unresolved-question claim about the source). Same three-state
+  // pass-side-evidence discipline as its siblings above (passed / not-run /,
+  // via run.ts's abort list, aborted).
+  const fabricationResult = checkOpenQuestionFabrication(ledger, sourceUnits, editionUnits);
+  if (!fabricationResult.applicable) {
+    checks['open_question_fabrication'] = notRun(
+      'revise: open-question marker fabrication not applicable',
+    );
+  } else if (fabricationResult.ok) {
+    checks['open_question_fabrication'] = passed({ checked: fabricationResult.checked });
+  } else {
+    checks['open_question_fabrication'] = failed(
+      'one or more edition open-question markers are not present in the spine (fabricated); see failures[]',
+    );
+    failures.push(...fabricationResult.failures);
   }
 }

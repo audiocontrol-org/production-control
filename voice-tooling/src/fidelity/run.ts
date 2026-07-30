@@ -84,7 +84,9 @@ export interface FidelityInput {
  * D2 (AUDIT-13): `edition_grounding` and `no_copy` are included so a
  * mode-mismatch compose report marks them `aborted` — a THIRD distinguishable
  * state ("aborted before it could run"), never silent absence that a consumer
- * could misread as "checked and clean" or "never wired".
+ * could misread as "checked and clean" or "never wired". `open_question_fabrication`
+ * (AUDIT-02) is the same class of compose-only edition-side check, so it aborts
+ * here too.
  */
 const AFTER_MODE_AGREEMENT = [
   'source_hash',
@@ -97,6 +99,7 @@ const AFTER_MODE_AGREEMENT = [
   'uncorroborated_units',
   'edition_grounding',
   'no_copy',
+  'open_question_fabrication',
 ] as const;
 
 /** Checks that ABORT (become `not-run`) after `source_hash` fails. */

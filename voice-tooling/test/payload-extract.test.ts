@@ -155,3 +155,71 @@ test('extraction is pure: same input yields deeply-equal payloads', () => {
   const content = '> q [^1] 1,000\n';
   assert.deepEqual(extractPayload(content, ['q']), extractPayload(content, ['q']));
 });
+
+// ---- D3 (AUDIT-20260730-14): nested-bracket open-question markers ----------
+//
+// A marker may contain a nested bracket -- a `[^n]` citation, a `[ABC-1]`
+// source marker, or a bare `foo[0]`. The pre-fix `/\[OPEN-QUESTION:[^\]]*\]/`
+// truncated at the FIRST inner `]`, and `extractPayload` (raw) vs the numeric
+// masker (citation-stripped) then disagreed on the marker's extent -- so a
+// numeral after the inner `]` was required by NEITHER the marker multiset NOR
+// the numeric multiset. The invariant now stated in extract.ts: "the byte span
+// the marker payload requires is exactly the span the numeric extractor masks."
+// Each fixture is a DISTINCT nested shape (channel-enumeration).
+
+test('D3 (a): a marker containing a [^n] footnote citation -- citation booked ONCE, marker spans past the inner ], numeral after it stays required by the marker', () => {
+  // The finding's worked example. `42` is after `[^ref-4]`'s `]`.
+  const payload = extractPayload('Not settled: [OPEN-QUESTION: does [^ref-4] cover the 42-unit cohort?]');
+  // The inner citation is its OWN required payload (no double-booking into the marker).
+  assert.deepEqual(payload.citations, ['[^ref-4]']);
+  // `42` is inside the marker's span, so it is NOT a free-standing prose numeral.
+  assert.deepEqual(payload.numerics, []);
+  // The marker spans the WHOLE question (citation masked out); nothing truncated.
+  assert.deepEqual(payload.openQuestionMarkers, ['[OPEN-QUESTION: does  cover the 42-unit cohort?]']);
+  // Byte-level proof it is not truncated at the inner `]`: the tail survives.
+  assert.ok(payload.openQuestionMarkers[0]?.includes('42-unit cohort?]'));
+});
+
+test('D3 (b): a marker containing a [ABC-1] source marker -- source marker booked as a citation, marker spans the full question', () => {
+  const payload = extractPayload('Open item [OPEN-QUESTION: will [ABC-1] hold at 7 sites?]');
+  assert.deepEqual(payload.citations, ['[ABC-1]']);
+  assert.deepEqual(payload.numerics, []);
+  assert.deepEqual(payload.openQuestionMarkers, ['[OPEN-QUESTION: will  hold at 7 sites?]']);
+});
+
+test('D3 (c): a marker containing a bare foo[0] -- the bracket-aware pattern keeps foo[0] inside the marker, no numeral leaks', () => {
+  // `[0]` is NOT a citation, so it stays in the marker bytes; both `0` and `3`
+  // are inside the marker span.
+  const payload = extractPayload('[OPEN-QUESTION: is foo[0] valid across 3 runs?]');
+  assert.deepEqual(payload.citations, []);
+  assert.deepEqual(payload.numerics, []);
+  assert.deepEqual(payload.openQuestionMarkers, ['[OPEN-QUESTION: is foo[0] valid across 3 runs?]']);
+});
+
+test('D3 (d): a numeral positioned AFTER the inner ] remains required by the marker multiset', () => {
+  const payload = extractPayload('[OPEN-QUESTION: after [^x] there are 7 more]');
+  assert.deepEqual(payload.citations, ['[^x]']);
+  assert.deepEqual(payload.numerics, []);
+  assert.deepEqual(payload.openQuestionMarkers, ['[OPEN-QUESTION: after  there are 7 more]']);
+});
+
+test('D3 (round-0): a prose numeral OUTSIDE a nested-citation marker is STILL extracted -- the extent fix does not change non-marker numeric extraction', () => {
+  const payload = extractPayload('Built in 1978. [OPEN-QUESTION: does [^ref-4] cover 42 units?]');
+  assert.deepEqual(payload.numerics, ['1978']); // 1978 outside; 42 owned by the marker
+  assert.deepEqual(payload.citations, ['[^ref-4]']);
+});
+
+test('D3 (round-0): an UNTERMINATED [OPEN-QUESTION: with no closing ] is not a marker -- its numeral is ordinary prose, no bytes lost', () => {
+  const payload = extractPayload('[OPEN-QUESTION: this never closes and mentions 5');
+  assert.deepEqual(payload.openQuestionMarkers, []);
+  assert.deepEqual(payload.numerics, ['5']);
+});
+
+test('D3 (round-0): two adjacent markers do NOT over-merge into one span', () => {
+  const payload = extractPayload('[OPEN-QUESTION: a?] then [OPEN-QUESTION: b [^1]?]');
+  assert.deepEqual(payload.openQuestionMarkers, [
+    '[OPEN-QUESTION: a?]',
+    '[OPEN-QUESTION: b ?]',
+  ]);
+  assert.deepEqual(payload.citations, ['[^1]']);
+});
