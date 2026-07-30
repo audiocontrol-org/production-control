@@ -6,8 +6,8 @@
 //
 // Intended API (unchanged signature -- `checkOpObligations(ledger, sourceUnits,
 // editionUnits, lexicon?)`): T020 makes the function read the ALREADY-PRESENT
-// `ledger.mode` field (schema/ledger.ts, defaulted to 'revise' by `loadLedger`)
-// and delegate the illegal-disposition judgment to the ALREADY-GREEN, shared
+// `ledger.mode` field and delegate the illegal-disposition judgment to the
+// ALREADY-GREEN, shared
 // `policy/op-legality.ts#checkOpLegality`, folding its `compose-forbids-verbatim`
 // / `compose-forbids-cut` failures (verbatim message:
 // "compose-mode forbids verbatim: coverage entry N"; cut message:
@@ -15,6 +15,14 @@
 // `failures[]`. This file does NOT need a new parameter to be RED: it builds a
 // ledger with `mode: 'compose'` and expects the illegal-disposition failure the
 // CURRENT (mode-blind) implementation does not yet produce.
+//
+// SHIPPED mode semantics (AUDIT-06/-45): `loadLedger` ALWAYS stamps `mode` and
+// returns a `LoadedLedger` whose `mode` is REQUIRED (schema/ledger.ts) -- a
+// pre-006 ledger with no `mode:` key reads as `'revise'` for backward
+// compatibility, but a LOADED ledger can never be missing its mode. This is NOT
+// a fail-open default INSIDE this check: `checkOpObligations` does not default an
+// absent mode -- an unstamped `CoverageLedger` reaching it by other means is a
+// caller defect it THROWS on (fail-closed), never a silent 'revise'.
 //
 // Whole-unit no-copy (R4) is deliberately OUT of scope here -- that is
 // `check-no-copy.test.ts` / T021's concern (check ordering step 5, a separate

@@ -4,9 +4,11 @@
 // ("Model protocol (compose)") and plan.md's Project Structure
 // (`revise/prompt/{compose,revise}.ts`).
 //
-// `@/revise/prompt/index.ts` does not exist yet at RED time (T003 implements
-// it) -- this file is expected to fail to load with a "cannot find module"
-// error until then, which is the correct RED state for a test-first task.
+// Authored RED-first against T003 (`@/revise/prompt/index.ts`): when this suite
+// was written the module did not exist, so it initially failed to load with a
+// "cannot find module" error -- the correct RED state for a test-first task.
+// T003 has since implemented the mode-keyed prompt module (852e77e), so this
+// suite now loads and runs GREEN; the note remains as authorship provenance.
 
 import test from 'node:test';
 import * as assert from 'node:assert/strict';

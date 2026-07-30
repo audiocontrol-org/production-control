@@ -18,7 +18,7 @@
 import { parse as parseYamlText } from 'yaml';
 import { isRecord } from '@/util/is-record.ts';
 import type { SourceUnit } from '@/units/derive.ts';
-import type { CoverageLedger, Mode } from '@/schema/ledger.ts';
+import type { LoadedLedger, Mode } from '@/schema/ledger.ts';
 import { isMode } from '@/schema/ledger.ts';
 import { checkEditionGrounding } from '@/fidelity/check-edition-grounding.ts';
 import { checkNoCopy } from '@/fidelity/check-no-copy.ts';
@@ -94,7 +94,7 @@ export function readDeclaredMode(ledgerYaml: string): DeclaredMode {
 export function applyComposeEditionChecks(
   checks: Record<string, CheckResult>,
   failures: string[],
-  ledger: CoverageLedger,
+  ledger: LoadedLedger,
   editionUnits: readonly SourceUnit[],
   sourceUnits: readonly SourceUnit[],
 ): void {

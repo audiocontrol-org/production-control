@@ -152,7 +152,26 @@ test('SC-006 regression: a pre-006 shipped-shape revise edition (no mode field, 
   // The fixture ledger itself carries neither `mode:` nor `grounding:` -- the
   // exact pre-006 shipped shape. `loadLedger` must still load it, defaulting
   // the absent `mode` to `'revise'` (backward compatibility, @/schema/ledger.ts).
-  const ledger = loadLedger(extractLedgerYaml(edition));
+  //
+  // AUDIT-37 (de-tautology): assert the PRECONDITION on the raw ledger bytes --
+  // that they genuinely lack a `mode:` / `grounding:` key -- BEFORE loading.
+  // Without this, `ledger.mode === 'revise'` is satisfied both by "the key was
+  // absent and the default fired" AND by "the fixture literally says mode:
+  // revise", so a future normalization stamping `mode: revise` into the shared
+  // fixture would leave this guard green while the absent-key path it exists to
+  // protect stops being exercised.
+  const ledgerYaml = extractLedgerYaml(edition);
+  assert.doesNotMatch(
+    ledgerYaml,
+    /^\s*mode\s*:/m,
+    'precondition: the pre-006 fixture ledger bytes must genuinely carry NO mode key',
+  );
+  assert.doesNotMatch(
+    ledgerYaml,
+    /^\s*grounding\s*:/m,
+    'precondition: the pre-006 fixture ledger bytes must genuinely carry NO grounding key',
+  );
+  const ledger = loadLedger(ledgerYaml);
   assert.equal(
     ledger.mode,
     'revise',

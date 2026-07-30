@@ -31,9 +31,13 @@ export function finalize(
   checks: Record<string, CheckResult>,
   failures: string[],
   decided: true,
-  mode?: Mode,
-  modeComparison?: ModeComparison,
-  openQuestionMarkers: 'enforced' | 'none-declared' = 'none-declared',
+  // AUDIT-29: `mode`, `modeComparison`, and `openQuestionMarkers` are all
+  // REQUIRED (no defaults). A caller that omits the open-question-markers state
+  // is a COMPILE error, never a silently fabricated `'none-declared'` -- an
+  // abort/standalone caller passes `undefined` EXPLICITLY (see `finalizeAbort`).
+  mode: Mode | undefined,
+  modeComparison: ModeComparison | undefined,
+  openQuestionMarkers: 'enforced' | 'none-declared' | undefined,
 ): FidelityResult {
   // Every applicable path in `runFidelity` already sets both honest-boundary
   // checks before reaching here EXCEPT the abort paths (source_hash/
@@ -56,12 +60,28 @@ export function finalize(
   // check, or the `op_obligations` catch-all) by the time we get here, so there
   // is no `failures.length` coupling and no advisory side-channel that could flip
   // a pass. `failures[]` remains for the human-facing ValidateResponse only.
-  const verdict = computeVerdict({ checks });
+  //
+  // AUDIT-30: `mode` is threaded so `computeVerdict` can require the compose-only
+  // gates (edition_grounding / no_copy / open_question_fabrication) present-and-
+  // passed for a COMPOSE passing verdict -- a `passed` compose report now PROVES
+  // those checks ran, never inferred from the source-side set alone.
+  const verdict = computeVerdict(mode === undefined ? { checks } : { checks, mode });
   const isPassed = verdict === 'passed';
   // FR-012 (spec 006): a composed edition's report always carries the
   // trust-boundary fields, regardless of verdict — they describe the scope
-  // of what was checked, not whether it passed.
-  const trustBoundary = mode === 'compose' ? composeTrustBoundaryFields(openQuestionMarkers) : {};
+  // of what was checked, not whether it passed. AUDIT-29: a compose report
+  // reaching here without an explicit marker state is a caller defect -- fail
+  // LOUD rather than assemble a fabricated `'none-declared'`.
+  let trustBoundary: ReturnType<typeof composeTrustBoundaryFields> | Record<string, never> = {};
+  if (mode === 'compose') {
+    if (openQuestionMarkers === undefined) {
+      throw new Error(
+        'finalize: a compose report requires an explicit open-question-markers state ' +
+          '(enforced|none-declared); none was supplied (would fabricate a spine fact)',
+      );
+    }
+    trustBoundary = composeTrustBoundaryFields(openQuestionMarkers);
+  }
   // `mode_comparison` (spec 006 US5, FR-012) records WHICH mode-agreement pass
   // outcome held — applies to ANY mode, so (unlike the compose-only trust-
   // boundary fields) it is threaded whenever mode-agreement passed, incl. a

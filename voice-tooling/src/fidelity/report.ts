@@ -178,6 +178,23 @@ export function composeTrustBoundaryFields(
  * full vocabulary closes that missing-required-check false pass: a report missing any
  * required key yields NO verdict.
  */
+/**
+ * The compose-only gates (spec 006, AUDIT-30) that a COMPOSE `passed` verdict
+ * additionally requires present-AND-passed — over and above `REQUIRED_CHECKS`.
+ * For a revise ledger these are inapplicable (present as `not-run`) and are NOT
+ * required by the verdict. Requiring them for compose is the fail-closed boundary
+ * that makes a `passed` compose report PROVE edition-grounding, whole-unit
+ * no-copy, and open-question-marker fabrication were all actually checked and
+ * clean — a caller cannot assemble a passing compose report that silently
+ * skipped one (the live `runFidelity` path always populates them, but
+ * `computeVerdict` is the shared verdict primitive and owns the guarantee).
+ */
+export const COMPOSE_REQUIRED_PASSED_CHECKS = [
+  'edition_grounding',
+  'no_copy',
+  'open_question_fabrication',
+] as const;
+
 export const REQUIRED_CHECKS = [
   // mode_agreement is sequenced FIRST (contract step 1) and now emits pass-side
   // evidence on EVERY decided run (revise and compose alike, AUDIT-15): making
@@ -342,6 +359,20 @@ export function computeVerdict(report: CoverageReport): 'passed' | undefined {
   for (const key of REQUIRED_CHECKS) {
     if (!Object.prototype.hasOwnProperty.call(report.checks, key)) {
       return undefined;
+    }
+  }
+  // (1b) AUDIT-30: a COMPOSE report additionally requires each compose-only gate
+  // present AND in the `passed` state — not merely non-blocking. A gate that is
+  // absent, `not-run`, or otherwise non-passed withholds the verdict, so a
+  // `passed` compose report PROVES those checks ran and cleared. For revise (and
+  // any report with no compose mode) these gates are inapplicable and not
+  // required — leaving every existing revise/mode-absent verdict unchanged.
+  if (report.mode === 'compose') {
+    for (const key of COMPOSE_REQUIRED_PASSED_CHECKS) {
+      const result = report.checks[key];
+      if (result === undefined || result.state !== 'passed') {
+        return undefined;
+      }
     }
   }
   // (2) No present check may be in a blocking state.

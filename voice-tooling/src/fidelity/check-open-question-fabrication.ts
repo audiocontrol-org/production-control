@@ -60,28 +60,41 @@ export function checkOpenQuestionFabrication(
     return { ok: true, applicable: false, failures: [], checked: 0 };
   }
 
-  const spineMarkers = new Set<string>();
-  for (const unit of sourceUnits) {
-    for (const marker of extractPayload(unit.content).openQuestionMarkers) {
-      spineMarkers.add(marker);
-    }
-  }
+  // AUDIT-33: compare markers as MULTISETS (count-sensitive), not sets. A set
+  // comparison let an edition that repeats one spine-declared marker N times pass
+  // (byte-present, and 1-of-1 subset of N-of-edition) -- but the surplus copies
+  // are INVENTED unresolved-question claims the spine never made. Fabrication is
+  // therefore: an edition marker whose occurrence COUNT exceeds the spine's count
+  // (the absent-marker case is just count 0 in the spine).
+  const spineCounts = countMarkers(sourceUnits);
+  const editionCounts = countMarkers(editionUnits);
 
   const failures: string[] = [];
-  const seen = new Set<string>();
-  for (const unit of editionUnits) {
-    for (const marker of extractPayload(unit.content).openQuestionMarkers) {
-      if (seen.has(marker)) {
-        continue; // one refusal per DISTINCT fabricated marker (mirrors checkCitations).
-      }
-      seen.add(marker);
-      if (!spineMarkers.has(marker)) {
-        failures.push(
-          `open-question marker preservation: edition contains marker ${marker} absent from the spine (fabrication)`,
-        );
-      }
+  // Iterate DISTINCT edition markers so there is one refusal per fabricated
+  // marker (mirrors `checkCitations`'s per-distinct reporting granularity),
+  // while the COMPARISON itself is count-sensitive.
+  for (const [marker, editionCount] of editionCounts) {
+    const spineCount = spineCounts.get(marker) ?? 0;
+    if (editionCount > spineCount) {
+      const surplus = editionCount - spineCount;
+      failures.push(
+        `open-question marker preservation: edition emits marker ${marker} ${editionCount} time(s) ` +
+          `but the spine declares it ${spineCount} time(s) ` +
+          `(fabrication: ${surplus} invented cop${surplus === 1 ? 'y' : 'ies'})`,
+      );
     }
   }
 
-  return { ok: failures.length === 0, applicable: true, failures, checked: seen.size };
+  return { ok: failures.length === 0, applicable: true, failures, checked: editionCounts.size };
+}
+
+/** Count each `[OPEN-QUESTION: ...]` marker's occurrences across the given units (multiset). */
+function countMarkers(units: readonly SourceUnit[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const unit of units) {
+    for (const marker of extractPayload(unit.content).openQuestionMarkers) {
+      counts.set(marker, (counts.get(marker) ?? 0) + 1);
+    }
+  }
+  return counts;
 }

@@ -96,6 +96,51 @@ test('AUDIT-02 (US1 happy path): a spine-declared marker LEGITIMATELY preserved 
   );
 });
 
+test('AUDIT-38: a COMPOSE ledger validated with NO requested_mode records mode_comparison none-supplied AND still RUNS the compose gates (present-and-passed) -- omission does not skip them', () => {
+  // Pins the channel AUDIT-38 named: a caller that omits `requested_mode` grades
+  // the edition under the ledger's own mode. For a COMPOSE ledger that must NOT
+  // downgrade to revise rules -- the compose gates (edition_grounding, no_copy,
+  // open_question_fabrication) must still run and clear, and mode_comparison
+  // reads `none-supplied` (no independent comparison), never a silent skip.
+  const editionBody = 'Alpha rewritten.\n\nBeta rewritten.\n\nGamma rewritten.\n';
+  const result = runFidelity({
+    source: SOURCE_WITHOUT_MARKER,
+    sourceIdentity: SOURCE_IDENTITY,
+    edition: composeEdition(SOURCE_WITHOUT_MARKER, editionBody),
+    // No requestedMode -- standalone validation.
+  });
+
+  assert.equal(result.passed, true, `expected a pass; failures: ${result.failures.join('; ')}`);
+  assert.equal(result.report.verdict, 'passed');
+  assert.equal(
+    result.report.mode_comparison,
+    'none-supplied',
+    'no requested_mode was supplied, so no independent mode comparison occurred',
+  );
+  assert.equal(
+    result.report.mode,
+    'compose',
+    'the compose trust-boundary mode is recorded from the ledger, not skipped',
+  );
+  // The load-bearing assertions: the compose gates RAN (present-and-passed),
+  // proving mode_comparison being none-supplied did NOT bypass them.
+  assert.equal(
+    result.report.checks['edition_grounding']?.state,
+    'passed',
+    'edition_grounding ran and cleared -- not skipped by an omitted requested_mode',
+  );
+  assert.equal(
+    result.report.checks['no_copy']?.state,
+    'passed',
+    'no_copy ran and cleared -- not skipped by an omitted requested_mode',
+  );
+  assert.equal(
+    result.report.checks['open_question_fabrication']?.state,
+    'passed',
+    'open_question_fabrication ran and cleared -- not skipped by an omitted requested_mode',
+  );
+});
+
 test('AUDIT-02 (revise channel): the fabrication check is NOT applicable for revise -- markers are ordinary prose there', () => {
   const result = runFidelity({
     source: readFixture('sources', 'faithful-source.md'),

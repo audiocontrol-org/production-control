@@ -42,6 +42,24 @@ function fullChecks(
   };
 }
 
+/**
+ * A full COMPOSE check map (AUDIT-30): `fullChecks()` plus the three compose-only
+ * gates present-and-PASSED. A compose `passed` verdict requires these to have
+ * actually run and cleared -- `computeVerdict` (given `mode: 'compose'`) refuses
+ * a verdict when any of them is absent or not present-and-passed.
+ */
+function composeFullChecks(
+  overrides: Record<string, CheckResult> = {},
+): Record<string, CheckResult> {
+  return {
+    ...fullChecks(),
+    edition_grounding: passed({ units: 3 }),
+    no_copy: passed({ units: 3 }),
+    open_question_fabrication: passed({ checked: 0 }),
+    ...overrides,
+  };
+}
+
 test('coverage-report: passed() helper constructs a passed CheckResult', () => {
   const result = passed();
   assert.equal(result.state, 'passed');
@@ -352,4 +370,39 @@ test('sc-004-invariant: document the invariant clearly', () => {
   const missingRequired = fullChecks();
   delete missingRequired['citations'];
   assert.equal(computeVerdict({ checks: missingRequired }), undefined);
+});
+
+// ---- AUDIT-30: compose-only gates are required for a COMPOSE passing verdict ----
+
+test('verdict-invariant (AUDIT-30): a COMPOSE report with every compose gate present-and-passed yields passed', () => {
+  assert.equal(computeVerdict({ checks: composeFullChecks(), mode: 'compose' }), 'passed');
+});
+
+test('verdict-invariant (AUDIT-30): a COMPOSE report MISSING edition_grounding yields NO verdict, even though every present check passed', () => {
+  const checks = composeFullChecks();
+  delete checks['edition_grounding'];
+  assert.equal(computeVerdict({ checks, mode: 'compose' }), undefined);
+});
+
+test('verdict-invariant (AUDIT-30): a COMPOSE report MISSING no_copy yields NO verdict', () => {
+  const checks = composeFullChecks();
+  delete checks['no_copy'];
+  assert.equal(computeVerdict({ checks, mode: 'compose' }), undefined);
+});
+
+test('verdict-invariant (AUDIT-30): a COMPOSE report MISSING open_question_fabrication yields NO verdict', () => {
+  const checks = composeFullChecks();
+  delete checks['open_question_fabrication'];
+  assert.equal(computeVerdict({ checks, mode: 'compose' }), undefined);
+});
+
+test('verdict-invariant (AUDIT-30): a COMPOSE report whose no_copy is present-but-not-run yields NO verdict -- compose requires present-AND-passed, not merely non-blocking', () => {
+  const checks = composeFullChecks({
+    no_copy: notRun('revise: whole-unit no-copy not applicable'),
+  });
+  assert.equal(computeVerdict({ checks, mode: 'compose' }), undefined);
+});
+
+test('verdict-invariant (AUDIT-30): a REVISE report is unaffected -- the compose gates are NOT required, a full revise set still passes', () => {
+  assert.equal(computeVerdict({ checks: fullChecks(), mode: 'revise' }), 'passed');
 });

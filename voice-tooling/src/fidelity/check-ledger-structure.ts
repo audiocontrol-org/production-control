@@ -1,5 +1,5 @@
 import { parse as parseYamlText, stringify as stringifyYaml } from 'yaml';
-import { loadLedger, type CoverageLedger } from '@/schema/ledger.ts';
+import { loadLedger, type LoadedLedger } from '@/schema/ledger.ts';
 import { extractPayload } from '@/payload/extract.ts';
 
 /**
@@ -22,7 +22,8 @@ const FRONTMATTER_PATTERN = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/;
 
 export interface LedgerStructureCheckResult {
   ok: boolean;
-  ledger?: CoverageLedger;
+  /** A LOADED ledger (AUDIT-45): its `mode` is guaranteed present by the loader. */
+  ledger?: LoadedLedger;
   failure?: string;
 }
 

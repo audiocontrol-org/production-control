@@ -59,10 +59,16 @@ export interface CoverageLedger {
   source: { identity: string; hash: string };
   voice: { identity: string; hash: string };
   /**
-   * Optional on the type so pre-006 construction sites that build a
-   * `CoverageLedger` literal directly (not via `loadLedger`) are unaffected;
-   * `loadLedger` itself always populates this, defaulting to 'revise' when
-   * absent from the ledger bytes.
+   * Optional on the RAW type so pre-006 construction sites that build a
+   * `CoverageLedger` literal directly (not via `loadLedger`) are unaffected.
+   *
+   * A ledger obtained from `loadLedger`, however, is a {@link LoadedLedger}
+   * whose `mode` is REQUIRED (never `Mode | undefined`) -- the loader always
+   * stamps it, defaulting to `'revise'` when absent from the bytes (pre-006
+   * backward compat). Consumers on the validator path take `LoadedLedger`, so a
+   * compose-only obligation can never be silently skipped by a `mode` the type
+   * let a caller forget (AUDIT-45): the fail-open the runtime fix closed does
+   * not re-enter through the type.
    */
   mode?: Mode;
   coverage: CoverageEntry[];
@@ -70,6 +76,20 @@ export interface CoverageLedger {
   grounding?: GroundingRecord[];
   /** Additive extensibility (D21): unknown ledger-level keys pass through untouched. */
   [extra: string]: unknown;
+}
+
+/**
+ * A coverage ledger AS RETURNED BY `loadLedger` (AUDIT-45): identical to
+ * `CoverageLedger` except that `mode` is REQUIRED. `loadLedger` always stamps a
+ * mode (defaulting an absent one to `'revise'` for pre-006 backward compat), so
+ * its return type reflects that guarantee -- and every validator-path consumer
+ * that branches on `ledger.mode` takes `LoadedLedger`, making mode-presence a
+ * COMPILE-TIME fact rather than a runtime hope. Raw `CoverageLedger` literals
+ * (tests, builders) may still omit `mode`; a ledger that reached the validator
+ * cannot.
+ */
+export interface LoadedLedger extends CoverageLedger {
+  mode: Mode;
 }
 
 /**
@@ -82,7 +102,7 @@ export interface CoverageLedger {
  * @throws Error naming the specific offending field/entry for every
  *   structural violation determinable from the ledger alone (D20).
  */
-export function loadLedger(yamlText: string): CoverageLedger {
+export function loadLedger(yamlText: string): LoadedLedger {
   const parsed = parseRawYaml(yamlText);
   const root = requireRecord(parsed, 'ledger');
 

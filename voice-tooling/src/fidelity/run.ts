@@ -15,7 +15,7 @@
 
 import { deriveUnits } from '@/units/derive.ts';
 import type { SourceUnit } from '@/units/derive.ts';
-import type { CoverageLedger } from '@/schema/ledger.ts';
+import type { LoadedLedger } from '@/schema/ledger.ts';
 import { checkSourceHash } from '@/fidelity/check-source-hash.ts';
 import {
   checkLedgerStructure,
@@ -132,6 +132,19 @@ const AFTER_UNIT_ACCOUNTING = [
   'uncorroborated_units',
 ] as const;
 
+/**
+ * Finalize a DECIDED abort (a source-side check failed and the sequence was cut
+ * short). The mode, mode_comparison, and open-question-markers state are not
+ * known on an abort, so they are passed EXPLICITLY as `undefined` -- `finalize`
+ * requires all three (AUDIT-29), fabricating no default `'none-declared'` marker
+ * fact. A compose ledger that aborts therefore carries NO trust-boundary fields
+ * (they are only emitted on a full compose run), which is honest: the run never
+ * reached them.
+ */
+function finalizeAbort(checks: Record<string, CheckResult>, failures: string[]): FidelityResult {
+  return finalize(checks, failures, true, undefined, undefined, undefined);
+}
+
 export function runFidelity(input: FidelityInput): FidelityResult {
   // Fail-loud guard (D14/FR-024): v1 never declares a quote bank as input.
   // A caller that declares one anyway gets an actual thrown exception here,
@@ -173,7 +186,7 @@ export function runFidelity(input: FidelityInput): FidelityResult {
     checks['mode_agreement'] = failed(failure);
     failures.push(...modeResult.failures);
     markAborted(checks, AFTER_MODE_AGREEMENT, 'mode_agreement');
-    return finalize(checks, failures, true);
+    return finalizeAbort(checks, failures);
   }
   const modeComparison = modeResult.mode_comparison;
   // D2 (AUDIT-15): emit pass-side evidence for the FIRST check on EVERY decided
@@ -204,7 +217,7 @@ export function runFidelity(input: FidelityInput): FidelityResult {
     checks['source_hash'] = aborted('aborted: ledger_structure failed');
     failures.push(structureFailure);
     markAborted(checks, AFTER_LEDGER_STRUCTURE, 'ledger_structure');
-    return finalize(checks, failures, true);
+    return finalizeAbort(checks, failures);
   }
 
   const hashResult = checkSourceHash(input.source, declaredSourceHash);
@@ -213,7 +226,7 @@ export function runFidelity(input: FidelityInput): FidelityResult {
     checks['source_hash'] = failed(failure);
     failures.push(failure);
     markAborted(checks, AFTER_SOURCE_HASH, 'source_hash');
-    return finalize(checks, failures, true);
+    return finalizeAbort(checks, failures);
   }
   checks['source_hash'] = passed();
 
@@ -224,7 +237,7 @@ export function runFidelity(input: FidelityInput): FidelityResult {
     checks['ledger_structure'] = failed(failure);
     failures.push(failure);
     markAborted(checks, AFTER_LEDGER_STRUCTURE, 'ledger_structure');
-    return finalize(checks, failures, true);
+    return finalizeAbort(checks, failures);
   }
 
   // D13.4 (contract step 6, evaluated here as a ledger-adjacent precondition,
@@ -249,17 +262,20 @@ export function runFidelity(input: FidelityInput): FidelityResult {
     checks['ledger_structure'] = failed(failure);
     failures.push(failure);
     markAborted(checks, AFTER_LEDGER_STRUCTURE, 'ledger_structure');
-    return finalize(checks, failures, true);
+    return finalizeAbort(checks, failures);
   }
   if (!allowlistResult.ok) {
     const failure = allowlistResult.failure ?? 'source citation allow-list: violation';
     checks['ledger_structure'] = failed(failure);
     failures.push(failure);
     markAborted(checks, AFTER_LEDGER_STRUCTURE, 'ledger_structure');
-    return finalize(checks, failures, true);
+    return finalizeAbort(checks, failures);
   }
   checks['ledger_structure'] = passed();
-  const ledger: CoverageLedger = structResult.ledger;
+  // AUDIT-45: `structResult.ledger` is a `LoadedLedger` -- its `mode` is
+  // COMPILE-TIME guaranteed present, so every `ledger.mode` branch below (and in
+  // the compose edition-side checks) can never silently fall open to revise.
+  const ledger: LoadedLedger = structResult.ledger;
 
   // ---- 3. unit_accounting -------------------------------------------------
   const accountingResult = checkUnitAccounting(sourceUnits, ledger);
@@ -270,7 +286,7 @@ export function runFidelity(input: FidelityInput): FidelityResult {
     );
     failures.push(...accountingResult.failures);
     markAborted(checks, AFTER_UNIT_ACCOUNTING, 'unit_accounting');
-    return finalize(checks, failures, true);
+    return finalizeAbort(checks, failures);
   }
   checks['unit_accounting'] = passed({ total: accountingResult.total });
 
@@ -335,7 +351,7 @@ export function runFidelity(input: FidelityInput): FidelityResult {
     checks['ledger_structure'] = failed(failure);
     failures.push(failure);
     markAborted(checks, AFTER_LEDGER_STRUCTURE, 'ledger_structure');
-    return finalize(checks, failures, true);
+    return finalizeAbort(checks, failures);
   }
   const citationResult = checkCitations(sourceBody, editionBody, sourceAllowlist);
   failures.push(...citationResult.failures);
