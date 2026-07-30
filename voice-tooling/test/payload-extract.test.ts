@@ -146,6 +146,37 @@ test('open-question markers: a free-standing numeral beside a marker is still ex
   assert.deepEqual(payload.numerics, ['1978']);
 });
 
+// AUDIT-20260730-23: the marker-span numeric MASK enforces "the marker owns
+// these bytes as required payload" -- true ONLY when the marker obligation is IN
+// FORCE (compose). Default (obligation in force) masks; passing
+// `markerObligationInForce: false` (revise, where the marker carries NO survival
+// obligation) must NOT mask -- so the interior numeral stays enforced as an
+// ordinary prose numeral instead of falling required by NEITHER multiset.
+test('open-question markers (AUDIT-23): default (obligation in force) masks the interior numeral out of numerics -- D3 preserved', () => {
+  const payload = extractPayload('[OPEN-QUESTION: does the 42-unit cohort hold?]');
+  assert.deepEqual(payload.numerics, []);
+  assert.deepEqual(payload.openQuestionMarkers, ['[OPEN-QUESTION: does the 42-unit cohort hold?]']);
+});
+
+test('open-question markers (AUDIT-23): with the obligation NOT in force (revise), the interior numeral STAYS in numerics', () => {
+  const payload = extractPayload('[OPEN-QUESTION: does the 42-unit cohort hold?]', undefined, {
+    markerObligationInForce: false,
+  });
+  assert.deepEqual(payload.numerics, ['42'], 'a marker-interior numeral must remain enforced in revise');
+  // The marker itself is still recognized as a span (so a citation nested inside
+  // it is still booked once); it is the check layer, not extract, that decides
+  // whether markers carry a survival obligation.
+  assert.deepEqual(payload.openQuestionMarkers, ['[OPEN-QUESTION: does the 42-unit cohort hold?]']);
+});
+
+test('open-question markers (AUDIT-23): with the obligation NOT in force, a citation nested in a marker is STILL booked once, not double-counted', () => {
+  const payload = extractPayload('[OPEN-QUESTION: does [^ref-4] cover the 42-unit cohort?]', undefined, {
+    markerObligationInForce: false,
+  });
+  assert.deepEqual(payload.citations, ['[^ref-4]']);
+  assert.deepEqual(payload.numerics, ['42']);
+});
+
 test('open-question markers: the bracketed form does not also register as a citation', () => {
   const payload = extractPayload('[OPEN-QUESTION: What caused the anomaly in sample 2?]');
   assert.deepEqual(payload.citations, []);

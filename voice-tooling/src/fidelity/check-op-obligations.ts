@@ -130,6 +130,24 @@ export function checkOpObligations(
   const editionByKey = indexUnits(editionUnits);
   const destinationOwners = buildDestinationOwners(ledger.coverage);
 
+  // D6 (AUDIT-06): NO `?? 'revise'` fail-open default. A `CoverageLedger`
+  // reaching this gate MUST carry a mode; an unstamped ledger is a caller defect.
+  // Read it here (before building supplies) so BOTH the destination supplies and
+  // the source payload are extracted under the SAME marker scope (AUDIT-23).
+  if (ledger.mode === undefined) {
+    throw new Error('coverage ledger has no mode stamp; cannot judge op legality');
+  }
+  const mode: Mode = ledger.mode;
+
+  // D11 (AUDIT-08) / D6 (AUDIT-23): the open-question-marker SURVIVAL obligation
+  // (R7/FR-013) is COMPOSE-SCOPED, mirroring `lexiconApplicable`. This single
+  // flag drives BOTH (a) whether a source unit's markers carry a survival
+  // obligation, AND (b) the marker-span numeric mask inside `extractPayload`: in
+  // revise the marker carries no obligation, so a numeral INSIDE it must remain
+  // enforced as an ordinary prose numeral (left in `numerics`), never masked out
+  // to fall required by neither multiset (AUDIT-23).
+  const openQuestionApplicable = mode === 'compose';
+
   // The invariant (AUDIT-20260728-04/-14; AUDIT-20260726-17). Build ONE mutable
   // remaining-supply multiset PER DISTINCT DESTINATION UNIT referenced by a
   // non-cut entry (keyed by unitRefKey), each seeded with THAT unit's extracted
@@ -143,7 +161,12 @@ export function checkOpObligations(
   // spends its destination's supply too (a separate pre-pass below), so a
   // represented/merged sibling sharing it cannot be discharged by the verbatim
   // copy's bytes (AUDIT-20260727-03).
-  const remainingByDest = buildDestinationSupplies(ledger.coverage, editionByKey, lexicon);
+  const remainingByDest = buildDestinationSupplies(
+    ledger.coverage,
+    editionByKey,
+    lexicon,
+    openQuestionApplicable,
+  );
 
   const failures: OpFailure[] = [];
   const opCounts = { verbatim: 0, represented: 0, merged: 0, cut: 0 };
@@ -167,24 +190,6 @@ export function checkOpObligations(
   // the `checkVerbatim` obligation below. REVISE is UNCHANGED -- op-legality
   // yields no illegal-op failures for it.
   //
-  // D6 (AUDIT-06): NO `?? 'revise'` fail-open default. `loadLedger` always
-  // stamps `mode` (defaulting to revise for pre-006 bytes), so a `CoverageLedger`
-  // reaching this gate MUST carry one; an unstamped ledger is a caller defect,
-  // not a compose edition to be silently waved through as revise. Fail LOUD --
-  // the exact "fallbacks are bug factories" shape the finding names, in the one
-  // direction the feature exists to prevent.
-  if (ledger.mode === undefined) {
-    throw new Error('coverage ledger has no mode stamp; cannot judge op legality');
-  }
-  const mode: Mode = ledger.mode;
-
-  // D11 (AUDIT-08): the open-question-marker byte-survival obligation (R7/FR-013)
-  // is COMPOSE-SCOPED, mirroring `lexiconApplicable`. In revise a marker is
-  // ordinary prose a revision may legitimately RESOLVE by deleting, so it carries
-  // no survival obligation; the source payload's markers are masked out below so
-  // a dropped marker never withholds a revise verdict (with no report field to
-  // explain the refusal). Compose keeps the full obligation.
-  const openQuestionApplicable = mode === 'compose';
   for (const failure of checkOpLegality(mode, ledger.coverage, sourceUnits, editionUnits).failures) {
     if (failure.kind === 'compose-forbids-verbatim' || failure.kind === 'compose-forbids-cut') {
       failures.push({ kind: 'illegal-op', message: failure.message });
@@ -225,7 +230,12 @@ export function checkOpObligations(
     }
     const remaining = remainingByDest.get(destKey);
     if (remaining !== undefined) {
-      consumeAgainstRemaining(remaining, extractPayload(destContent, lexicon));
+      // Same marker scope as the supply seeding (AUDIT-23). This pre-pass runs in
+      // revise only (compose returns above), where the flag is false regardless.
+      consumeAgainstRemaining(
+        remaining,
+        extractPayload(destContent, lexicon, { markerObligationInForce: openQuestionApplicable }),
+      );
     }
   });
 
@@ -260,7 +270,9 @@ export function checkOpObligations(
     // uncorroborated signal, and (for represented/merged) survival. D11
     // (AUDIT-08): in revise, mask out open-question markers so they carry NO
     // required-byte obligation (compose-scoped, mirroring the lexicon gate).
-    const rawSourcePayload = extractPayload(sourceContent, lexicon);
+    const rawSourcePayload = extractPayload(sourceContent, lexicon, {
+      markerObligationInForce: openQuestionApplicable,
+    });
     const sourcePayload: UnitPayload = openQuestionApplicable
       ? rawSourcePayload
       : { ...rawSourcePayload, openQuestionMarkers: [] };

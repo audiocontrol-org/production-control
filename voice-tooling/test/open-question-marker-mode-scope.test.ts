@@ -17,7 +17,13 @@ import { checkOpObligations } from '@/fidelity/check-op-obligations.ts';
 import type { CoverageEntry, CoverageLedger, Mode, UnitRef } from '@/schema/ledger.ts';
 
 const PLACEHOLDER_HASH = `sha256:${'0'.repeat(64)}`;
-const MARKER = '[OPEN-QUESTION: What caused the anomaly in sample 2?]';
+// AUDIT-20260730-23: the SCOPE marker carries NO numeral and NO citation, so the
+// scope tests below assert ONLY the mode-scope property (revise has no marker
+// obligation) -- they no longer defend silent loss of a marker-interior numeral.
+// A dedicated numeral-bearing marker (`MARKER_WITH_NUMERAL`) drives the
+// companion case that pins numeral enforcement in revise.
+const MARKER = '[OPEN-QUESTION: What caused the observed anomaly?]';
+const MARKER_WITH_NUMERAL = '[OPEN-QUESTION: does the 42-unit cohort hold?]';
 
 // A source beat that DECLARES a marker; an edition beat that DROPS it (a plain
 // rewrite that resolves the question). Represented op, 1:1.
@@ -108,5 +114,72 @@ test('D11 (AUDIT-08): a COMPOSE edition that PRESERVES the marker bytes passes t
     result.failures.some((f) => f.kind === 'open-question-marker'),
     false,
     `a preserved marker satisfies the obligation; got: ${result.failures.map((f) => f.message).join(' | ')}`,
+  );
+});
+
+// AUDIT-20260730-23 companion: in revise the marker carries NO survival
+// obligation, but a numeral written INSIDE the marker is still required payload
+// (an ordinary prose numeral) -- so a revise edition that drops it (marker and
+// numeral together) MUST be refused via the numeric multiset. The pre-fix
+// extractor masked the interior numeral out of `numerics` unconditionally, so
+// this dropped numeral was required by NEITHER the marker multiset (compose-only)
+// NOR the numeric multiset (masked) -- silent loss. This pins the closure.
+test('AUDIT-23: a REVISE edition that drops a numeral living INSIDE an open-question marker IS refused -- via the numeric multiset', () => {
+  const sourceText = `Beta beat raises a question. ${MARKER_WITH_NUMERAL}\n`;
+  const src = deriveUnits(sourceText, 'src');
+  // The edition resolves the question AND drops `42` with it (no numeral remains).
+  const ed = deriveUnits('Beta rewritten, the question resolved and the marker deleted.\n', 'ed');
+  const [s0] = src;
+  const [e0] = ed;
+  assert.ok(s0 && e0);
+
+  const result = checkOpObligations(
+    ledgerOf('revise', [{ source_unit: ref(s0), op: 'represented', edition_units: [ref(e0)] }]),
+    src,
+    ed,
+  );
+
+  assert.equal(
+    result.ok,
+    false,
+    `a revise edition dropping a marker-interior numeral must be refused; failures: ${result.failures
+      .map((f) => f.message)
+      .join(' | ')}`,
+  );
+  assert.ok(
+    result.failures.some((f) => f.kind === 'numeric' && f.message.includes('42')),
+    `the refusal must be a numeric-survival failure naming 42; got: ${result.failures
+      .map((f) => `${f.kind}:${f.message}`)
+      .join(' | ')}`,
+  );
+  // And it is NOT laundered as a marker obligation (that obligation is compose-only).
+  assert.equal(
+    result.failures.some((f) => f.kind === 'open-question-marker'),
+    false,
+    'revise carries no marker obligation -- the numeral is enforced as a plain prose numeral',
+  );
+});
+
+test('AUDIT-23: a REVISE edition that PRESERVES the marker-interior numeral (in re-voiced prose) passes -- the numeral survived', () => {
+  const sourceText = `Beta beat raises a question. ${MARKER_WITH_NUMERAL}\n`;
+  const src = deriveUnits(sourceText, 'src');
+  // The revision resolves the marker but keeps the figure 42 in the prose.
+  const ed = deriveUnits('Beta rewritten: the 42-unit cohort question is now settled.\n', 'ed');
+  const [s0] = src;
+  const [e0] = ed;
+  assert.ok(s0 && e0);
+
+  const result = checkOpObligations(
+    ledgerOf('revise', [{ source_unit: ref(s0), op: 'represented', edition_units: [ref(e0)] }]),
+    src,
+    ed,
+  );
+
+  assert.equal(
+    result.ok,
+    true,
+    `preserving 42 in the prose satisfies the numeric obligation; failures: ${result.failures
+      .map((f) => f.message)
+      .join(' | ')}`,
   );
 });

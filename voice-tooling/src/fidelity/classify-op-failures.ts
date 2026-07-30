@@ -133,6 +133,7 @@ export function findUnresolvedDestinationChecks(
   sourceByKey: Map<string, string>,
   editionByKey: Map<string, string>,
   lexicon: readonly string[] | undefined,
+  markerObligationInForce: boolean,
   failures: string[],
 ): Set<NamedCheck> {
   const affected = new Set<NamedCheck>();
@@ -163,13 +164,17 @@ export function findUnresolvedDestinationChecks(
     // union only, and report a "does not survive" for genuinely-missing items
     // alone. This is KIND ATTRIBUTION for the human report; it NEVER suppresses
     // the unresolved-reference failure (AUDIT-20260728-24), which fires below.
+    // AUDIT-23: extract source and resolved-destination payloads under the SAME
+    // marker scope the survival check used, so a marker-interior numeral is
+    // attributed consistently (masked in compose, an ordinary numeric in revise).
     const content = sourceByKey.get(unitRefKey(entry.source_unit));
-    const payload = content !== undefined ? extractPayload(content, lexicon) : undefined;
+    const payload =
+      content !== undefined ? extractPayload(content, lexicon, { markerObligationInForce }) : undefined;
     const resolvedDestPayloads: UnitPayload[] = [];
     for (const ref of destRefs) {
       const destContent = editionByKey.get(unitRefKey(ref));
       if (destContent !== undefined) {
-        resolvedDestPayloads.push(extractPayload(destContent, lexicon));
+        resolvedDestPayloads.push(extractPayload(destContent, lexicon, { markerObligationInForce }));
       }
     }
 

@@ -31,6 +31,7 @@ export function buildDestinationSupplies(
   coverage: readonly CoverageEntry[],
   editionByKey: Map<string, string>,
   lexicon: readonly string[] | undefined,
+  markerObligationInForce: boolean,
 ): Map<string, RemainingSupply> {
   const byKey = new Map<string, RemainingSupply>();
   for (const entry of coverage) {
@@ -46,7 +47,11 @@ export function buildDestinationSupplies(
       if (content === undefined) {
         continue; // unresolved destination -- supplies nothing
       }
-      byKey.set(key, buildRemaining([extractPayload(content, lexicon)]));
+      // AUDIT-20260730-23: destination supplies MUST be extracted under the SAME
+      // marker-scope as the source payload consumed against them, or a
+      // marker-interior numeral would extract asymmetrically (source vs dest) and
+      // the multiset survival check would false-pass/false-fail.
+      byKey.set(key, buildRemaining([extractPayload(content, lexicon, { markerObligationInForce })]));
     }
   }
   return byKey;

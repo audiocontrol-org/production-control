@@ -204,6 +204,7 @@ test('AUDIT-20260727-28: a partially-unresolved entry whose payload SURVIVES in 
     indexSourceUnits(src),
     indexSourceUnits(ed),
     undefined,
+    false, // revise fixtures -- marker obligation not in force (AUDIT-23)
     failures,
   );
 
@@ -245,6 +246,7 @@ test('AUDIT-20260728-24: a represented entry with a SINGLE unresolved destinatio
     indexSourceUnits(src),
     indexSourceUnits(ed),
     undefined,
+    false, // revise fixtures -- marker obligation not in force (AUDIT-23)
     failures,
   );
 
@@ -285,6 +287,7 @@ test('AUDIT-20260727-28: a partially-unresolved entry whose payload does NOT sur
     indexSourceUnits(src),
     indexSourceUnits(ed),
     undefined,
+    false, // revise fixtures -- marker obligation not in force (AUDIT-23)
     failures,
   );
 

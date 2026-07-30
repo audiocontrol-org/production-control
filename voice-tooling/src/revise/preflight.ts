@@ -61,36 +61,73 @@ export function runPreflight(
   editionUnits: readonly SourceUnit[],
   sourceUnits: readonly SourceUnit[],
 ): PreflightResult {
-  if (mode !== 'compose') {
-    // revise (T023, US4/TASK-50): the ONLY pre-emit self-check for revise is
-    // verbatim byte-exactness -- an INDEPENDENT invocation of the shared pure
-    // `@/policy/op-legality.ts#checkOpLegality('revise', ...)` predicate the
-    // fidelity validator also runs (Principle VI). A `verbatim` op whose
-    // destination drifted from its source unit is refused HERE, named with its
-    // `sha256:` content hash, BEFORE any write (Principle V). `represented`/
-    // `merged` revise ops stay legal -- op-legality only reports drift for
-    // `verbatim`. Grounding + no-copy remain compose-only (below), untouched.
-    const legality = checkOpLegality('revise', coverage, sourceUnits, editionUnits);
-    const refusals = legality.failures
-      .filter((failure) => failure.kind === 'revise-verbatim-drift')
-      .map((failure) => failure.message);
-    return { ok: refusals.length === 0, refusals };
+  // AUDIT-20260730-42: EXPLICIT, exhaustive mode dispatch -- never `mode !==
+  // 'compose'` (dispatch-by-negation), which would silently hand a future
+  // `ProducerMode` the weakest (revise) self-check. A new mode is a COMPILE error
+  // here (`assertNever`), forcing its write-gate to be decided deliberately.
+  switch (mode) {
+    case 'compose':
+      return composePreflight(grounding, coverage, editionUnits, sourceUnits);
+    case 'revise':
+      return revisePreflight(coverage, editionUnits, sourceUnits);
+    default:
+      return assertNever(mode);
   }
+}
 
+/**
+ * The REVISE pre-emit self-check (T023, US4/TASK-50): an INDEPENDENT invocation
+ * of the shared pure `@/policy/op-legality.ts#checkOpLegality('revise', ...)`
+ * predicate the fidelity validator also runs (Principle VI).
+ *
+ * AUDIT-20260730-43: this branch is EXHAUSTIVE over `OpLegalityFailureKind` --
+ * the same hardening the compose branch got in round 2. The pre-fix branch
+ * `.filter`ed to ONLY `revise-verbatim-drift` and silently dropped every other
+ * kind, so an `op-without-destination` (a `represented`/`merged` revise entry
+ * that lands nowhere -- an undeclared cut, FG-A2/AUDIT-34) escaped the write
+ * gate. Now EVERY failure the revise policy reports is routed through
+ * `reviseOpLegalityRefusal`, whose `assertNever` makes a future unhandled kind a
+ * COMPILE error rather than a silent drop.
+ */
+function revisePreflight(
+  coverage: readonly CoverageEntry[],
+  editionUnits: readonly SourceUnit[],
+  sourceUnits: readonly SourceUnit[],
+): PreflightResult {
+  const legality = checkOpLegality('revise', coverage, sourceUnits, editionUnits);
+  const refusals: string[] = [];
+  for (const failure of legality.failures) {
+    const refusal = reviseOpLegalityRefusal(failure);
+    if (refusal !== undefined) {
+      refusals.push(refusal);
+    }
+  }
+  return { ok: refusals.length === 0, refusals };
+}
+
+/**
+ * The COMPOSE pre-emit self-check: TWO independent invocations of the shared
+ * pure policies the validator also runs (Principle VI) -- edition-side grounding
+ * AND whole-unit no-copy / op-legality.
+ *
+ * Op-legality (D1, AUDIT-11/12/19): EVERY failure `checkOpLegality('compose',
+ * ...)` reports is a pre-emit refusal -- illegal-op (`compose-forbids-verbatim`,
+ * `compose-forbids-cut`), undeclared-cut (`op-without-destination`), AND
+ * whole-unit-copy (R4). They are pushed via an EXHAUSTIVE switch over
+ * `OpLegalityFailureKind`, so a future unhandled kind is a COMPILE error
+ * (`assertNever`), never a silent drop.
+ */
+function composePreflight(
+  grounding: readonly GroundingRecord[] | undefined,
+  coverage: readonly CoverageEntry[],
+  editionUnits: readonly SourceUnit[],
+  sourceUnits: readonly SourceUnit[],
+): PreflightResult {
   const refusals: string[] = [];
 
   const grounded = checkGrounding(grounding ?? [], editionUnits, sourceUnits, coverage);
   refusals.push(...grounded.failures.map((failure) => failure.message));
 
-  // Op-legality (D1, AUDIT-11/12/19): EVERY failure `checkOpLegality('compose',
-  // ...)` reports is a pre-emit refusal -- illegal-op (`compose-forbids-verbatim`,
-  // `compose-forbids-cut`) AND whole-unit-copy (R4). `buildEdition` DOES emit
-  // `cut` from the model's coverage, and the model chooses its own op labels, so
-  // a compose model returning `{"op":"cut"}` or `{"op":"verbatim"}` reaches here
-  // and MUST be refused, not written. The failures are already mode-scoped by the
-  // `'compose'` argument, so none is dropped: they are all pushed via an
-  // EXHAUSTIVE switch over `OpLegalityFailureKind`, so a future unhandled kind is
-  // a COMPILE error here (`assertNever`), never a silent drop.
   const legality = checkOpLegality('compose', coverage, sourceUnits, editionUnits);
   for (const failure of legality.failures) {
     refusals.push(composeOpLegalityRefusal(failure));
@@ -118,6 +155,39 @@ function composeOpLegalityRefusal(failure: OpLegalityFailure): string {
     // other op-legality failure.
     case 'op-without-destination':
       return failure.message;
+    default:
+      return assertNever(failure.kind);
+  }
+}
+
+/**
+ * AUDIT-20260730-43: classify EVERY revise op-legality failure kind explicitly.
+ * A kind ILLEGAL in revise returns its refusal message (gating the write); a kind
+ * that is legal / not-applicable in revise returns `undefined` with a documented
+ * reason (NOT a silent drop -- the disposition is reviewed and exhaustive). The
+ * `assertNever` default makes a future unhandled kind a COMPILE error here.
+ *
+ * `checkOpLegality('revise', ...)` only ever EMITS `revise-verbatim-drift` and
+ * `op-without-destination`; the compose-only kinds are enumerated so the union is
+ * covered and their revise disposition is stated, not inferred.
+ */
+function reviseOpLegalityRefusal(failure: OpLegalityFailure): string | undefined {
+  switch (failure.kind) {
+    case 'revise-verbatim-drift':
+    // AUDIT-34/FG-A2: an undeclared cut (a non-`cut` op that lands nowhere) is
+    // illegal in revise too -- it sidesteps the cut-requires-reason obligation.
+    case 'op-without-destination':
+      return failure.message;
+    case 'compose-forbids-verbatim':
+    case 'compose-forbids-cut':
+    case 'whole-unit-copy':
+      // Compose-only kinds. `checkOpLegality('revise', ...)` never emits these:
+      // `verbatim` is LEGAL in revise (so byte-identity carry-over is legal too,
+      // and the whole-unit-copy sweep is compose-only), and the compose-forbids-*
+      // kinds are compose-scoped. If one ever appeared it would be a policy-layer
+      // bug, not a revise write-gate violation, so it does NOT gate the write --
+      // stated explicitly rather than dropped by an untyped filter.
+      return undefined;
     default:
       return assertNever(failure.kind);
   }

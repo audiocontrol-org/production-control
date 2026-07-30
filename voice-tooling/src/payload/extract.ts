@@ -83,6 +83,36 @@ const OPEN_QUESTION_RE = /\[OPEN-QUESTION:(?:[^\[\]]|\[[^\[\]]*\])*\]/g;
 const BLOCKQUOTE_RE = /^ {0,3}>\s?(.*)$/;
 
 /**
+ * Options controlling mode-scoped extraction behavior (AUDIT-20260730-23).
+ */
+export interface ExtractOptions {
+  /**
+   * Whether the open-question-marker SURVIVAL obligation is IN FORCE for this
+   * extraction (true in compose, false in revise; mirrors `checkOpObligations`'s
+   * `openQuestionApplicable` gate). It governs the marker-span NUMERIC MASK:
+   *
+   *   - IN FORCE (default, compose): the marker's ENTIRE byte span is required
+   *     payload (its `openQuestionMarkers` multiset must survive), so a numeral
+   *     inside it is ALREADY enforced by the marker. Masking it out of `numerics`
+   *     prevents DOUBLE-booking (the D3 invariant: "the byte span the marker
+   *     payload requires is exactly the span the numeric extractor masks").
+   *
+   *   - NOT IN FORCE (revise): the marker carries NO survival obligation (a
+   *     revision may legitimately resolve/delete it, D11/AUDIT-08). So its
+   *     interior bytes are NOT required as a marker -- and if the numeric mask
+   *     still removed a marker-interior numeral, that numeral would be required
+   *     by NEITHER multiset (AUDIT-23). When NOT in force, marker-span numerals
+   *     are therefore LEFT in `numerics` and stay enforced as ordinary prose
+   *     numerals.
+   *
+   * Citation masking (AUDIT-08/-11) is ALWAYS applied regardless of this flag:
+   * a citation nested in a marker is booked once in the citation multiset in
+   * every mode, never double-counted.
+   */
+  markerObligationInForce?: boolean;
+}
+
+/**
  * Extract the literal payload from ONE unit's `content`.
  *
  * @param content Exact UTF-8 bytes of a single unit (terminators included).
@@ -90,11 +120,14 @@ const BLOCKQUOTE_RE = /^ {0,3}>\s?(.*)$/;
  *   terms are matched byte-exact and case-sensitively (no Unicode normalization).
  *   When undefined or empty, `lexiconTerms` is `[]` — the caller decides whether
  *   that means `not-run` (no lexicon declared) or a checked-empty result.
+ * @param options Mode-scoped extraction options; see `ExtractOptions`. Defaults
+ *   to the marker obligation being IN FORCE (compose / D3 behavior).
  * @throws Error when a lexicon term is the empty string (a malformed lexicon).
  */
 export function extractPayload(
   content: string,
   lexicon?: readonly string[],
+  options?: ExtractOptions,
 ): UnitPayload {
   // INVARIANT (D3, AUDIT-20260730-14): the byte span an open-question marker
   // payload REQUIRES is exactly the span the numeric extractor MASKS. Both the
@@ -111,16 +144,27 @@ export function extractPayload(
   // citation-vs-numeral masking already established (AUDIT-20260726-08/-11). A
   // NON-citation inner bracket (`foo[0]`) is not masked and stays inside the
   // marker span, kept intact by the bracket-aware pattern.
+  //
+  // MODE SCOPE (AUDIT-20260730-23): the marker-span numeric mask is applied ONLY
+  // when the marker obligation is IN FORCE (compose). In force, the marker owns
+  // its whole span as required payload, so its numerals are enforced via the
+  // marker multiset and must NOT be double-booked as prose numerics -- numerics
+  // are read from `markerMasked`. When NOT in force (revise), the marker carries
+  // no survival obligation, so its interior numerals must REMAIN enforced as
+  // ordinary prose numerals -- numerics are read from `citationMasked` (marker
+  // spans left intact). Citation masking is unconditional in both branches.
+  const markerObligationInForce = options?.markerObligationInForce ?? true;
   const citationMasked = maskCitations(content);
   const openQuestionMarkers = extractMatches(citationMasked, OPEN_QUESTION_RE);
   const markerMasked = citationMasked.replace(
     new RegExp(OPEN_QUESTION_RE.source, OPEN_QUESTION_RE.flags),
     '',
   );
+  const numericSubstrate = markerObligationInForce ? markerMasked : citationMasked;
   return {
     quotes: extractQuotes(content),
     citations: extractMatches(content, CITATION_RE),
-    numerics: extractMatches(markerMasked, NUMERIC_RE),
+    numerics: extractMatches(numericSubstrate, NUMERIC_RE),
     lexiconTerms: extractLexiconTerms(content, lexicon),
     openQuestionMarkers,
   };

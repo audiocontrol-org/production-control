@@ -73,6 +73,26 @@ test('buildPrompt(compose): states the output is one JSON object with edition, c
   assert.match(prompt, /represented\|merged|"represented"|"merged"/);
 });
 
+test('buildPrompt(compose): requires blockquotes / quoted spans to survive BYTE-EXACT (AUDIT-44)', () => {
+  const prompt = buildPrompt('compose', input);
+  // The compose contract must enumerate quoted-span survival alongside
+  // citations/numerals -- the clause the revise prompt keeps. The pre-fix
+  // compose contract listed only citations + numerals, so a composed chapter
+  // could silently paraphrase a quotation lifted from a source-cited beat while
+  // the shared payload extractor (which enforces quotes in BOTH modes) refuses
+  // it -- a refusal the prompt never warned about.
+  assert.match(
+    prompt,
+    /blockquote and quoted span/i,
+    'the compose contract must require blockquotes/quoted spans to survive (as the revise prompt does)',
+  );
+  assert.match(
+    prompt,
+    /blockquote and quoted span[\s\S]{0,220}byte-exact/i,
+    'the quoted-span clause must tie survival to byte-exactness',
+  );
+});
+
 test('buildPrompt(compose): preserves OPEN-QUESTION markers and forbids invention', () => {
   const prompt = buildPrompt('compose', input);
   assert.match(prompt, /OPEN-QUESTION/, 'states the open-question marker must be preserved');

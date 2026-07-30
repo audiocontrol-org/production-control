@@ -304,6 +304,11 @@ export function runFidelity(input: FidelityInput): FidelityResult {
     sourceByKey,
     editionByKey,
     input.lexicon,
+    // AUDIT-23: marker scope follows mode -- compose keeps the marker survival
+    // obligation (and masks interior numerals); revise enforces them as numerics.
+    // `checkOpObligations` above already threw on an unstamped ledger, so `mode`
+    // is defined here; `=== 'compose'` yields a plain boolean regardless.
+    ledger.mode === 'compose',
     failures,
   );
   const affectedChecks = new Set<NamedCheck>([
