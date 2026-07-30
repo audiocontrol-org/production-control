@@ -1,0 +1,15 @@
+{
+  "handle": "2026-07-30T04-07-50-500Z-4t47",
+  "governArgs": [
+    "--mode",
+    "implement",
+    "--item",
+    "design:feature/voice-compose-from-spine",
+    "--diff-base",
+    "cb8edab"
+  ],
+  "cwd": "/Users/orion/work/production-control-work/production-control-voice",
+  "startedAt": "2026-07-30T04:07:50.500Z",
+  "pid": 98748,
+  "logPath": "/Users/orion/work/production-control-work/production-control-voice/.stack-control/govern/background/2026-07-30T04-07-50-500Z-4t47/govern.log"
+}

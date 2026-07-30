@@ -1,0 +1,4 @@
+spec-governance gate [006-voice-compose-from-spine]: OPEN by override — reason: Operator-directed override after end-to-end empirical validation. voice-compose was run for real (VOICE_REVISE_MODEL=claude -p) over a source-cited spine: it produced faithful voiced prose, voice-fidelity PASSED the faithful edition (all compose gates green: mode_agreement, edition_grounding 5 units, no_copy, open_question_fabrication, citations/numerals byte-exact) and REFUSED a tampered edition (dropped citation + altered numeral). Govern rounds 1-3 remediated 37 surfaced findings (AUDIT-01..46); 4 residuals backlogged as TASK-53..56. Accepting residual findings per operator decision.
+govern: --override supplied — short-circuiting the convergence pass (FR-017: zero render/barrage/lift/slush). Per-invocation only (FR-018): no marker persists across invocations.
+govern: implementation governed (overridden).
+govern: terminal-outcome=graduated

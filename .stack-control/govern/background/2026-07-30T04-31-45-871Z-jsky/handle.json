@@ -1,0 +1,17 @@
+{
+  "handle": "2026-07-30T04-31-45-871Z-jsky",
+  "governArgs": [
+    "--mode",
+    "implement",
+    "--item",
+    "design:feature/voice-compose-from-spine",
+    "--diff-base",
+    "cb8edab",
+    "--override",
+    "Operator-directed override after end-to-end empirical validation. voice-compose was run for real (VOICE_REVISE_MODEL=claude -p) over a source-cited spine: it produced faithful voiced prose, voice-fidelity PASSED the faithful edition (all compose gates green: mode_agreement, edition_grounding 5 units, no_copy, open_question_fabrication, citations/numerals byte-exact) and REFUSED a tampered edition (dropped citation + altered numeral). Govern rounds 1-3 remediated 37 surfaced findings (AUDIT-01..46); 4 residuals backlogged as TASK-53..56. Accepting residual findings per operator decision."
+  ],
+  "cwd": "/Users/orion/work/production-control-work/production-control-voice",
+  "startedAt": "2026-07-30T04:31:45.871Z",
+  "pid": 12834,
+  "logPath": "/Users/orion/work/production-control-work/production-control-voice/.stack-control/govern/background/2026-07-30T04-31-45-871Z-jsky/govern.log"
+}
