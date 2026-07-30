@@ -71,6 +71,10 @@ function ledgerOf(coverage: CoverageEntry[]): CoverageLedger {
     version: 1,
     source: { identity: 'test-source', hash: PLACEHOLDER_HASH },
     voice: { identity: 'test-voice', hash: PLACEHOLDER_HASH },
+    // D6 (AUDIT-06): `checkOpObligations` no longer fail-open-defaults an absent
+    // mode; a ledger reaching it must be stamped (as `loadLedger` always does).
+    // These op-obligation fixtures exercise the revise path.
+    mode: 'revise',
     coverage,
   };
 }

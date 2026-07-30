@@ -166,7 +166,25 @@ export function checkOpObligations(
   // `check-no-copy.ts`'s concern (step 5), and revise verbatim byte-exactness is
   // the `checkVerbatim` obligation below. REVISE is UNCHANGED -- op-legality
   // yields no illegal-op failures for it.
-  const mode: Mode = ledger.mode ?? 'revise';
+  //
+  // D6 (AUDIT-06): NO `?? 'revise'` fail-open default. `loadLedger` always
+  // stamps `mode` (defaulting to revise for pre-006 bytes), so a `CoverageLedger`
+  // reaching this gate MUST carry one; an unstamped ledger is a caller defect,
+  // not a compose edition to be silently waved through as revise. Fail LOUD --
+  // the exact "fallbacks are bug factories" shape the finding names, in the one
+  // direction the feature exists to prevent.
+  if (ledger.mode === undefined) {
+    throw new Error('coverage ledger has no mode stamp; cannot judge op legality');
+  }
+  const mode: Mode = ledger.mode;
+
+  // D11 (AUDIT-08): the open-question-marker byte-survival obligation (R7/FR-013)
+  // is COMPOSE-SCOPED, mirroring `lexiconApplicable`. In revise a marker is
+  // ordinary prose a revision may legitimately RESOLVE by deleting, so it carries
+  // no survival obligation; the source payload's markers are masked out below so
+  // a dropped marker never withholds a revise verdict (with no report field to
+  // explain the refusal). Compose keeps the full obligation.
+  const openQuestionApplicable = mode === 'compose';
   for (const failure of checkOpLegality(mode, ledger.coverage, sourceUnits, editionUnits).failures) {
     if (failure.kind === 'compose-forbids-verbatim' || failure.kind === 'compose-forbids-cut') {
       failures.push({ kind: 'illegal-op', message: failure.message });
@@ -239,8 +257,13 @@ export function checkOpObligations(
     }
 
     // Non-cut: extract the SOURCE payload once -- feeds payloadChecked, the
-    // uncorroborated signal, and (for represented/merged) survival.
-    const sourcePayload = extractPayload(sourceContent, lexicon);
+    // uncorroborated signal, and (for represented/merged) survival. D11
+    // (AUDIT-08): in revise, mask out open-question markers so they carry NO
+    // required-byte obligation (compose-scoped, mirroring the lexicon gate).
+    const rawSourcePayload = extractPayload(sourceContent, lexicon);
+    const sourcePayload: UnitPayload = openQuestionApplicable
+      ? rawSourcePayload
+      : { ...rawSourcePayload, openQuestionMarkers: [] };
     for (const kind of PAYLOAD_KINDS) {
       payloadChecked[kind] += sourcePayload[kind].length;
     }

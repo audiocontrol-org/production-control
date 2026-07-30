@@ -22,6 +22,8 @@ function fullChecks(
   overrides: Record<string, CheckResult> = {},
 ): Record<string, CheckResult> {
   return {
+    // mode_agreement is required (AUDIT-15) and emitted on every decided run.
+    mode_agreement: passed({ mode_comparison: 'none-supplied' }),
     source_hash: passed(),
     ledger_structure: passed(),
     unit_accounting: passed({ total: 57 }),
@@ -217,6 +219,7 @@ test('verdict-invariant: complex realistic report with all check types → verdi
   // Mirrors the validator contract example closely
   const report: CoverageReport = {
     checks: {
+      mode_agreement: passed({ mode_comparison: 'none-supplied' }),
       source_hash: passed(),
       ledger_structure: passed(),
       unit_accounting: passed({ total: 57 }),

@@ -36,10 +36,7 @@ import {
   reported,
   notCheckable,
   failed,
-  computeVerdict,
-  composeTrustBoundaryFields,
   type CheckResult,
-  type CoverageReport,
 } from '@/fidelity/report.ts';
 import {
   readDeclaredSourceHash,
@@ -57,6 +54,9 @@ import {
   type NamedCheck,
 } from '@/fidelity/classify-op-failures.ts';
 import { readDeclaredMode, applyComposeEditionChecks } from '@/fidelity/run-mode.ts';
+import { finalize, cannotDecide, type FidelityResult } from '@/fidelity/run-outcome.ts';
+
+export type { FidelityResult };
 
 /** Input to a single deterministic fidelity run (contract "Input"). */
 export interface FidelityInput {
@@ -76,22 +76,15 @@ export interface FidelityInput {
 }
 
 /**
- * The three-way outcome the contract requires: a decided pass, a decided
- * failure (both `decided: true`), or cannot-decide (`decided: false`, and
- * `report.verdict` is then never set) — see "No-verdict exit" (FR-030/SC-006).
- */
-export interface FidelityResult {
-  report: CoverageReport;
-  passed: boolean;
-  decided: boolean;
-  failures: string[];
-}
-
-/**
  * Checks that ABORT after `mode_agreement` fails. Mode-agreement is sequenced
  * FIRST (contract step 1), so a mismatch aborts EVERY downstream required check
  * — source_hash included — proving the mismatch was decided before any
  * op-legality/grounding could mask or precede it.
+ *
+ * D2 (AUDIT-13): `edition_grounding` and `no_copy` are included so a
+ * mode-mismatch compose report marks them `aborted` — a THIRD distinguishable
+ * state ("aborted before it could run"), never silent absence that a consumer
+ * could misread as "checked and clean" or "never wired".
  */
 const AFTER_MODE_AGREEMENT = [
   'source_hash',
@@ -102,6 +95,8 @@ const AFTER_MODE_AGREEMENT = [
   'numeric_literals',
   'lexicon',
   'uncorroborated_units',
+  'edition_grounding',
+  'no_copy',
 ] as const;
 
 /** Checks that ABORT (become `not-run`) after `source_hash` fails. */
@@ -165,8 +160,11 @@ export function runFidelity(input: FidelityInput): FidelityResult {
   // WHICH pass outcome held (matched | none-supplied), threaded into the report
   // by `finalize` so a standalone validation is never mistaken for one that
   // independently confirmed the mode (FR-012 trust-boundary discipline).
-  const ledgerMode = readDeclaredMode(ledgerYaml);
-  const modeResult = checkModeAgreement(input.requestedMode, ledgerMode);
+  // D6 (AUDIT-09): read the ledger's mode WITH its provenance, so a defaulted
+  // `revise` (absent `mode:`) is distinguishable from a declared one — an
+  // affirmative `matched` is reserved for a mode the ledger actually stated.
+  const { mode: ledgerMode, declared: ledgerModeDeclared } = readDeclaredMode(ledgerYaml);
+  const modeResult = checkModeAgreement(input.requestedMode, ledgerMode, ledgerModeDeclared);
   if (!modeResult.ok) {
     const failure = modeResult.failures[0] ?? 'mode mismatch';
     checks['mode_agreement'] = failed(failure);
@@ -175,6 +173,12 @@ export function runFidelity(input: FidelityInput): FidelityResult {
     return finalize(checks, failures, true);
   }
   const modeComparison = modeResult.mode_comparison;
+  // D2 (AUDIT-15): emit pass-side evidence for the FIRST check on EVERY decided
+  // path (revise and compose alike), carrying `mode_comparison` consistently — a
+  // `passed` verdict now PROVES mode-agreement ran, never inferred from silence.
+  // Present here (before source_hash) so it also stands on every downstream abort
+  // report, where it truthfully passed even though a later check failed.
+  checks['mode_agreement'] = passed({ mode_comparison: modeComparison });
 
   let sourceUnits: SourceUnit[];
   try {
@@ -427,64 +431,4 @@ export function runFidelity(input: FidelityInput): FidelityResult {
     : 'none-declared';
 
   return finalize(checks, failures, true, ledger.mode, modeComparison, openQuestionMarkers);
-}
-
-// ---- outcome assembly -------------------------------------------------------
-
-function finalize(
-  checks: Record<string, CheckResult>,
-  failures: string[],
-  decided: true,
-  mode?: Mode,
-  modeComparison?: 'matched' | 'none-supplied',
-  openQuestionMarkers: 'enforced' | 'none-declared' = 'none-declared',
-): FidelityResult {
-  // Every applicable path above already sets both honest-boundary checks
-  // before reaching here EXCEPT the abort paths (source_hash/ledger_structure/
-  // unit_accounting failures return early) -- set them unconditionally so
-  // FR-025/SC-004's "every one of the ten checks is always named" holds even
-  // on a decided, aborted failure.
-  if (!('semantic_claim_fidelity' in checks)) {
-    checks['semantic_claim_fidelity'] = notCheckable(
-      'not provable under D4 — declared out of scope for v1',
-    );
-  }
-  if (!('voice_conformance' in checks)) {
-    checks['voice_conformance'] = notCheckable(
-      'not provable under D16 — declared out of scope for v1',
-    );
-  }
-
-  // The verdict derives from the named-check map ALONE (AUDIT-20260728-28):
-  // every op-obligation failure has already flipped a named check (a payload
-  // check, or the `op_obligations` catch-all) by the time we get here, so there
-  // is no `failures.length` coupling and no advisory side-channel that could flip
-  // a pass. `failures[]` remains for the human-facing ValidateResponse only.
-  const verdict = computeVerdict({ checks });
-  const isPassed = verdict === 'passed';
-  // FR-012 (spec 006): a composed edition's report always carries the
-  // trust-boundary fields, regardless of verdict — they describe the scope
-  // of what was checked, not whether it passed.
-  const trustBoundary = mode === 'compose' ? composeTrustBoundaryFields(openQuestionMarkers) : {};
-  // `mode_comparison` (spec 006 US5, FR-012) records WHICH mode-agreement pass
-  // outcome held — applies to ANY mode, so (unlike the compose-only trust-
-  // boundary fields) it is threaded whenever mode-agreement passed, incl. a
-  // standalone revise validation (`none-supplied`). Absent on a mismatch and on
-  // abort paths that never reached a full ledger.
-  const report: CoverageReport = {
-    ...(isPassed ? { verdict: 'passed' as const } : {}),
-    ...trustBoundary,
-    ...(modeComparison !== undefined ? { mode_comparison: modeComparison } : {}),
-    checks,
-  };
-  return { report, passed: isPassed, decided, failures };
-}
-
-function cannotDecide(diagnostic: string): FidelityResult {
-  return {
-    report: { checks: {} },
-    passed: false,
-    decided: false,
-    failures: [diagnostic],
-  };
 }

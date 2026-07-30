@@ -21,16 +21,19 @@
 // already says exactly what happened.
 
 import type { Mode } from '@/schema/ledger.ts';
+import type { ModeComparison } from '@/fidelity/report.ts';
 
 /** Result of the `mode_agreement` check (contract step 1, data-model.md). */
 export interface ModeAgreementResult {
   ok: boolean;
   /**
-   * Present only for a pass: 'matched' when `requestedMode` was supplied and
-   * equals `ledgerMode`; 'none-supplied' when no `requestedMode` was supplied
-   * at all. Absent on a mismatch (see module doc above).
+   * Present only for a pass: `'matched'` when `requestedMode` was supplied and
+   * equals a mode the ledger ACTUALLY DECLARED; `'matched-by-default'` when it
+   * equals a mode the ledger did NOT declare (absent `mode:`, defaulted to
+   * `revise` by `loadLedger` — AUDIT-09); `'none-supplied'` when no
+   * `requestedMode` was supplied at all. Absent on a mismatch (see module doc).
    */
-  mode_comparison?: 'matched' | 'none-supplied';
+  mode_comparison?: ModeComparison;
   failures: string[];
 }
 
@@ -42,10 +45,18 @@ export interface ModeAgreementResult {
  *   `undefined` for standalone validation (no independent mode was supplied).
  * @param ledgerMode    the coverage ledger's own `mode` (already defaulted to
  *   `revise` by `loadLedger` when absent from the ledger bytes).
+ * @param ledgerModeDeclared whether the ledger's bytes ACTUALLY declared a
+ *   `mode:` (true) or the value was defaulted in by the loader (false). An
+ *   affirmative `'matched'` is reserved for a declared mode; a defaulted one
+ *   that happens to agree is reported `'matched-by-default'` so the report never
+ *   overclaims independent agreement about a value the ledger never stated
+ *   (AUDIT-09). SC-006 is preserved: a defaulted-revise ledger with no compose
+ *   artifacts still passes — this only changes WHICH honest pass label it earns.
  */
 export function checkModeAgreement(
   requestedMode: Mode | undefined,
   ledgerMode: Mode,
+  ledgerModeDeclared: boolean,
 ): ModeAgreementResult {
   if (requestedMode === undefined) {
     return { ok: true, mode_comparison: 'none-supplied', failures: [] };
@@ -56,5 +67,9 @@ export function checkModeAgreement(
       failures: [`mode mismatch: requested ${requestedMode}, ledger ${ledgerMode}`],
     };
   }
-  return { ok: true, mode_comparison: 'matched', failures: [] };
+  return {
+    ok: true,
+    mode_comparison: ledgerModeDeclared ? 'matched' : 'matched-by-default',
+    failures: [],
+  };
 }

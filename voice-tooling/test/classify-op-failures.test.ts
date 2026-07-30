@@ -58,6 +58,9 @@ function ledgerOf(coverage: CoverageEntry[]): CoverageLedger {
     version: 1,
     source: { identity: 'test-source', hash: PLACEHOLDER_HASH },
     voice: { identity: 'test-voice', hash: PLACEHOLDER_HASH },
+    // D6 (AUDIT-06): `checkOpObligations` no longer fail-open-defaults an absent
+    // mode; a ledger reaching it must be stamped. These fixtures are revise.
+    mode: 'revise',
     coverage,
   };
 }
@@ -104,6 +107,8 @@ test('AUDIT-20260726-23 (FIX 3): a dropped quoted span whose text contains "nume
  */
 function fullPassingChecks(): Record<string, CheckResult> {
   return {
+    // mode_agreement is required (AUDIT-15) and emitted on every decided run.
+    mode_agreement: passed({ mode_comparison: 'none-supplied' }),
     source_hash: passed(),
     ledger_structure: passed(),
     unit_accounting: passed({ total: 3 }),

@@ -22,30 +22,50 @@ import type { CoverageLedger, Mode } from '@/schema/ledger.ts';
 import { isMode } from '@/schema/ledger.ts';
 import { checkEditionGrounding } from '@/fidelity/check-edition-grounding.ts';
 import { checkNoCopy } from '@/fidelity/check-no-copy.ts';
-import { failed, type CheckResult } from '@/fidelity/report.ts';
+import { failed, passed, notRun, type CheckResult } from '@/fidelity/report.ts';
+
+/**
+ * The ledger's `mode` plus its PROVENANCE (AUDIT-09): `declared` is true only
+ * when the ledger bytes ACTUALLY carried a valid `mode:` field, false when the
+ * value was defaulted in (`revise`, pre-006 backward compatibility) or the YAML
+ * did not yet parse. Mode-agreement uses `declared` so an affirmative `matched`
+ * is never claimed against a value the ledger never stated.
+ */
+export interface DeclaredMode {
+  mode: Mode;
+  declared: boolean;
+}
 
 /**
  * Best-effort read of the ledger's `mode` directly from its raw YAML, WITHOUT
  * running full structural validation (`checkLedgerStructure`) — mode-agreement
  * is checked strictly BEFORE ledger_structure (contract step 1), so it must not
- * depend on the ledger being otherwise well-formed. Defaults to `revise` when
- * `mode` is absent (data-model.md "Mode": absent → revise, pre-006 backward
- * compatibility) or when the YAML does not yet parse / carries an invalid value
- * — in which case `ledger_structure` decides that fault later; this read only
- * needs a mode to compare an independently-supplied `requested_mode` against.
+ * depend on the ledger being otherwise well-formed. Defaults to `revise` (with
+ * `declared: false`) when `mode` is absent (data-model.md "Mode": absent →
+ * revise, pre-006 backward compatibility) or when the YAML does not yet parse /
+ * carries an invalid value — in which case `ledger_structure` decides that fault
+ * later; this read only needs a mode (and its provenance) to compare an
+ * independently-supplied `requested_mode` against.
+ *
+ * Invariant: `declared` is true IFF a valid `mode:` was present in the bytes —
+ * so a defaulted `revise` and an explicitly-declared `revise` are DISTINGUISHABLE
+ * downstream (the AUDIT-09 overclaim this closes).
  */
-export function readDeclaredMode(ledgerYaml: string): Mode {
+export function readDeclaredMode(ledgerYaml: string): DeclaredMode {
   let parsed: unknown;
   try {
     parsed = parseYamlText(ledgerYaml);
   } catch {
-    return 'revise';
+    return { mode: 'revise', declared: false };
   }
   if (!isRecord(parsed)) {
-    return 'revise';
+    return { mode: 'revise', declared: false };
   }
   const mode = parsed['mode'];
-  return typeof mode === 'string' && isMode(mode) ? mode : 'revise';
+  if (typeof mode === 'string' && isMode(mode)) {
+    return { mode, declared: true };
+  }
+  return { mode: 'revise', declared: false };
 }
 
 /**
@@ -57,9 +77,18 @@ export function readDeclaredMode(ledgerYaml: string): Mode {
  * unconditional. Each is an INDEPENDENT invocation of the shared pure policy
  * (`@/policy/grounding.ts` / `@/policy/op-legality.ts`) the producer's pre-emit
  * self-check also calls — neither entry point depends on the other (Principle
- * VI). A failure contributes a named check (`failed`) and folds its failures
- * into `failures`, withholding the pass — present-and-`failed` ONLY on a real
- * compose violation, so it never appears in a passing revise report.
+ * VI).
+ *
+ * Invariant (AUDIT-13/-16): each check emits pass-side EVIDENCE, never silence.
+ * A `passed` result is written on a clean COMPOSE evaluation, an explicit
+ * `not-run` ("revise: not applicable") when the mode makes the check
+ * inapplicable, and `failed` on a real compose violation (which also folds its
+ * messages into `failures`, withholding the pass). So the report distinguishes
+ * THREE states a consumer must not conflate: "checked & clean" (`passed`),
+ * "not applicable because the ledger is revise" (`not-run`), and — via the
+ * mode-mismatch abort list in `run.ts` — "aborted before it could run"
+ * (`aborted`). Absence would have collapsed all three into one unverifiable
+ * silence; it no longer occurs on any decided path that reaches here.
  */
 export function applyComposeEditionChecks(
   checks: Record<string, CheckResult>,
@@ -69,7 +98,11 @@ export function applyComposeEditionChecks(
   sourceUnits: readonly SourceUnit[],
 ): void {
   const groundingResult = checkEditionGrounding(ledger, editionUnits, sourceUnits);
-  if (groundingResult.applicable && !groundingResult.ok) {
+  if (!groundingResult.applicable) {
+    checks['edition_grounding'] = notRun('revise: edition grounding not applicable');
+  } else if (groundingResult.ok) {
+    checks['edition_grounding'] = passed({ units: editionUnits.length });
+  } else {
     checks['edition_grounding'] = failed(
       'one or more edition units are not exhaustively/exclusively grounded; see failures[]',
     );
@@ -77,7 +110,11 @@ export function applyComposeEditionChecks(
   }
 
   const noCopyResult = checkNoCopy(ledger, sourceUnits, editionUnits);
-  if (noCopyResult.applicable && !noCopyResult.ok) {
+  if (!noCopyResult.applicable) {
+    checks['no_copy'] = notRun('revise: whole-unit no-copy not applicable');
+  } else if (noCopyResult.ok) {
+    checks['no_copy'] = passed({ units: editionUnits.length });
+  } else {
     checks['no_copy'] = failed(
       'one or more edition units are whole-unit copies of a source beat; see failures[]',
     );

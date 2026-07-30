@@ -1,6 +1,14 @@
 import type { Mode } from '@/schema/ledger.ts';
 
 /**
+ * Which mode-agreement pass outcome held (spec 006 US5, AUDIT-09). The
+ * `'matched'` vs `'matched-by-default'` split is the mode-PROVENANCE honesty
+ * fix: an affirmative `'matched'` must mean the ledger actually DECLARED the
+ * mode the request agreed with, never a value the loader defaulted in.
+ */
+export type ModeComparison = 'matched' | 'matched-by-default' | 'none-supplied';
+
+/**
  * Coverage report types and helpers (D15, FR-025, SC-004).
  *
  * The coverage report is the validator's structured, first-class output enumerating
@@ -96,15 +104,18 @@ export interface CoverageReport {
    */
   mode?: Mode;
   /**
-   * Which mode-agreement pass outcome held (spec 006 US5, FR-012): `'matched'`
-   * when an independently-supplied `requested_mode` equalled the ledger's
-   * `mode`; `'none-supplied'` when no `requested_mode` was supplied (standalone
-   * validation) — so a reader knows no independent mode comparison occurred,
-   * never a silent "ok". ABSENT on a mode mismatch (the named failure says why)
-   * and on any report that never reached a decided verdict. Unlike the compose-
-   * only trust-boundary fields below, this applies to any mode.
+   * Which mode-agreement pass outcome held (spec 006 US5, FR-012, AUDIT-09):
+   * `'matched'` when an independently-supplied `requested_mode` equalled a mode
+   * the ledger ACTUALLY DECLARED; `'matched-by-default'` when it equalled a mode
+   * the ledger did NOT declare (absent `mode:` defaulted to `revise`) — an
+   * honest label that never claims independent agreement about a value the
+   * ledger never stated; `'none-supplied'` when no `requested_mode` was supplied
+   * (standalone validation) — so a reader knows no independent mode comparison
+   * occurred, never a silent "ok". ABSENT on a mode mismatch (the named failure
+   * says why) and on any report that never reached a decided verdict. Unlike the
+   * compose-only trust-boundary fields below, this applies to any mode.
    */
-  mode_comparison?: 'matched' | 'none-supplied';
+  mode_comparison?: ModeComparison;
   /** The producer operation was mechanically source-cited but its own upstream fidelity is out of scope (asset-bank territory). Always `'not-checked'` when present. */
   spine_source_fidelity?: 'not-checked';
   /** The deterministic gate proves edition-side accounting only, never semantic support. Always `'not-checkable'` when present. */
@@ -154,6 +165,11 @@ export function composeTrustBoundaryFields(
  * required key yields NO verdict.
  */
 export const REQUIRED_CHECKS = [
+  // mode_agreement is sequenced FIRST (contract step 1) and now emits pass-side
+  // evidence on EVERY decided run (revise and compose alike, AUDIT-15): making
+  // it required proves a `passed` verdict came from a runner that actually
+  // performed the mode comparison, never from an older/broken one that omitted it.
+  'mode_agreement',
   'source_hash',
   'ledger_structure',
   'unit_accounting',

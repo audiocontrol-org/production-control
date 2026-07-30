@@ -49,7 +49,13 @@ export function checkNoCopy(
   sourceUnits: readonly SourceUnit[],
   editionUnits: readonly SourceUnit[],
 ): NoCopyResult {
-  const mode = ledger.mode ?? 'revise';
+  // D6 (AUDIT-06): NO `?? 'revise'` fail-open default. `loadLedger` always
+  // stamps `mode`; an unstamped ledger reaching here is a caller defect, not a
+  // compose edition to silently skip as a revise no-op. Fail LOUD.
+  if (ledger.mode === undefined) {
+    throw new Error('coverage ledger has no mode stamp; cannot judge whole-unit no-copy');
+  }
+  const mode = ledger.mode;
   if (mode !== 'compose') {
     return { ok: true, applicable: false, failures: [] };
   }

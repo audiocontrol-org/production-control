@@ -11,8 +11,12 @@
 //   beats resolving to real source units) -> passes.
 // - occurrence-sensitivity: two byte-identical edition units each need their
 //   own record; accounting for only one occurrence still fails.
-// - compose-only: mode 'revise' (declared or defaulted, absent) is a no-op
-//   (not applicable), regardless of grounding.
+// - compose-only: mode 'revise' (declared) is a no-op (not applicable),
+//   regardless of grounding.
+// - D6 (AUDIT-06): an UNSTAMPED ledger (no `mode`) is NOT silently treated as a
+//   revise no-op — the fail-open default is gone, so the check THROWS a named
+//   error. `loadLedger` always stamps a mode, so this only fires on a caller
+//   that constructs a `CoverageLedger` by other means and forgets it.
 //
 // `@/policy/grounding.ts`'s `checkGrounding` is NOT re-tested here for its
 // own accounting logic (see its own coverage) -- this exercises
@@ -175,7 +179,7 @@ test('checkEditionGrounding: mode revise is a no-op (not applicable), regardless
   assert.deepEqual(result.failures, []);
 });
 
-test('checkEditionGrounding: an absent mode defaults to revise (no-op) safely', () => {
+test('checkEditionGrounding (D6/AUDIT-06): an UNSTAMPED ledger THROWS rather than fail-open-defaulting to a revise no-op', () => {
   const sourceUnits = deriveUnits(SOURCE_TEXT, SOURCE_IDENTITY);
   const editionUnits = deriveUnits(EDITION_TEXT, EDITION_IDENTITY);
 
@@ -186,9 +190,10 @@ test('checkEditionGrounding: an absent mode defaults to revise (no-op) safely', 
     coverage: [],
   };
 
-  const result = checkEditionGrounding(noModeLedger, editionUnits, sourceUnits);
-
-  assert.equal(result.applicable, false);
-  assert.equal(result.ok, true);
-  assert.deepEqual(result.failures, []);
+  // The whole point of the fix: a missing mode is a LOUD caller defect, not a
+  // silent skip that would let a compose edition be validated under revise rules.
+  assert.throws(
+    () => checkEditionGrounding(noModeLedger, editionUnits, sourceUnits),
+    /no mode stamp/,
+  );
 });

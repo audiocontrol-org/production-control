@@ -125,4 +125,8 @@ test('runFidelity (T018 US2): a fully-grounded compose edition still PASSES (the
   assert.equal(result.decided, true, `expected a decided outcome; failures: ${result.failures.join('; ')}`);
   assert.equal(result.passed, true, `expected a pass; failures: ${result.failures.join('; ')}`);
   assert.equal(result.report.verdict, 'passed');
+  // D2 (AUDIT-13/-16): a clean compose run leaves pass-side EVIDENCE — the two
+  // compose checks are present-and-passed, never encoded as silence.
+  assert.equal(result.report.checks['edition_grounding']?.state, 'passed');
+  assert.equal(result.report.checks['no_copy']?.state, 'passed');
 });

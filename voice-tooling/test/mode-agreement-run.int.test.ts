@@ -124,14 +124,21 @@ test('mode-agreement (US5, pipeline): a standalone validation (no requested_mode
     'none-supplied',
     'a standalone validation records that no independent mode comparison occurred',
   );
+  // D2 (AUDIT-15): mode_agreement now emits PASS-SIDE evidence on every decided
+  // run — a passing report PROVES the check ran, never inferred from its absence.
   assert.equal(
-    result.report.checks.mode_agreement,
-    undefined,
-    'mode_agreement is not a named check on a pass — it appears only on a mismatch',
+    result.report.checks.mode_agreement?.state,
+    'passed',
+    'mode_agreement is present-and-passed on a pass (pass-side evidence, AUDIT-15)',
+  );
+  assert.equal(
+    result.report.checks.mode_agreement?.mode_comparison,
+    'none-supplied',
+    'the passed check carries its mode_comparison consistently',
   );
 });
 
-test('mode-agreement (US5, pipeline): a matching requested_mode passes with mode_comparison: matched', () => {
+test('mode-agreement (US5, pipeline): a matching requested_mode against a DEFAULTED revise ledger passes with mode_comparison: matched-by-default', () => {
   const { source, edition } = loadFaithfulFixture();
 
   const result = runFidelity({
@@ -143,9 +150,21 @@ test('mode-agreement (US5, pipeline): a matching requested_mode passes with mode
 
   assert.equal(result.passed, true, 'requested revise vs a revise ledger passes');
   assert.equal(result.report.verdict, 'passed');
+  // D6 (AUDIT-09): the faithful fixture ledger declares NO `mode:` — it is
+  // defaulted to revise. A requested `revise` agrees, but the ledger never
+  // stated it, so the honest label is matched-by-default, not a bare matched.
   assert.equal(
     result.report.mode_comparison,
-    'matched',
-    'a supplied requested_mode equal to the ledger mode records matched',
+    'matched-by-default',
+    'agreement with a DEFAULTED mode must not overclaim an independent match',
+  );
+  assert.equal(
+    result.report.checks.mode_agreement?.state,
+    'passed',
+    'mode_agreement is present-and-passed, carrying matched-by-default',
+  );
+  assert.equal(
+    result.report.checks.mode_agreement?.mode_comparison,
+    'matched-by-default',
   );
 });
