@@ -1,5 +1,5 @@
-// T022 (US4, RED-first): the revise producer PRE-EMIT self-check refuses a
-// DRIFTED `verbatim` unit BEFORE writing (spec 006 US4; TASK-50,
+// T022/T023 (US4): the revise producer PRE-EMIT self-check refuses a DRIFTED
+// `verbatim` unit BEFORE writing (spec 006 US4; TASK-50,
 // .stack-control/backlog/tasks/task-50 -
 // voice-revise-alters-verbatim-declared-units.md -- the empirical defect this
 // task exists to close: 2/56 editions in a full-ebook run declared
@@ -8,16 +8,15 @@
 // pre-emit self-check"; Principle V (refuse loudly BEFORE any write, never a
 // partial edition left behind).
 //
-// `@/revise/preflight.ts`'s `runPreflight` is a NO-OP for `mode !== 'compose'`
-// today -- T023 is the task that wires the shared, pure
-// `@/policy/op-legality.ts#checkOpLegality('revise', ...)` predicate (already
-// implemented; see its `revise-verbatim-drift` failure kind and
-// `collectVerbatimDrift`) into the revise branch of `runPreflight`. This file
-// is RED-test-only: it does NOT implement that branch. It drives the REAL
-// `voice-revise` binary end-to-end (mirrors `test/compose-preflight-no-copy.
-// int.test.ts`'s style) with a stub model, and separately pins a SC-006
-// regression: the new preflight/verbatim work must not break a pre-006
-// shipped-shape revise edition (no `mode` field, no `grounding`).
+// `@/revise/preflight.ts`'s `runPreflight` refuses revise-mode verbatim drift
+// via the shared, pure `@/policy/op-legality.ts#checkOpLegality('revise', ...)`
+// predicate (its `revise-verbatim-drift` failure kind, computed by
+// `collectVerbatimDrift`) wired into the revise branch of `runPreflight`; this
+// test pins that behavior end-to-end through the REAL `voice-revise` binary
+// (mirrors `test/compose-preflight-no-copy.int.test.ts`'s style) with a stub
+// model, and separately pins a SC-006 regression: the preflight/verbatim work
+// must not break a pre-006 shipped-shape revise edition (no `mode` field, no
+// `grounding`).
 
 import test from 'node:test';
 import * as assert from 'node:assert/strict';
@@ -81,12 +80,9 @@ test('voice revise (US4/TASK-50): a model output declaring a DRIFTED verbatim un
 
     const { code, stdout, stderr } = runRevise(request, DRIFT_RUNNER);
 
-    // THE RED ASSERTION: today (no revise verbatim-drift preflight exists yet
-    // -- T023 adds it), `runPreflight` is a no-op for mode 'revise', so the
-    // producer currently EMITS this drifted edition instead of refusing it.
-    // This assertion is expected to FAIL until T023 wires
-    // `checkOpLegality('revise', ...)`'s `revise-verbatim-drift` failures into
-    // `runPreflight`.
+    // `runPreflight`'s revise branch refuses this drifted `verbatim` unit BEFORE
+    // any write, via `checkOpLegality('revise', ...)`'s `revise-verbatim-drift`
+    // failure kind.
     assert.notEqual(code, 0, `expected a non-zero exit (pre-emit refusal); stdout: ${stdout}`);
     assert.equal(stdout, '', 'a refused revise must write NO BuildResponse to stdout');
     assert.match(
