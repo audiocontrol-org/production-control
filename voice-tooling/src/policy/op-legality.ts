@@ -46,7 +46,15 @@ export type OpLegalityFailureKind =
   | 'compose-forbids-verbatim'
   | 'compose-forbids-cut'
   | 'whole-unit-copy'
-  | 'revise-verbatim-drift';
+  | 'revise-verbatim-drift'
+  /**
+   * An undeclared cut (AUDIT-20260730-34): a non-`cut` coverage entry whose
+   * declared `edition_units` is EMPTY or ABSENT. Its beat is declared
+   * represented/merged/verbatim yet lands NOWHERE -- a cut spelled differently.
+   * Illegal in BOTH modes: it bypasses compose's no-cut invariant AND revise's
+   * cut-requires-reason obligation with a one-token label change.
+   */
+  | 'op-without-destination';
 
 export interface OpLegalityFailure {
   kind: OpLegalityFailureKind;
@@ -98,6 +106,8 @@ export function checkOpLegality(
           kind: 'compose-forbids-cut',
           message: `compose-mode forbids cut: coverage entry ${index}`,
         });
+      } else if (hasNoDestination(entry)) {
+        failures.push(undeclaredCutFailure(entry, index));
       } else {
         collectWholeUnitCopies(entry, sourceByKey, editionByKey, failures, reportedCopyKeys);
       }
@@ -105,6 +115,13 @@ export function checkOpLegality(
     }
 
     // revise
+    if (entry.op !== 'cut' && hasNoDestination(entry)) {
+      // AUDIT-34: an undeclared cut is illegal in revise too -- a `represented`/
+      // `merged`/`verbatim` beat that lands nowhere sidesteps the cut-requires-
+      // reason obligation. (A real `cut` legitimately declares no destination.)
+      failures.push(undeclaredCutFailure(entry, index));
+      return;
+    }
     if (entry.op === 'verbatim') {
       collectVerbatimDrift(entry, sourceByKey, editionByKey, failures);
     }
@@ -143,7 +160,7 @@ function collectWholeUnitCopies(
     if (dest === undefined) {
       continue;
     }
-    if (dest.contentHash === beat.contentHash) {
+    if (dest.contentHash === beat.contentHash && !isExemptFromNoCopy(beat)) {
       reportedCopyKeys.add(sourceUnitKey(dest));
       failures.push({
         kind: 'whole-unit-copy',
@@ -166,11 +183,22 @@ function collectWholeUnitCopies(
  * This sweep closes that hole by comparing the derived edition set against the
  * derived source set directly, trusting no declaration.
  *
- * BOUNDARY (R4): whole-unit byte-identity IS the deterministic copy line. A
- * genuine re-voicing is never byte-identical to its beat, so a short edition
- * unit that coincidentally byte-equals a short beat is -- by the rule's
- * definition -- a copy, not a false positive; there is no re-voicing to
- * preserve when the bytes are identical.
+ * BOUNDARY (R4): whole-unit byte-identity IS the deterministic copy line for a
+ * SUBSTANTIVE-PROSE beat. A genuine re-voicing is never byte-identical to its
+ * beat, so a substantive edition unit that byte-equals a substantive beat is --
+ * by the rule's definition -- a copy, not a false positive.
+ *
+ * EXEMPTION (AUDIT-20260730-36/-39): the no-copy invariant applies ONLY to a
+ * beat that is SUBSTANTIVE PROSE (has re-voiceable prose). A beat whose ENTIRE
+ * content is REQUIRED-PAYLOAD-THAT-MUST-SURVIVE -- a marker-only
+ * `[OPEN-QUESTION: ...]` beat, a bare citation, a markdown heading, or a
+ * structural rule -- is EXEMPT (see `isExemptFromNoCopy`). Survival/structure
+ * MANDATES those exact bytes (FR-013 for the marker; the document's structure
+ * for a heading/rule), so there is nothing to re-voice: no-copy and marker-
+ * survival would otherwise be mutually unsatisfiable and deadlock an honest
+ * producer. The exemption is PURE-payload-only -- a marker or citation embedded
+ * in re-voiceable prose leaves the beat substantive, so a verbatim copy of it
+ * still fails. This is the invariant this module and `check-no-copy.ts` share.
  *
  * Units already named by the pairwise arm (in `reportedCopyKeys`) are skipped
  * so a coverage-declared copy is reported exactly once, with the clearer
@@ -195,6 +223,9 @@ function sweepWholeUnitCopies(
     }
     const beat = beatByHash.get(unit.contentHash);
     if (beat === undefined) {
+      continue;
+    }
+    if (isExemptFromNoCopy(beat)) {
       continue;
     }
     reportedCopyKeys.add(key);
@@ -235,6 +266,70 @@ function collectVerbatimDrift(
       });
     }
   }
+}
+
+// ---- undeclared-cut + no-copy-exemption predicates ------------------------
+
+/** A non-`cut` entry with an empty/absent declared destination set (AUDIT-34). */
+function hasNoDestination(entry: CoverageEntry): boolean {
+  return (entry.edition_units ?? []).length === 0;
+}
+
+/** The `op-without-destination` failure for an undeclared-cut entry. */
+function undeclaredCutFailure(entry: CoverageEntry, index: number): OpLegalityFailure {
+  return {
+    kind: 'op-without-destination',
+    message:
+      `undeclared cut: coverage entry ${index} (op '${entry.op}') declares no edition_units ` +
+      `destination -- a non-cut op that lands nowhere is a cut in disguise`,
+  };
+}
+
+/**
+ * Open-question marker (R7/FR-013) and citation-marker recognizers, kept in sync
+ * (by `.source`) with `@/payload/extract.ts` so "what must survive" here matches
+ * "what is required payload" there without a runtime dependency on that module.
+ */
+const OPEN_QUESTION_RE = /\[OPEN-QUESTION:(?:[^\[\]]|\[[^\[\]]*\])*\]/g;
+const CITATION_RE = /\[\^[^\]\s]+\]|\[[A-Z][A-Z0-9]*-[A-Z0-9-]+\]/g;
+/** ATX markdown heading: up to three leading spaces, 1-6 `#`, a space, content. */
+const HEADING_RE = /^ {0,3}#{1,6}\s+\S/;
+/** Thematic break / structural rule: a run of `-`, `*`, or `_` (>=3), alone. */
+const THEMATIC_BREAK_RE = /^(?:-{3,}|\*{3,}|_{3,})$/;
+
+/**
+ * NO-COPY EXEMPTION (AUDIT-20260730-36/-39). A beat is EXEMPT from the whole-unit
+ * no-copy rule -- its bytes are MANDATED, not chosen, so it cannot be "copied" --
+ * iff it is NOT substantive prose. Concretely, a beat is exempt when it is one
+ * of, after trimming surrounding whitespace:
+ *
+ *   - REQUIRED-PAYLOAD-ONLY: removing every `[OPEN-QUESTION: ...]` marker and
+ *     every citation marker leaves only whitespace (a marker-only beat, a bare
+ *     citation, or a combination). These bytes must survive byte-exact (FR-013 /
+ *     citation survival), so re-voicing them is forbidden -- exempting them is
+ *     the only way no-copy and survival are jointly satisfiable.
+ *   - A single-line markdown HEADING (`## ...`): a structural label whose bytes
+ *     are the document's structure, not re-voiceable prose.
+ *   - A single-line THEMATIC BREAK / structural rule (`---`, `***`, `___`).
+ *
+ * The exemption is PURE-payload/structure-only: a marker or citation embedded in
+ * prose that could be re-voiced (`Prose. [OPEN-QUESTION: ...]`) leaves
+ * re-voiceable bytes behind, so the beat stays SUBSTANTIVE and a verbatim copy
+ * of it is still a `whole-unit-copy` violation.
+ */
+function isExemptFromNoCopy(beat: SourceUnit): boolean {
+  const trimmed = beat.content.trim();
+  if (trimmed.length === 0) {
+    return true;
+  }
+  const isSingleLine = !trimmed.includes('\n');
+  if (isSingleLine && (HEADING_RE.test(trimmed) || THEMATIC_BREAK_RE.test(trimmed))) {
+    return true;
+  }
+  const withoutRequiredPayload = trimmed
+    .replace(new RegExp(OPEN_QUESTION_RE.source, OPEN_QUESTION_RE.flags), '')
+    .replace(new RegExp(CITATION_RE.source, CITATION_RE.flags), '');
+  return withoutRequiredPayload.trim().length === 0;
 }
 
 // ---- identity helpers (reuse units/derive.ts contentHash identity) ---------

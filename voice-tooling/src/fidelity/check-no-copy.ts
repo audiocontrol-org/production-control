@@ -27,6 +27,7 @@
 import type { SourceUnit } from '@/units/derive.ts';
 import type { CoverageLedger } from '@/schema/ledger.ts';
 import { checkOpLegality } from '@/policy/op-legality.ts';
+import type { OpLegalityFailureKind } from '@/policy/op-legality.ts';
 
 /** Result of the `no_copy` check (contract step 5, data-model.md). */
 export interface NoCopyResult {
@@ -62,7 +63,34 @@ export function checkNoCopy(
 
   const result = checkOpLegality(mode, ledger.coverage, sourceUnits, editionUnits);
   const failures = result.failures
-    .filter((failure) => failure.kind === 'whole-unit-copy')
+    .filter((failure) => isNoCopyConcern(failure.kind))
     .map((failure) => failure.message);
   return { ok: failures.length === 0, applicable: true, failures };
+}
+
+/**
+ * AUDIT-20260730-46: partition `checkOpLegality`'s failures by the TYPED `kind`
+ * union with an EXHAUSTIVENESS GUARD, not a bare string filter. `no_copy` owns
+ * exactly `whole-unit-copy`; every other kind is another check's concern
+ * (illegal-op -> `check-op-obligations.ts` step 2; revise-verbatim-drift ->
+ * `checkVerbatim`; op-without-destination -> op-obligations' structural gate).
+ * The `assertNever` default makes a future op-legality kind a COMPILE error here
+ * -- it can no longer be SILENTLY swallowed by falling through the old filter.
+ */
+function isNoCopyConcern(kind: OpLegalityFailureKind): boolean {
+  switch (kind) {
+    case 'whole-unit-copy':
+      return true;
+    case 'compose-forbids-verbatim':
+    case 'compose-forbids-cut':
+    case 'revise-verbatim-drift':
+    case 'op-without-destination':
+      return false;
+    default:
+      return assertNever(kind);
+  }
+}
+
+function assertNever(value: never): never {
+  throw new Error(`check-no-copy: unclassified op-legality failure kind: ${String(value)}`);
 }

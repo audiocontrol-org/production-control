@@ -355,3 +355,416 @@ Surface:    voice-tooling/src/revise/prompt/compose.ts:59-72; voice-tooling/src/
 The compose prompt’s compact output shape shows every grounding entry as `{ "edition_unit": ..., "basis": "grounded|connective|framing", "beats": [...] }` at `compose.ts:63`, but the parser explicitly rejects `beats` whenever `basis` is `connective` or `framing` at `protocol.ts:230-232`. The later explanatory text says to omit `beats` for those bases (`compose.ts:70-72`), so the prompt contradicts itself on a model-facing wire contract.
 
 Blast radius is high because a model following the JSON shape literally can emit legitimate connective/framing records with `beats: []` or `beats: [0]`, and the producer will reject before ledger build despite the record being conceptually valid. A reasonable correction is to make the output shape a clear union, e.g. grounded records include non-empty `beats`, while connective/framing records do not include `beats`.
+
+## 2026-07-30 — audit-barrage lift (end-govern-after_implement)
+
+### AUDIT-20260730-23 — REVISE leaves numerals inside an open-question marker required by neither multiset — and the new mode-scope fixture enshrines the hole
+
+Finding-ID: AUDIT-20260730-23 (claude-01 + claude-04 + codex-01; cross-model)
+Status:     open
+Severity:   high
+Per-lane:   claude=high, codex=high
+Decision:   agreement (gate-counted high)
+Surface:    voice-tooling/test/open-question-marker-mode-scope.test.ts:20-67 (with voice-tooling/test/payload-extract.test.ts:136-142)
+
+Two facts are asserted directly in this diff. (1) `extractPayload` masks marker-span digits out of `numerics` **unconditionally** — `payload-extract.test.ts` ("the embedded digit is masked out of numerics") calls `extractPayload('[OPEN-QUESTION: What caused the anomaly in sample 2?]')` with no mode argument and asserts `numerics: []`; the signature has no mode parameter anywhere in the file. (2) The marker obligation is now compose-only — `open-question-marker-mode-scope.test.ts:67` asserts `result.payloadChecked.openQuestionMarkers === 0` in revise, i.e. the gate lives at the `checkOpObligations` layer, not at the extract layer. Compose those and the invariant the D3 fix states for itself ("the byte span the marker payload requires is exactly the span the numeric extractor masks") is **false in revise**: the extractor still masks the span, but nothing requires it. Any numeral an author writes inside `[OPEN-QUESTION: …]` in a revise source is unenforced payload — exactly the AUDIT-14 unenforced-bytes shape, reopened in the other mode by the AUDIT-08 fix.
+
+The fixture proves it rather than catching it. `SOURCE_TEXT` (line 24) is `Beta beat raises a question. [OPEN-QUESTION: What caused the anomaly in sample 2?]` — the marker contains the numeral `2`. `EDITION_DROPS_MARKER` deletes the whole marker, `2` included, and line 55-60 asserts `result.ok === true`. So the suite now *defends* silent loss of a marker-interior numeral in revise. Blast radius: a revise run over a spine whose open question cites a figure (`[OPEN-QUESTION: does the 42-unit cohort hold?]`) can drop or alter `42` and still receive a PASS — a fidelity primitive reporting a guarantee it is not making, which is the failure mode this whole feature exists to prevent.
+
+Invariant-first fix: the masking predicate and the obligation predicate must be the same predicate. Either gate the numeric masking on the same compose scope (so revise re-exposes marker-interior numerals as ordinary prose numerals, which is consistent with "in revise it is ordinary prose"), or keep the marker required in revise and model resolution as an explicit op rather than as unchecked deletion. Separately, this fixture should use marker text containing no numerals or citations so it asserts only the scope property, with a companion case asserting that a revise edition dropping `42` from inside a marker *is* refused via the numeric multiset.
+
+### AUDIT-20260730-24 — The bracket-aware scanner's unbalanced-inner-`[` branch has no fixture — the two plausible behaviors are byte-loss and prose-swallowing
+
+Finding-ID: AUDIT-20260730-24
+Status:     open
+Severity:   high
+Per-lane:   claude=high
+Decision:   adjudicated (gate-counted high) — blast-radius=high, reachability=reachable, fix-debt=no; reachable, high blast radius — NOT calibrated down (real signal preserved, SC-003).
+Surface:    voice-tooling/test/payload-extract.test.ts:159-216 (the D3 nested-bracket block)
+
+The fix replaced `/\[OPEN-QUESTION:[^\]]*\]/` with a bracket-aware span (D3 (c) proves `foo[0]` stays *inside* the marker, so the scanner must track nesting). That is a new parser branch, and the D3 block enumerates only **balanced** nested shapes: `[^ref-4]` (a), `[ABC-1]` (b), `foo[0]` (c), a numeral after the inner `]` (d), plus round-0 cases for an unterminated *outer* marker and two adjacent markers. The unbalanced-inner-bracket channel — `[OPEN-QUESTION: is foo[0 valid?] and 42 more.` — is unfixtured in every file in this chunk.
+
+Both reachable outcomes are defects, which is why the missing fixture matters more than usual. If the scanner requires depth to return to zero, it never closes: the real marker is dropped entirely, the report's `open_question_markers` field (computed from "the spine declares at least one marker", per `open-question-marker.test.ts:8-11`) may still read `enforced` while nothing is enforced. If instead it consumes forward to the next `]` in downstream prose, the marker span over-merges and swallows unrelated prose into a required-payload multiset **while masking that prose's numerals out of `numerics`** — a new unenforced-bytes hole manufactured by the fix for the previous unenforced-bytes hole. The round-0 self-red-team driver applies squarely: this is what the fix *moved* rather than removed.
+
+Blast radius: a single stray `[` in a hand-authored spine question silently changes which bytes the pipeline enforces, in a mechanism whose entire value is that operators can trust its scope claim. Fix: add fixtures for unbalanced-inner-`[` and unbalanced-inner-`]`, and state the scanner's invariant for malformed nesting explicitly (my recommendation: treat a marker whose nesting does not balance as *not a marker*, so it degrades to ordinary prose and no numerals are masked — matching the existing unterminated-outer behavior at round-0).
+
+### AUDIT-20260730-25 — `check-op-obligations-compose.test.ts` documents `loadLedger` as defaulting an absent mode to `'revise'`, directly contradicting the AUDIT-06 fail-closed note added in the same chunk
+
+Finding-ID: AUDIT-20260730-25
+Status:     open
+Severity:   high
+Per-lane:   claude=high
+Decision:   single-model (gate-counted high)
+Surface:    voice-tooling/test/check-op-obligations-compose.test.ts:9 (and voice-tooling/test/classify-op-failures.test.ts:61-63)
+
+Line 9 of the new test's header states the mode field is `(schema/ledger.ts, defaulted to 'revise' by \`loadLedger\`)`. The other file in this same chunk states the opposite policy: `classify-op-failures.test.ts:61-63` — "D6 (AUDIT-06): `checkOpObligations` no longer fail-open-defaults an absent mode; a ledger reaching it must be stamped." Commit `bc1c626` claims "no fail-open mode default (AUDIT-06/09)". The two statements are only reconcilable if the default was moved *up* into `loadLedger` rather than removed — which is precisely the fail-open AUDIT-06 was closing, just relocated one layer earlier: an edition whose YAML ledger omits `mode:` would then be validated as `revise`, and `compose`'s illegal dispositions (`verbatim`, `cut` — i.e. whole-unit copying from the spine) would pass unflagged.
+
+Blast radius: the validator is the *independent* half of the trust boundary — its whole job is to judge a ledger it did not produce. If `loadLedger` still supplies `'revise'` for an unstamped ledger, an adversarial or hand-edited compose edition escapes compose op-legality entirely while the report prints `mode: revise` and `verdict: passed`. Even in the benign reading (line 9 is merely stale narration and `loadLedger` now refuses an unstamped ledger), an unattended agent reading line 9 as current will build against a defaulting `loadLedger` — reintroducing the hole in the next change. The readings are not resolvable from anything in the diff, which is what pushes this above `medium`.
+
+Fix: verify `loadLedger`'s actual behavior on a ledger with no `mode:` key. If it defaults, make it refuse (fail-closed) and add a fixture pinning the refusal; if it already refuses, correct line 9 — no comment in the repo should describe a mode default that no longer exists.
+
+---
+
+### AUDIT-20260730-26 — D8 forward reconciliation is only fixtured against a `framing` self-label — a `grounded` record that OMITS a beat coverage proves it carries has no test
+
+Finding-ID: AUDIT-20260730-26
+Status:     open
+Severity:   high
+Per-lane:   claude=high
+Decision:   single-model (gate-counted high)
+Surface:    voice-tooling/test/policy-grounding.test.ts:287-317 (`D8 forward -- a unit coverage proves carries a beat cannot be labeled framing`)
+
+The forward reconciliation test builds coverage `beat0 -> e0`, `beat1 -> e1`, then makes `e0` self-label `framing` and asserts one `basis-contradicts-coverage`. That fixture only distinguishes *basis label* — it passes under an implementation whose forward check is merely "a unit named by any coverage entry must have `basis: 'grounded'`". The stronger reading the file's own header claims (line 26-28: coverage and grounding are "two views of the SAME beat<->edition mapping") requires the forward check to be per-beat: if coverage proves `e0` carries beats `s0` and `s1`, a record `{e0, grounded, beats: [s0]}` must also be refused, because it drops a beat coverage declared. No fixture in this file exercises that shape — every `grounded` fixture supplies coverage that names exactly the beats the record names (`cov(ref(s0), ref(e0))` at lines 71, 88, 106, 129, 372).
+
+Blast radius: an under-declaring `grounded` record is the exact invented-prose adjacency D8 exists to close, read from the other end — the unit legitimately carries beat `s0`, so it is honestly "grounded", but the prose derived from beat `s1` is now unaccounted-for provenance while the accounting reports `ok: true`. Since `checkGrounding` is the single source of truth for both the producer preflight and the validator (header lines 5-7), a downstream consumer — including an unattended agent trusting the validator's pass — gets a green grounding report over an edition whose beat→unit mapping the two views disagree about. The suite cannot tell whether the shipped implementation closes this or not, which is the defect: the test claims to test bidirectional reconciliation and only pins one direction's coarse form.
+
+Fix: add a fixture where coverage maps `s0 -> e0` **and** `s1 -> e0`, and the record is `{e0, grounded, beats: [ref(s0)]}`, asserting `basis-contradicts-coverage` naming `s1`. If the intended contract is deliberately looser (grounding beats may be a strict subset of coverage-declared beats), state that invariant plus its in-scope exception in the header and add the passing fixture that pins it, so the looseness is a decision rather than an untested gap.
+
+### AUDIT-20260730-27 — Behavior with empty `coverage` and an honest `grounded` record is unpinned — both fail-open and refusal-storm implementations pass this suite
+
+Finding-ID: AUDIT-20260730-27
+Status:     open
+Severity:   high
+Per-lane:   claude=high
+Decision:   adjudicated (gate-counted high) — blast-radius=high, reachability=unstated, fix-debt=no; no down-calibration signal — high retained.
+Surface:    voice-tooling/test/policy-grounding.test.ts:30-33, 178-186, 253-259
+
+`coverage` is a newly added 4th parameter (header lines 30-31). The suite exercises exactly two empty-coverage shapes: connective-only records (lines 178-186, expected pass) and a `grounded` record with **no** beats (lines 253-259, expected `grounded-without-beats`). The one combination that actually discriminates the reconciliation's default posture — empty coverage plus a `grounded` record naming **real, resolvable** beats — is never fixtured.
+
+That combination is the most likely regression channel for a freshly threaded argument. It has two mutually exclusive plausible behaviors and this suite accepts both: (a) fail-closed — D8 reverse fires `basis-contradicts-coverage` for every beat, because no coverage entry maps it, turning any caller that forgets to thread coverage (or threads a revise-shaped ledger with no coverage entries) into a total refusal storm on honest editions; or (b) fail-open — reconciliation is skipped when `coverage.length === 0`, in which case a producer can suppress the entire D8 check by emitting zero coverage entries, restoring `basis` to the unfalsifiable self-label AUDIT-21 was filed against.
+
+Blast radius: under (b) the fix is defeated by a one-line producer behavior and no test notices; under (a) an unrelated caller wiring change silently converts passes into refusals with a misleading failure kind. Both are consequences an unattended consumer would act on. Fix: add two fixtures — `checkGrounding([{e0, grounded, beats:[s0]}], ed, src, [])` asserting the intended kind (and asserting it is *not* silently `ok: true` if fail-closed is intended), and a companion documenting whether an empty coverage view is legal input at all versus a caller error.
+
+### AUDIT-20260730-28 — D8 reconciliation is only ever exercised with `op: 'represented'` — the `op` value channel is unfixtured
+
+Finding-ID: AUDIT-20260730-28
+Status:     open
+Severity:   high
+Per-lane:   claude=high
+Decision:   single-model (gate-counted high)
+Surface:    voice-tooling/test/policy-grounding.test.ts:46-52 (`cov` helper), used at 71, 88, 106, 129, 231, 299-300, 336, 372
+
+The `cov` helper hardcodes `op: 'represented'`, and every coverage entry in the file — including both D8 tests and the D8 all-consistent pass — flows through it. So the entire reconciliation is pinned over a single value of a multi-valued field. Nothing in this file distinguishes an implementation that reconciles *all* coverage entries from one that filters to `op === 'represented'`.
+
+This is precisely the channel-enumeration hazard: D8 adds a new fold over coverage, and the fold's selector is untested. If the implementation filters on `op === 'represented'`, then every legal-in-compose non-`represented` op (whatever the op-legality module admits for compose — compressed / merged / reordered / paraphrased-shaped ops) reopens the original AUDIT-21 hole in full: a unit coverage proves carries a beat under a non-`represented` op can still self-label `framing` or `connective` and escape the grounded obligation, and the suite is green. Conversely, if the implementation reconciles indiscriminately, then a `cut`-shaped entry (a beat deliberately dropped, whose `edition_units` should be empty or absent) needs a fixture proving it creates no obligation — otherwise a legal cut becomes a spurious `basis-contradicts-coverage`.
+
+Blast radius: silently reduces D8 from "basis is falsifiable" to "basis is falsifiable for one op," which a consumer reading the header (lines 26-28) and the test names would never suspect. Fix: parameterize `cov` with `op`, and add (1) a forward fixture using each compose-legal non-`represented` op asserting the contradiction still fires, and (2) a fixture for the drop-shaped op asserting it imposes no grounding obligation.
+
+### AUDIT-20260730-29 — `finalize`'s `openQuestionMarkers` default `'none-declared'` fabricates a trust-boundary fact whenever a caller omits it
+
+Finding-ID: AUDIT-20260730-29
+Status:     open
+Severity:   high
+Per-lane:   claude=high
+Decision:   single-model (gate-counted high)
+Surface:    voice-tooling/src/fidelity/run-outcome.ts:32-38, 66; voice-tooling/src/fidelity/report.ts:140-160
+
+`finalize(...)` declares `openQuestionMarkers: 'enforced' | 'none-declared' = 'none-declared'` as a defaulted trailing positional parameter, and passes it straight into `composeTrustBoundaryFields` for any compose run. `open_question_markers` is not a nullable diagnostic — `report.ts:141-160` documents it as a *reported fact about the spine*: `'none-declared'` means "the spine declared no marker", and the AUDIT-02 paragraph tells the reader that a passing report with `'none-declared'` can be read as "no marker guarantee was in play AND the edition invented none." A defaulted value makes that statement unfalsifiable: any caller that forgets the argument, or any compose path that reaches `finalize` *before* `sourceDeclaresOpenQuestionMarker` has been computed (the early-abort paths that `finalize`'s own comment at lines 40-44 acknowledges — `source_hash` / `ledger_structure` / `unit_accounting` failures return early), emits an affirmative "the spine declared no marker" about a spine that may declare several.
+
+The docblock on `composeTrustBoundaryFields` defends only one direction — "it never invents an `'enforced'` claim on its own" — but the invented `'none-declared'` is the *permissive* direction, the one that tells a reader no marker guarantee was in play. This is precisely the fallback-that-hides-a-failure-mode shape the project guidelines ban outside test code: the honest behavior for "we don't know yet" is to omit the field (the type is already optional, `report.ts:141`), not to assert the safe-looking value.
+
+Blast radius: a compose report that aborts early, or a future second call site, reports a spine's enforced markers as `none-declared`. An unattended consumer diffing reports, or an operator auditing whether marker survival was in play for a given edition, gets a confident wrong answer with no signal that the value was never computed. Fix: make the parameter required and non-defaulted, and have the abort paths pass an explicit third state (or omit the field entirely by passing `undefined` and making `composeTrustBoundaryFields` spread it conditionally). While there, consider replacing the six-positional-parameter signature with a single options object — `finalize(checks, failures, true, mode, modeComparison, marks)` is exactly the shape where a caller silently drops a trailing argument.
+
+---
+
+### AUDIT-20260730-30 — Compose-only checks are not required for a passing verdict
+
+Finding-ID: AUDIT-20260730-30
+Status:     open
+Severity:   high
+Per-lane:   codex=high
+Decision:   single-model (gate-counted high)
+Surface:    voice-tooling/src/fidelity/report.ts:181-197
+
+`REQUIRED_CHECKS` now requires `mode_agreement`, but it still omits the newly introduced compose-side checks: `edition_grounding`, `no_copy`, and `open_question_fabrication`. `computeVerdict` only guards against absent obligations by iterating this list, so a caller that assembles an otherwise passing compose report without one of these checks can still receive `verdict: 'passed'`.
+
+This matters because the diff’s own contract language says these checks provide pass-side evidence and prevent consumers from confusing “checked and clean” with silence. The live `runFidelity` path does populate them, but `computeVerdict` is the shared verdict primitive and its required vocabulary is the fail-closed boundary. The reasonable fix is to include the compose-only check keys in the required vocabulary, using explicit `passed`, `not-run`, or `aborted` states as appropriate for revise and earlier-abort paths.
+
+### AUDIT-20260730-31 — Hash-keyed grounding refs collapse byte-identical units, so "exactly one grounding record per edition unit" is not decidable
+
+Finding-ID: AUDIT-20260730-31
+Status:     open
+Severity:   high
+Per-lane:   claude=high
+Decision:   single-model (gate-counted high)
+Surface:    voice-tooling/src/revise/ledger-build.ts:178-202 (`resolveGrounding` → `unitRefOf`), plus the ref-keyed grounding consumers in `voice-tooling/src/policy/grounding.ts`
+
+`resolveGrounding` converts each model-declared `edition_unit` **index** into a content-addressed `UnitRef` via `unitRefOf(editionUnit)` (documented as "bare-hex `contentHash` -> `sha256:<hex>`"). Index identity is therefore destroyed at resolution time: two derived edition units with identical bytes produce the *same* `UnitRef`. The compose contract advertised in this very diff (`help.ts`, MECHANICAL tier: "every edition unit carries exactly one grounding record") is stated over *units*, but the ledger only carries *refs*. Under a byte-identical duplicate the downstream policy has no way to distinguish "unit 3 grounded, unit 7 ungrounded" from "both grounded" — a set/membership-keyed check silently **accepts** an ungrounded unit (the core guarantee of the feature evaporates), while a cardinality-keyed check ("exactly one record per ref") **falsely refuses** a legitimate edition that grounded both duplicates. Both failure modes are silent-and-wrong from the operator's seat.
+
+Evidence: `edition_unit: unitRefOf(editionUnit)` at the end of the `declared.map` callback, with no index, ordinal, or offset carried alongside; the same shape applies to `beats: [...unitRefOf(beatUnit)]` resolved against `sourceUnits`. The trigger is not exotic — spines are short beat lines, and duplicate one-line beats, repeated section markers, or a repeated `[OPEN-QUESTION] …` line all derive to colliding units. The pre-existing `coverage` mapping has the same shape, but this diff is what extends the scheme to grounding, where the "exactly one" cardinality claim is newly load-bearing.
+
+A reasonable fix is to make the ref carry index identity (e.g. `{ index, ref }` or an `occurrence` ordinal on the `UnitRef`) so per-unit grounding is decidable, **or** to refuse loudly at resolution time when `editionUnits`/`sourceUnits` contain byte-identical members — a refusal is honest; a collision that reconciles by accident is a bug factory. Either way this needs a fixture with two byte-identical edition units and a fixture with two byte-identical beats.
+
+### AUDIT-20260730-32 — Model-leading frontmatter bypasses producer preflight’s unit view
+
+Finding-ID: AUDIT-20260730-32
+Status:     open
+Severity:   high
+Per-lane:   codex=high
+Decision:   single-model (gate-counted high)
+Surface:    voice-tooling/src/revise/ledger-build.ts:75-76, voice-tooling/src/revise/ledger-build.ts:140-141
+
+`buildEdition` derives `editionUnits` from `args.model.edition` before it prepends the provider ledger frontmatter. `deriveUnits` strips exactly one leading frontmatter block, so if the model returns an edition body that itself starts with `--- ... ---`, lines 75-76 silently derive units with that model-supplied block stripped. Lines 140-141 then prepend the real ledger block and write the model body unchanged, meaning the validator later strips only the provider ledger and sees the model-supplied frontmatter as edition content.
+
+That makes the producer preflight check a different unit set than the emitted artifact. A compose model can produce leading frontmatter, pass grounding/no-copy preflight against the stripped body units, and still emit an edition whose validator-facing units have an extra or shifted first unit. The blast radius is high because this breaks the stated “before any write” self-check contract for a plausible model output shape: downstream consumers get a written artifact that the producer’s own preflight did not actually check as emitted. A reasonable fix is to refuse model editions that begin with complete frontmatter, or derive preflight/ledger refs from the exact post-ledger artifact body representation the validator will see.
+
+### AUDIT-20260730-33 — Marker comparison is a `Set`, so an edition that multiplies one spine marker N times passes both fabrication and survival, and no fixture covers the channel
+
+Finding-ID: AUDIT-20260730-33 (claude-07 + codex-01; cross-model)
+Status:     open
+Severity:   high
+Per-lane:   claude=low, codex=high
+Decision:   adjudicated (gate-counted high) — blast-radius=unstated, reachability=unstated, fix-debt=no; no down-calibration signal — high retained.
+Surface:    voice-tooling/src/fidelity/check-open-question-fabrication.ts:71-77
+
+Both sides are deduplicated: `spineMarkers` is a `Set` (line 63) and the edition scan skips repeats via `seen` (lines 74-76), commented as *"one refusal per DISTINCT fabricated marker (mirrors `checkCitations`)"*. But the header at line 16 describes citations as governed by a **multiset** (*"the citation multiset's concern (`checkCitations`)"*), so the mirroring claim holds for the refusal-reporting granularity while silently diverging on occurrence-sensitivity. The consequence: a spine that declares one `[OPEN-QUESTION: X]` and an edition that repeats it across five units passes fabrication (byte-present), and passes survival too, since source-subset-of-destination containment (lines 5-6) is satisfied by 1 ⊆ 5.
+
+Per the channel-enumeration driver, this is the value channel the new surface opens and it has no fixture: the test files visible in the other chunks cover the nested-citation case (`open-question-marker-nested.int.test.ts`), mode scope (`open-question-marker-mode-scope.test.ts`), and fabrication (`open-question-marker-fabrication.int.test.ts`), but nothing named for amplification. Blast radius is low — repeating the same open question is a weaker overclaim than inventing one, and occurrence-sensitivity was deliberately hardened for the *policy* layer in `c1e2595` rather than here — so the right outcome may well be to accept it. But the acceptance should be stated as the invariant ("marker presence is set-valued; multiplicity is not an overclaim because the claim is identical") with a fixture pinning the behavior, rather than left as an undocumented consequence of a `Set` chosen to bound refusal noise.
+
+### AUDIT-20260730-34 — `op: 'represented'` with empty/absent `edition_units` is an undeclared cut that op-legality accepts in both modes
+
+Finding-ID: AUDIT-20260730-34
+Status:     open
+Severity:   high
+Per-lane:   claude=high
+Decision:   single-model (gate-counted high)
+Surface:    voice-tooling/src/policy/op-legality.ts:92-118, 136, 232
+
+`checkOpLegality` treats destination-set emptiness as a non-event everywhere. In compose, `entry.op === 'cut'` is refused (`compose-forbids-cut`, ~line 99), but an entry declaring `op: 'represented'` / `'merged'` with `edition_units: []` (or the field absent — the three `?? []` sites at ~136, ~198 in grounding.ts, and ~232 prove the code treats it as optional) falls into the `else` branch at ~104, calls `collectWholeUnitCopies`, whose `for (const destRef of entry.edition_units ?? [])` iterates zero times, and reports nothing. The beat is declared "represented" and lands nowhere. That is precisely a cut, spelled differently, and compose v1's stated invariant is that cut is illegal. The same shape defeats revise's "cut requires a reason" obligation (docstring table, ~line 23): declare the vanished beat `represented` with no destinations and no reason is ever demanded.
+
+Nothing else in this chunk closes it. The AUDIT-18 exhaustive sweep is *edition*-side — it compares derived edition units against derived beats and can only find prose that exists; it structurally cannot see a beat that produced no prose. `checkGrounding` is likewise edition-side (every edition unit has a record); a beat with zero destinations creates no edition unit and therefore no grounding obligation. And the D8 forward reconciliation iterates `entry.edition_units ?? []` too (grounding.ts ~198), so an empty destination list contributes no `coverageBeatsByDest` entry and no contradiction.
+
+Blast radius: a producer (or a model emitting a ledger) that silently drops source material passes the full compose gate clean. The feature's headline claim — compose cannot cut in v1 — is bypassable with a one-token declaration change, and the validator reports OK. Fix: in `checkOpLegality`, refuse a non-`cut` coverage entry whose resolved destination set is empty, as its own failure kind (e.g. `op-without-destination`), in both modes; and if the wire type genuinely makes `edition_units` non-optional, delete the `?? []` guards so the type carries the invariant instead of the code silently absorbing it.
+
+---
+
+### AUDIT-20260730-35 — Invented prose escapes grounding entirely by self-labeling `basis: 'connective'`; the AUDIT-04/17 fix only closed the `grounded`-with-zero-beats channel
+
+Finding-ID: AUDIT-20260730-35
+Status:     open
+Severity:   high
+Per-lane:   claude=high
+Decision:   single-model (gate-counted high)
+Surface:    voice-tooling/src/policy/grounding.ts:132-155, 226-243
+
+The module header states the purpose plainly (lines 12-15): "a source-directed ledger silently permits invented prose (a paragraph with no beat behind it), grounding must be both EXHAUSTIVE and EXCLUSIVE." The `grounded-without-beats` check (~136-144) closes exactly one channel: a record that says `grounded` and cites nothing. Enumerate the adjacent channels the same surface opens and the hole is obvious — `if (record.basis !== 'grounded') { continue; }` at ~133 means a record labeled `connective` or `framing` is exempt from *every* beat obligation in this module.
+
+Now trace an invented paragraph through the full policy. It is a derived edition unit, so it needs a record — EXHAUSTIVE satisfied by emitting one. It is not a destination of any coverage entry (coverage is source-directed; no beat points at it), so `coverageBeatsByDest` has no entry for it and the FORWARD reconciliation at ~226-243 never examines it. Its basis is not `grounded`, so the REVERSE check at ~245-262 skips it and `grounded-without-beats` skips it. Result: `{ ok: true }`. One `basis: 'connective'` label launders an arbitrary quantity of fabricated prose past the check whose stated job is catching fabricated prose, and nothing in the module bounds how much of an edition may be `connective`/`framing`.
+
+Blast radius: this is the quietly-plausible failure — the gate reports clean, so a downstream consumer reads "grounding verified" as "every sentence traces to source." A reasonable fix is to make the non-grounded bases carry their own obligation rather than being an exemption: require `connective`/`framing` records to be structurally bounded (e.g. refuse a `connective` unit that exceeds a declared size/whitespace-normalized token threshold, or require every non-grounded unit to be adjacent to a grounded one), and at minimum surface the connective/framing *count and byte fraction* in the validator report so the escape hatch is visible rather than silent. If bounding is genuinely out of scope for v1, the boundary belongs stated as an invariant in the header ("grounding proves provenance for grounded units only; connective volume is not-checkable and is reported, not refused") — the current header instead claims the module catches invented prose, which it does not.
+
+---
+
+### AUDIT-20260730-36 — Marker-survival and whole-unit no-copy are mutually unsatisfiable for a marker-only spine beat, and no fixture pins which invariant wins
+
+Finding-ID: AUDIT-20260730-36
+Status:     open
+Severity:   high
+Per-lane:   claude=high
+Decision:   adjudicated (gate-counted high) — blast-radius=unstated, reachability=unstated, fix-debt=no; no down-calibration signal — high retained.
+Surface:    voice-tooling/test/open-question-marker-fabrication.int.test.ts:8, :81-96 (interacts with `no_copy`, exercised at voice-tooling/test/mode-agreement-run.int.test.ts ≈62-93)
+
+This chunk establishes two invariants that, in the compose channel, both bind the *same bytes*. The fabrication header states the survival/fabrication rule as byte-containment: "every edition marker must be byte-present in the spine" (line 8), and the faithful test at :81-96 proves the edition must carry `MARKER` byte-for-byte (`Beta rewritten, still raising it. ${MARKER}`) to pass. Meanwhile the sibling test file's fixture comment is explicit that a byte-identical edition unit is a genuine `no_copy` violation — "Unit 0 is byte-identical to source beat 0 ("Alpha beat.") -- a whole-unit copy … so `no_copy` is genuinely LIVE and would FAIL were it ever reached."
+
+Now take a spine beat whose entire content is an open question — e.g. a beat that reads exactly `[OPEN-QUESTION: What caused the anomaly in sample 2?]`. That is a completely plausible spine beat: a spine is a beat list, and "this is unresolved" is a beat. The grounded edition unit for that beat must reproduce the marker verbatim (survival), and the marker is the beat's whole content, so the unit is a whole-unit copy (no_copy fails). The only escapes are (a) padding the unit with prose the spine does not supply — which the grounding/uncorroborated machinery is specifically built to refuse — or (b) dropping the marker, which the survival check refuses. Every branch refuses.
+
+Blast radius: an unattended producer loop composing from any spine containing a marker-only beat cannot ever produce a passing edition. It will burn retries and terminate in a refusal whose two named failures point in opposite directions (`no_copy` says stop copying, marker enforcement says preserve exactly), with nothing in the artifact telling the operator or the agent that the input is unsatisfiable rather than the model being bad at its job. That is worse than a plain failure: it is a failure mode that reads as a model-quality problem. The fix is to state the boundary as an invariant plus an in-scope exception — e.g. "no_copy's invariant is that no edition unit reproduces a source beat's *authored prose* verbatim; a unit whose entire content is a preserved `[OPEN-QUESTION: …]` span is the in-scope exception because marker bytes are mandated by FR-013, not chosen by the model" — and to add a fixture with a marker-only spine beat asserting the resulting pass (or an explicit, named "spine beat is marker-only, not composable" refusal, if that is the chosen semantics).
+
+---
+
+### AUDIT-20260730-37 — SC-006 backward-compat test asserts the *defaulted* mode, not the fixture's absent-`mode` precondition — the guard can silently decay to a tautology
+
+Finding-ID: AUDIT-20260730-37
+Status:     open
+Severity:   high
+Per-lane:   claude=high
+Decision:   single-model (gate-counted high)
+Surface:    voice-tooling/test/revise-verbatim-preflight.int.test.ts:145-172
+
+The SC-006 regression test's entire load-bearing claim is stated in its own comment: *"The fixture ledger itself carries neither `mode:` nor `grounding:` — the exact pre-006 shipped shape. `loadLedger` must still load it, defaulting the absent `mode` to `'revise'`."* But the assertions run **after** `loadLedger`:
+
+```ts
+const ledger = loadLedger(extractLedgerYaml(edition));
+assert.equal(ledger.mode, 'revise', 'an absent ledger `mode` must default to "revise" on read...');
+assert.equal(ledger.grounding, undefined, 'a pre-006 ledger declares no grounding at all');
+```
+
+`ledger.mode === 'revise'` is satisfied both by "the key was absent and the default fired" and by "the fixture literally says `mode: revise`". Nothing in the test observes the raw frontmatter. The fixture is shared (`test/fidelity-pass.test.ts` also pins it, per the comment), so any future edit that stamps `mode: revise` into `faithful-edition.md` — a plausible, well-intentioned normalization once every new edition carries the field — leaves this test green while the absent-key path it exists to protect stops being exercised anywhere. Same argument for `grounding`: a revise ledger omits grounding by construction, so `undefined` proves nothing about the fixture.
+
+Blast radius: this is the *only* guard in this chunk for the 54 shipped pre-006 editions. If it decays to a tautology and `loadLedger`'s default is later removed or narrowed (a live risk — commit `bc1c626` explicitly removed a fail-open mode default elsewhere), every shipped edition starts failing validation with no test having caught it. Fix: assert the precondition on the raw YAML before loading — e.g. `const yaml = extractLedgerYaml(edition); assert.doesNotMatch(yaml, /^\s*mode\s*:/m); assert.doesNotMatch(yaml, /^\s*grounding\s*:/m);` — then assert the defaulted value.
+
+---
+
+### AUDIT-20260730-38 — `runFidelity` is called with no `requested_mode` and asserted to pass — the mode-agreement check is skippable by omission, and no fixture pins that channel for a compose ledger
+
+Finding-ID: AUDIT-20260730-38
+Status:     open
+Severity:   high
+Per-lane:   claude=high
+Decision:   single-model (gate-counted high)
+Surface:    voice-tooling/test/revise-verbatim-preflight.int.test.ts:160-172
+
+The SC-006 test invokes the validator with the `requested_mode` field absent:
+
+```ts
+const result = runFidelity({ source, sourceIdentity: 'source-riverbank-survey', edition });
+assert.equal(result.passed, true, ...);
+```
+
+and pins that this passes. Read together with the ledger default this same test asserts (absent `mode` → `'revise'`), that establishes a two-step channel: a validator call that omits `requested_mode` accepts whatever the ledger declares, and a ledger that omits `mode` is read as `revise`. Under revise mode the compose-only obligations (edition-grounding, no-copy, op-legality for `represented`) do not run at all — that is the whole point of the mode split introduced by `0e2bbd2`/`6c14aa5`.
+
+The consequence is an enforcement-bypass shape with no fixture anywhere in this chunk: a **compose** edition whose ledger's one `mode: compose` line is missing or stripped, validated by a caller that does not pass `requested_mode`, is silently graded under revise rules and skips grounding enforcement entirely. Commit `e4c7472`/`638bdc4` added `check-mode-agreement` and `ValidateRequest.requested_mode` precisely to close mode confusion, and `bc1c626` claims "no fail-open mode default (AUDIT-06/09)" — but this test entrenches the complementary fail-open on the *schema* side and exercises only the benign half. I could not read `@/fidelity/run.ts` to confirm whether an absent `requested_mode` is refused; if it is, this test would not pass as written, so the diff itself is the evidence that omission is permitted.
+
+Blast radius: an unattended agent or CI job that calls `runFidelity` without `requested_mode` (the exact call shape this test blesses) gets a `verdict: passed` on an ungrounded compose edition. Fix: add the missing fixture — a compose-mode ledger validated with no `requested_mode` — and pin the intended behavior explicitly (refuse, or grade as compose from the ledger). If the SC-006 compat really does need the absent-mode default, scope it as a named legacy affordance rather than a silent global default, and state the invariant plus its in-scope exception in the test comment.
+
+---
+
+### AUDIT-20260730-39 — Exhaustive no-copy sweep opens an unfixtured false-refusal channel: legitimate byte-identical carry-over (OPEN-QUESTION marker beats, headings, short structural lines) is indistinguishable from a copy
+
+Finding-ID: AUDIT-20260730-39
+Status:     open
+Severity:   high
+Per-lane:   claude=high
+Decision:   single-model (gate-counted high)
+Surface:    voice-tooling/test/policy-op-legality.test.ts:133-235 (the three D4/AUDIT-18 sweep tests)
+
+The AUDIT-18 fix replaced a coverage-keyed pairwise detector with an **exhaustive sweep** whose invariant is stated in the diff's own words: *"every derived edition unit that byte-equals any source beat is a copy, regardless of how (or whether) coverage declares it"* (comment at the `D4 sweep -- a copy accounted only via grounding` test). Applying the channel-enumeration driver to that added surface: the sweep's **value channel** is now *every* string in the edition, not just declared destinations. Every fixture in this file feeds the sweep long, distinctive prose sentences (`'Beta cites [^b] and counts 1978.'`, `'Gamma one with 42.'`) where byte-equality unambiguously means plagiarism. Nothing pins the behavior for edition units that byte-equal a beat **for a legitimate reason**.
+
+The concrete collision is with FR-013, landed in this same feature (`918959d feat(voice-compose): T027-T028 open-question marker enforcement`) and asserted in the sibling chunk's prompt test: `assert.match(prompt, /OPEN-QUESTION/, 'states the open-question marker must be preserved')` (voice-tooling/test/prompt.test.ts:81-84). If a spine beat *is* a standalone open-question marker paragraph, the producer is required to preserve it byte-for-byte (and AUDIT-02 additionally refuses fabricated/altered markers), which yields a derived edition unit that byte-equals a source beat — which the sweep must refuse as `whole-unit-copy` per the invariant above. That is an unsatisfiable pair of obligations: the producer cannot both preserve and not-preserve. The same channel covers markdown headings, short list items, and any structural line the spine and edition legitimately share.
+
+Blast radius: an unattended producer loop hits a refusal it cannot repair by re-voicing, because the only repair (mutate the marker/heading) is independently refused. The failure is silent-until-encountered — the pass-side fixtures all use long prose, so CI stays green while real spines with marker-only or heading beats deadlock. A reasonable fix is to state the sweep's invariant *with its in-scope exception* rather than as an unqualified universal — e.g. the sweep applies to prose-bearing units and exempts units whose entire content is a preserved structural token (marker line, heading, footnote definition) — and to add fixtures for exactly those two shapes: (a) a spine beat that is only an OPEN-QUESTION marker, preserved in the edition; (b) a shared heading. If instead the intended answer is "refuse them, and the spine must never contain such beats," that must be a pinned refusal fixture plus a documented spine precondition, not an unexercised implication.
+
+---
+
+### AUDIT-20260730-40 — Stale RED narration survives in the prompt-test header — the same shape the AUDIT-05 de-stale sweep fixed elsewhere
+
+Finding-ID: AUDIT-20260730-40 (claude-08 + codex-01; cross-model)
+Status:     open
+Severity:   high
+Per-lane:   claude=low, codex=high
+Decision:   adjudicated (gate-counted high) — blast-radius=unstated, reachability=unstated, fix-debt=no; no down-calibration signal — high retained.
+Surface:    voice-tooling/test/prompt.test.ts:1-12
+
+The header reads: *"`@/revise/prompt/index.ts` does not exist yet at RED time (T003 implements it) -- this file is expected to fail to load with a 'cannot find module' error until then, which is the correct RED state for a test-first task."* In the audited range that module exists (`852e77e feat(voice-compose): T003-T004 mode-keyed prompt module (compose+revise)`), so the standing description of this file's own behavior is false as committed.
+
+Commit `f3a3892` explicitly performed this cleanup for a sibling file (*"de-stale revise-preflight RED narration (AUDIT-05)"*), so the shape is already recognized as a defect on this feature; this instance was missed by that sweep, which means the sweep was not exhaustive across the test tree. Blast radius is comprehension-only, but it is the kind that misleads an unattended agent: a reader (human or agent) triaging a real load failure in this file will consult the header, be told the failure is expected and correct, and stop investigating. The fix is to rewrite the paragraph in past tense as provenance (*"authored RED-first against T003"*) or delete it, and to grep the rest of `voice-tooling/test/` for the remaining `does not exist yet` / `expected to fail to load` instances rather than fixing this one in isolation.
+
+### AUDIT-20260730-41 — `open_question_markers: 'enforced'` is computed from the spine alone and never consults whether any ledger op actually subjected that beat to payload survival
+
+Finding-ID: AUDIT-20260730-41 (claude-02 + claude-03 + codex-01; cross-model)
+Status:     open
+Severity:   high
+Per-lane:   claude=high, codex=high
+Decision:   agreement (gate-counted high)
+Surface:    voice-tooling/src/fidelity/run.ts:425-435
+
+```ts
+const openQuestionMarkers = sourceDeclaresOpenQuestionMarker(sourceUnits)
+  ? 'enforced'
+  : 'none-declared';
+```
+
+The accompanying comment justifies `'enforced'` with "in which case `checkOpObligations` above already required its bytes to survive". That implication only holds for beats whose op actually imposes payload survival. `sourceDeclaresOpenQuestionMarker(sourceUnits)` scans the **source units**, with no reference to `ledger` at all — so it cannot know whether the marker-bearing beat was `cut`, was skipped, or landed in a destination that `findUnresolvedDestinationChecks` could not resolve. In revise mode `cut` is legal (it is only compose that forbids it, per T020/b5ec9a5), so the live case is: a revise ledger that cuts the one beat carrying `[OPEN-QUESTION: …]`. Nothing required those bytes to survive anywhere, the run can still reach `verdict: 'passed'`, and the report affirmatively states that the byte-survival guarantee was `enforced`.
+
+This is the same overclaim class the feature spent AUDIT-06/AUDIT-09 and the SC-007 regression eliminating (`no fail-open mode default`, `honest matched-by-default`): a trust-boundary field that asserts an enforcement stronger than what actually ran. Blast radius: a downstream consumer — an editor, or an agent gating publication on "were the open questions carried forward?" — reads `enforced` on a passing report and concludes the open questions reached the edition when they were deliberately dropped. Fix: compute the field from the checks that actually ran, e.g. `'enforced'` only when at least one marker-bearing source unit had a survival-imposing op with a resolved destination, and introduce a third honest value (`declared-but-not-subject` / `none-declared`) for the cut/unresolved case. (If a downstream gate in `run-outcome.ts` already scopes this field to compose, the cut case is covered by compose's cut-illegality, but the unresolved-destination case and the general source-only derivation still stand.)
+
+---
+
+### AUDIT-20260730-42 — `runPreflight` dispatches modes by negation (`mode !== 'compose'`), so any future producer mode silently inherits the weakest self-check
+
+Finding-ID: AUDIT-20260730-42
+Status:     open
+Severity:   high
+Per-lane:   claude=high
+Decision:   adjudicated (gate-counted high) — blast-radius=unstated, reachability=unstated, fix-debt=no; no down-calibration signal — high retained.
+Surface:    voice-tooling/src/revise/preflight.ts:56-79
+
+`runPreflight` takes a `ProducerMode` but branches on `if (mode !== 'compose')` (line 64) and treats the entire complement of `'compose'` as "revise". The whole FG-C commit in this range is titled *"no fail-open mode default"* — and `prompt/index.ts:20-29` in this same chunk demonstrates the shape the feature actually wants: an exhaustive `switch` with a `never`-typed default that makes an unhandled mode a compile error. The producer's only pre-emit gate uses the opposite pattern.
+
+Blast radius: today `ProducerMode` is a closed two-member set, so behavior is correct. The moment a third mode is added (`outline`, `condense`, whatever), it gets the revise branch by default — **no grounding check, no whole-unit no-copy, only `revise-verbatim-drift`** — and the compiler says nothing. That is a silent downgrade of the write gate for a mode nobody audited, in the one function whose documented job is "the caller REFUSES loudly (throws) BEFORE any write (Principle V)". An unattended agent adding a mode would get a passing typecheck and a passing suite while shipping an ungated producer.
+
+Fix: replace the negation with `switch (mode) { case 'compose': …; case 'revise': …; default: assertNever(mode) }` — `assertNever` already exists at line 121 in this file, so the fix is mechanical and adds no surface.
+
+---
+
+### AUDIT-20260730-43 — revise branch filters op-legality failures by kind and silently drops every other kind — the exact fail-open the compose branch was hardened against
+
+Finding-ID: AUDIT-20260730-43
+Status:     open
+Severity:   high
+Per-lane:   claude=high
+Decision:   single-model (gate-counted high)
+Surface:    voice-tooling/src/revise/preflight.ts:74-78
+
+The compose branch was deliberately rewritten (AUDIT-11/12/19) so that *every* failure `checkOpLegality('compose', …)` reports becomes a refusal, routed through an exhaustive switch whose `assertNever` default makes "a future unhandled kind a COMPILE error here … never a silent drop" (comment at lines 81-90). The revise branch does the inverse:
+
+```ts
+const refusals = legality.failures
+  .filter((failure) => failure.kind === 'revise-verbatim-drift')
+  .map((failure) => failure.message);
+```
+
+Any failure kind other than `revise-verbatim-drift` that `checkOpLegality('revise', …)` reports — now or later — is dropped on the floor, and `ok` is computed from the filtered list. The filter is also redundant with the mode argument already passed on line 73: the predicate is documented as mode-scoped by its first parameter, so if the scoping works the filter removes nothing, and if the scoping ever loosens the filter converts a real violation into a pass.
+
+Blast radius: a revise-mode illegal op that the shared policy detects is written to disk instead of refused, because the producer discarded the finding before computing `ok`. This is a write-gate fail-open, and it is asymmetric with the compose branch in the same function, which means the honesty property the feature claims ("the same refusal the validator would issue at step 5, caught here at the source") holds for compose only. Fix: drop the `.filter` and map every failure to a refusal, routing through the same exhaustive switch `composeOpLegalityRefusal` already provides (rename it to `opLegalityRefusal` and share it).
+
+---
+
+### AUDIT-20260730-44 — Compose prompt drops the blockquote / quoted-span byte-exactness clause that the revise prompt keeps, while its own doc comment says beats carry quoted spans
+
+Finding-ID: AUDIT-20260730-44 (claude-03 + claude-04 + codex-01; cross-model)
+Status:     open
+Severity:   high
+Per-lane:   claude=high, codex=high
+Decision:   agreement (gate-counted high)
+Surface:    voice-tooling/src/revise/prompt/compose.ts:35-37 (vs. voice-tooling/src/revise/prompt/revise.ts:34-36)
+
+The revise fidelity contract enumerates three payload classes: *"Every blockquote and quoted span, every citation marker … and every numeral … MUST survive VERBATIM"* (revise.ts:34-36). The compose contract enumerates two: *"Every citation marker (e.g. [PB-P056] and [^1]) and every numeral in a beat MUST still survive BYTE-EXACT"* (compose.ts:35-37). Blockquotes and quoted spans are absent — yet compose.ts's own header comment (lines 8-10) states beats carry *"citation markers, numerals, and quoted spans that anchor the composition to its evidence"*, and the compose output-format block never re-introduces the quote obligation.
+
+Both resolutions of this gap are bad, which is why it is high rather than medium. If the shared payload extractor (`payload-extract`, in another chunk) enforces quoted spans mode-independently, the compose producer is being instructed to a weaker contract than the one that will refuse it — the model will legitimately paraphrase a quotation and eat a pre-emit refusal it was never warned about, burning rounds with no diagnostic pointing at the prompt. If the extractor scopes quotes out of compose, then the feature ships a fidelity hole: a composed chapter may silently alter the wording of a quotation lifted from a source-cited spine, which is precisely the corruption the byte-exactness machinery exists to prevent, and it would corrupt quietly rather than loudly.
+
+Fix: decide the invariant explicitly and state it in one place. If quotes are enforced in compose, add the blockquote/quoted-span clause to compose.ts:35 verbatim from revise.ts:34. If they are deliberately out of scope for compose, say so in the contract bullet *and* correct the header comment at compose.ts:8-10, and add a fixture pinning a paraphrased-quote compose edition as passing so the exemption is a tested invariant rather than an omission.
+
+---
+
+### AUDIT-20260730-45 — `CoverageLedger.mode` is optional on the type, re-opening the fail-open mode channel that AUDIT-06/09 closed in the validator
+
+Finding-ID: AUDIT-20260730-45
+Status:     open
+Severity:   high
+Per-lane:   claude=high
+Decision:   single-model (gate-counted high)
+Surface:    voice-tooling/src/schema/ledger.ts:50-71 (`CoverageLedger.mode?: Mode`, `grounding?: GroundingRecord[]`)
+
+The new field is declared optional with an explicit rationale for the optionality:
+
+```ts
+  /**
+   * Optional on the type so pre-006 construction sites that build a
+   * `CoverageLedger` literal directly (not via `loadLedger`) are unaffected;
+   * `loadLedger` itself always populates this, defaulting to 'revise' when
+   * absent from the ledger bytes.
+   */
+  mode?: Mode;
+```
+
+The stated safety argument only covers ledgers that arrive through `loadLedger`. It says nothing about the *other* direction, which is the dangerous one: any code path that builds a `CoverageLedger` literal — `@/revise/ledger-build.ts`, every test fixture, any future emitter — can omit `mode` and the type system will not object. Downstream, the compose-only obligations are all gated on `mode === 'compose'` (op-legality, whole-unit no-copy, edition-grounding, mode-agreement, open-question marker enforcement). A compose ledger constructed without `mode` therefore does not fail; it silently takes the revise branch and **every compose-only check is skipped**. That is precisely the fail-open shape commit bc1c626 removed from the validator ("no fail-open mode default (AUDIT-06/09)"), re-entering through a different door: the type, not the parser. The `?? 'revise'` an agent naturally writes when it hits `Mode | undefined` in a new check is the same defect one layer out.
+
+Blast radius: fail-open, and silent in the direction that matters. The most likely first victims are the tests — a compose fixture that forgets `mode` passes its no-copy/grounding assertions *vacuously*, so the suite reports green on a check that never ran. The same hole makes a real producer regression (ledger-build dropping the stamp) invisible until a human reads the emitted YAML. The invariant here is stronger than "optional field": v1 says grounding is REQUIRED+non-empty iff mode is compose, and MUST be absent iff revise — a discriminated union expresses exactly that and makes both wrong states unconstructible: `type CoverageLedger = Base & ({ mode: 'compose'; grounding: GroundingRecord[] } | { mode: 'revise'; grounding?: never })`. The handful of pre-006 literal construction sites the comment is protecting should be updated to say `mode: 'revise'` explicitly — that is a mechanical edit, and it is cheaper than a permanently reachable fail-open channel.
+
+### AUDIT-20260730-46 — `check-no-copy` computes `ok` from a string-filtered subset of `checkOpLegality` failures with no exhaustiveness guard — any failure kind neither filter claims is silently swallowed
+
+Finding-ID: AUDIT-20260730-46
+Status:     open
+Severity:   high
+Per-lane:   claude=high
+Decision:   single-model (gate-counted high)
+Surface:    `voice-tooling/src/fidelity/check-no-copy.ts:63-67` (with `voice-tooling/src/fidelity/check-op-obligations.ts`, not in this chunk)
+
+`checkNoCopy` calls the shared `checkOpLegality`, then keeps only failures whose `kind === 'whole-unit-copy'` and derives its verdict from that filtered list: `ok: failures.length === 0` (line 67). The module doc (lines 15-19) justifies this by hand-enumerating the kinds it deliberately drops — `compose-forbids-verbatim` / `compose-forbids-cut` — and asserting those belong to `check-op-obligations.ts` (step 2). So the validator partitions one policy function's failure set across two checks *by string match on `kind`*, and nothing anywhere asserts the partition is total. A failure kind that neither filter claims is not reported by either check, and both report `ok: true`. That is a silent pass produced by the one mechanism whose entire purpose is to prevent silent passes.
+
+This is not hypothetical drift risk — `checkOpLegality`'s kind set is actively growing inside this very feature: T020 added the `illegal-op` kind for compose, T023 added the revise verbatim-drift path, and FG-A's round-2 note adds `whole-unit-copy` sweep changes. The next kind added by anyone who doesn't happen to read this file's prose enumeration disappears from the validator. Note the asymmetry that makes this concrete rather than speculative: FG-B's own ledger row (`.stack-control/execute/voice-compose-from-spine.ledger.jsonl`, round-2 FG-B) advertises an "exhaustive switch+assertNever" for exactly this failure set **on the producer preflight side** — the team knows the technique, applied it to the producer, and left the validator on a bare `.filter()`. The validator is the trust boundary a governed build actually relies on.
+
+Blast radius: a downstream governed build receives a report where `no_copy: ok` and `op_obligations: ok` while `checkOpLegality` did in fact return a failure — the edition ships with an unreported policy violation and the report affirmatively claims it was checked. Reasonable fix: make the split total by construction — have `checkOpLegality` expose kinds partitioned by consuming check (e.g. a discriminated grouping), or give each wrapper an exhaustive `switch (failure.kind)` with `assertNever` in the default branch so an unclaimed kind is a compile error rather than a silent drop. A cheaper interim fix that still has teeth: assert `noCopyFailures.length + opObligationFailures.length === result.failures.length` at the one call site that runs both.
+
+---

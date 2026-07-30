@@ -1,5 +1,6 @@
 import type { SourceUnit } from '@/units/derive.ts';
 import type { CoverageEntry, GroundingRecord, UnitRef } from '@/schema/ledger.ts';
+import { extractPayload } from '@/payload/extract.ts';
 
 /**
  * Shared, PURE edition-side grounding accounting policy (spec 006 R8,
@@ -25,9 +26,15 @@ import type { CoverageEntry, GroundingRecord, UnitRef } from '@/schema/ledger.ts
  *   - basis is ANCHORED to coverage (D8, AUDIT-21): `coverage` and `grounding`
  *                 are two views of the SAME beat<->edition mapping and must
  *                 agree, so `basis` is not an unfalsifiable self-label.
+ *   - basis is ANCHORED to PAYLOAD (AUDIT-35): a unit carrying beat-derived
+ *                 required payload (a citation/numeral byte-present in a source
+ *                 beat) MUST be `grounded` -- it may not self-label
+ *                 `connective`/`framing`. This closes the escape the coverage
+ *                 anchor left open for units NO coverage entry names.
  *
  * This module does NOT judge semantic support (whether the prose is actually
- * warranted by its beats) -- that is reported not-checkable. It never throws
+ * warranted by its beats), NOR whether a payload-FREE connective unit is honest
+ * vs invented -- both are reported not-checkable (AUDIT-35 boundary). It never throws
  * for a policy violation; it returns named, structured failures (matching the
  * fidelity/ result style: `{ ok, failures }` with each failure carrying a
  * structured `kind` plus a human-readable `message`).
@@ -39,7 +46,17 @@ export type GroundingFailureKind =
   | 'dangling-record'
   | 'dangling-beat'
   | 'grounded-without-beats'
-  | 'basis-contradicts-coverage';
+  | 'basis-contradicts-coverage'
+  /**
+   * The connective/framing escape (AUDIT-20260730-35): a unit self-labeled
+   * `connective`/`framing` (asserting "not itself a beat") that nonetheless
+   * carries beat-derived REQUIRED PAYLOAD -- a citation marker or numeral byte-
+   * present in some source beat. Such a unit demonstrably came FROM source and
+   * MUST be `grounded`. This is the MECHANICAL anchor on `basis`; whether a
+   * genuinely payload-FREE connective unit is honest vs invented is SEMANTIC and
+   * reported, not refused.
+   */
+  | 'payload-bearing-unit-not-grounded';
 
 export interface GroundingFailure {
   kind: GroundingFailureKind;
@@ -156,7 +173,79 @@ export function checkGrounding(
 
   reconcileBasisAgainstCoverage(groundingRecords, coverage, failures);
 
+  checkPayloadBearingBasis(groundingRecords, editionUnits, sourceUnits, failures);
+
   return { ok: failures.length === 0, failures };
+}
+
+/**
+ * AUDIT-20260730-35 MECHANICAL ANCHOR: a unit self-labeled `connective`/`framing`
+ * that carries beat-derived REQUIRED PAYLOAD must instead be `grounded`.
+ *
+ * The D8 reconciliation above only anchors `basis` for units a COVERAGE entry
+ * names; a non-grounded unit named by NO coverage entry escaped every beat
+ * obligation, so an arbitrary quantity of invented prose could launder past the
+ * check by self-labeling `connective`. This anchor is payload-DIRECTED instead of
+ * coverage-directed: for each non-grounded record, if the edition unit's own
+ * bytes carry a citation marker or numeral that is byte-present in SOME source
+ * beat (i.e. it "resolves to a source beat"), the unit demonstrably came from
+ * source and may not claim `connective`/`framing`.
+ *
+ * BOUNDARY (do not overclaim): this is a MECHANICAL check over LITERAL payload.
+ * A payload-FREE connective unit, or one carrying an INVENTED numeral/citation
+ * absent from every beat, is NOT refused here -- whether such prose is honestly
+ * connective vs invented is SEMANTIC and not mechanically decidable; it is
+ * reported (not-checkable), not refused. "Required payload" is citations +
+ * numerics, matching `@/payload/extract.ts`'s always-extracted required kinds.
+ */
+function checkPayloadBearingBasis(
+  groundingRecords: readonly GroundingRecord[],
+  editionUnits: readonly SourceUnit[],
+  sourceUnits: readonly SourceUnit[],
+  failures: GroundingFailure[],
+): void {
+  const sourceRequiredPayload = new Set<string>();
+  for (const unit of sourceUnits) {
+    const payload = extractPayload(unit.content);
+    for (const citation of payload.citations) {
+      sourceRequiredPayload.add(citation);
+    }
+    for (const numeral of payload.numerics) {
+      sourceRequiredPayload.add(numeral);
+    }
+  }
+
+  const editionByKey = new Map<string, SourceUnit>();
+  for (const unit of editionUnits) {
+    editionByKey.set(sourceUnitKey(unit), unit);
+  }
+
+  for (const record of groundingRecords) {
+    if (record.basis === 'grounded') {
+      continue;
+    }
+    const unit = editionByKey.get(unitRefKey(record.edition_unit));
+    if (unit === undefined) {
+      // A record naming no real edition unit is the `dangling-record` concern.
+      continue;
+    }
+    const payload = extractPayload(unit.content);
+    const carried: string[] = [];
+    for (const token of [...payload.citations, ...payload.numerics]) {
+      if (sourceRequiredPayload.has(token)) {
+        carried.push(token);
+      }
+    }
+    if (carried.length > 0) {
+      failures.push({
+        kind: 'payload-bearing-unit-not-grounded',
+        message:
+          `grounding: edition unit (${unitLabel(unit)}) is labeled '${record.basis}' but carries ` +
+          `beat-derived required payload (${carried.join(', ')}) -- a unit carrying a source ` +
+          `citation/numeral must be grounded, not connective/framing`,
+      });
+    }
+  }
 }
 
 /**

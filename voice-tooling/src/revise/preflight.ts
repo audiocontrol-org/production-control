@@ -113,6 +113,10 @@ function composeOpLegalityRefusal(failure: OpLegalityFailure): string {
     case 'compose-forbids-cut':
     case 'whole-unit-copy':
     case 'revise-verbatim-drift':
+    // AUDIT-34: an undeclared cut (`op-without-destination`) is illegal in
+    // compose (it bypasses the no-cut invariant) -- it gates the write like any
+    // other op-legality failure.
+    case 'op-without-destination':
       return failure.message;
     default:
       return assertNever(failure.kind);

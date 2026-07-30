@@ -214,6 +214,128 @@ test('checkOpLegality: D4 sweep -- an occurrence-repeated identical unit fails f
   assert.ok(copies.some((f) => /occurrence 1/.test(f.message)), 'the declared occurrence-1 copy is caught');
 });
 
+// AUDIT-20260730-34: undeclared cut / empty-destination. A non-`cut` coverage
+// entry whose declared `edition_units` is EMPTY or ABSENT lands its beat
+// NOWHERE -- a cut spelled as represented/merged/verbatim. op-legality refuses
+// it in BOTH modes (`op-without-destination`), so a producer cannot bypass
+// compose's no-cut invariant (or revise's cut-requires-reason obligation) with a
+// one-token label change. `checkOpLegality` is pure and takes `CoverageEntry[]`
+// directly (loadLedger also guards this upstream, but the shared policy the
+// producer preflight AND validator rest on must self-defend for a ledger built
+// by other means).
+for (const mode of ['compose', 'revise'] as const) {
+  test(`checkOpLegality: ${mode} refuses a non-cut entry with EMPTY edition_units as op-without-destination`, () => {
+    const src = deriveUnits(SOURCE, 'src');
+    const ed = deriveUnits(COMPOSED, 'ed');
+    const [s0, s1] = src;
+    const [e0] = ed;
+    assert.ok(s0 && s1 && e0);
+
+    const coverage: CoverageEntry[] = [
+      { source_unit: ref(s0), op: 'represented', edition_units: [ref(e0)] },
+      { source_unit: ref(s1), op: 'represented', edition_units: [] },
+    ];
+
+    const result = checkOpLegality(mode, coverage, src, ed);
+
+    assert.equal(result.ok, false);
+    const undeclared = result.failures.filter((f) => f.kind === 'op-without-destination');
+    assert.equal(undeclared.length, 1, `expected one op-without-destination failure in ${mode}`);
+    assert.match(undeclared[0]?.message ?? '', /coverage entry 1/);
+  });
+
+  test(`checkOpLegality: ${mode} refuses a non-cut entry with ABSENT edition_units as op-without-destination`, () => {
+    const src = deriveUnits(SOURCE, 'src');
+    const ed = deriveUnits(COMPOSED, 'ed');
+    const [s0, s1] = src;
+    const [e0] = ed;
+    assert.ok(s0 && s1 && e0);
+
+    // `edition_units` omitted entirely (the wire type permits it as optional).
+    const coverage: CoverageEntry[] = [
+      { source_unit: ref(s0), op: 'represented', edition_units: [ref(e0)] },
+      { source_unit: ref(s1), op: 'merged' },
+    ];
+
+    const result = checkOpLegality(mode, coverage, src, ed);
+
+    assert.equal(result.ok, false);
+    const undeclared = result.failures.filter((f) => f.kind === 'op-without-destination');
+    assert.equal(undeclared.length, 1, `expected one op-without-destination failure in ${mode}`);
+  });
+}
+
+// AUDIT-20260730-36/-39: the no-copy substantive-only exemption. A byte-identical
+// edition unit is a `whole-unit-copy` violation ONLY when the beat is SUBSTANTIVE
+// prose (has re-voiceable prose). A beat whose ENTIRE content is
+// required-payload-that-must-survive -- a marker-only `[OPEN-QUESTION: ...]` beat,
+// a bare citation, a heading, or a structural rule -- is EXEMPT: survival/
+// structure MANDATES those bytes, so there is nothing to re-voice and no-copy
+// cannot demand it. Marker-survival (FR-013) and no-copy are otherwise mutually
+// unsatisfiable for such a beat.
+const MARKER_ONLY = '[OPEN-QUESTION: What caused the anomaly in sample 2?]';
+const HEADING_ONLY = '## Results and discussion';
+
+test('checkOpLegality: a marker-only beat carried byte-identically is NOT a whole-unit copy (survival wins)', () => {
+  const src = deriveUnits(`${MARKER_ONLY}\n`, 'src');
+  const ed = deriveUnits(`${MARKER_ONLY}\n`, 'ed');
+  const [s0] = src;
+  const [e0] = ed;
+  assert.ok(s0 && e0);
+  assert.equal(e0.contentHash, s0.contentHash, 'fixture: the marker unit must be byte-identical');
+
+  const coverage: CoverageEntry[] = [{ source_unit: ref(s0), op: 'represented', edition_units: [ref(e0)] }];
+
+  const result = checkOpLegality('compose', coverage, src, ed);
+
+  const copies = result.failures.filter((f) => f.kind === 'whole-unit-copy');
+  assert.equal(
+    copies.length,
+    0,
+    `a marker-only beat's mandated bytes cannot be a copy; got: ${result.failures.map((f) => f.message).join(' | ')}`,
+  );
+  assert.equal(result.ok, true);
+});
+
+test('checkOpLegality: a heading-only beat carried byte-identically is NOT a whole-unit copy', () => {
+  const src = deriveUnits(`${HEADING_ONLY}\n`, 'src');
+  const ed = deriveUnits(`${HEADING_ONLY}\n`, 'ed');
+  const [s0] = src;
+  const [e0] = ed;
+  assert.ok(s0 && e0);
+  assert.equal(e0.contentHash, s0.contentHash);
+
+  const coverage: CoverageEntry[] = [{ source_unit: ref(s0), op: 'represented', edition_units: [ref(e0)] }];
+
+  const result = checkOpLegality('compose', coverage, src, ed);
+
+  const copies = result.failures.filter((f) => f.kind === 'whole-unit-copy');
+  assert.equal(copies.length, 0, `a heading beat's structural bytes cannot be a copy; got: ${result.failures.map((f) => f.message).join(' | ')}`);
+  assert.equal(result.ok, true);
+});
+
+// Round-0 self-red-team: the exemption is PURE-payload-only. A beat that carries
+// a marker AND re-voiceable prose is SUBSTANTIVE -- copying it verbatim is still a
+// whole-unit copy. The exemption must not become a laundering hole for prose that
+// merely happens to contain a marker.
+test('checkOpLegality: a SUBSTANTIVE prose beat (marker embedded in prose) copied byte-identically is STILL a whole-unit copy', () => {
+  const substantive = `Prose that could be re-voiced. ${MARKER_ONLY}`;
+  const src = deriveUnits(`${substantive}\n`, 'src');
+  const ed = deriveUnits(`${substantive}\n`, 'ed');
+  const [s0] = src;
+  const [e0] = ed;
+  assert.ok(s0 && e0);
+  assert.equal(e0.contentHash, s0.contentHash);
+
+  const coverage: CoverageEntry[] = [{ source_unit: ref(s0), op: 'represented', edition_units: [ref(e0)] }];
+
+  const result = checkOpLegality('compose', coverage, src, ed);
+
+  const copies = result.failures.filter((f) => f.kind === 'whole-unit-copy');
+  assert.equal(copies.length, 1, 'a marker embedded in re-voiceable prose is substantive -- still a copy');
+  assert.equal(result.ok, false);
+});
+
 test('checkOpLegality: revise verbatim drift (destination differs from source) is illegal, naming the unit', () => {
   const src = deriveUnits('Alpha verbatim line [^a].\n', 'src');
   const ed = deriveUnits('Alpha verbatim line [^a]!\n', 'ed'); // one byte differs

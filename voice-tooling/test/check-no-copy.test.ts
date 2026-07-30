@@ -161,6 +161,50 @@ test('checkNoCopy: occurrence sensitivity -- a byte-identical destination at edi
   }
 });
 
+// AUDIT-20260730-36/-39: the no-copy substantive-only exemption, seen through the
+// validator wrapper. A marker-only or heading-only beat carried byte-identically
+// is NOT a copy -- its bytes are mandated by survival/structure, not chosen -- so
+// an unattended producer loop composing from a spine with such beats does not
+// deadlock between marker-survival and no-copy.
+test('checkNoCopy: a marker-only beat carried byte-identically is not a copy (survival wins over no-copy)', () => {
+  const marker = '[OPEN-QUESTION: What caused the anomaly in sample 2?]';
+  const src = deriveUnits(`${marker}\n`, 'src');
+  const ed = deriveUnits(`${marker}\n`, 'ed');
+  const [s0] = src;
+  const [e0] = ed;
+  assert.ok(s0 && e0);
+  assert.equal(e0.contentHash, s0.contentHash, 'fixture: the marker unit must be byte-identical');
+
+  const ledger = ledgerOf('compose', [
+    { source_unit: ref(s0), op: 'represented', edition_units: [ref(e0)] },
+  ]);
+
+  const result = checkNoCopy(ledger, src, ed);
+
+  assert.equal(result.applicable, true);
+  assert.equal(result.ok, true, `a marker-only survival must not be refused as a copy; got: ${result.failures.join(' | ')}`);
+  assert.deepEqual(result.failures, []);
+});
+
+test('checkNoCopy: a heading-only beat carried byte-identically is not a copy', () => {
+  const heading = '## Results and discussion';
+  const src = deriveUnits(`${heading}\n`, 'src');
+  const ed = deriveUnits(`${heading}\n`, 'ed');
+  const [s0] = src;
+  const [e0] = ed;
+  assert.ok(s0 && e0);
+  assert.equal(e0.contentHash, s0.contentHash);
+
+  const ledger = ledgerOf('compose', [
+    { source_unit: ref(s0), op: 'represented', edition_units: [ref(e0)] },
+  ]);
+
+  const result = checkNoCopy(ledger, src, ed);
+
+  assert.equal(result.ok, true, `a heading survival must not be refused as a copy; got: ${result.failures.join(' | ')}`);
+  assert.deepEqual(result.failures, []);
+});
+
 test('checkNoCopy: a revise ledger is not-applicable, regardless of an incidental byte-identical unit', () => {
   const src = deriveUnits('Alpha line unchanged.\n', 'src');
   const ed = deriveUnits('Alpha line unchanged.\n', 'ed');
